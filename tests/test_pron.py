@@ -49,9 +49,14 @@ class TestPron(unittest.TestCase):
                  {"from": "Qui-Gon", "to": "dup"},   # duplicate dropped
                  {"from": "Jinn", "to": "Jin"}]
         out = pron.save(self.conn, "u1", rules)
-        self.assertEqual([r["from"] for r in out], ["Qui-Gon", "Jinn"])
-        self.assertEqual(pron.load(self.conn, "u1"), out)
-        self.assertEqual(pron.load(self.conn, "nobody"), [])
+        # the shipped name fixes ride along with every account; these are the
+        # rules the reader wrote, which is what this test is about.
+        mine = [r for r in out if not r.get("builtin")]
+        self.assertEqual([r["from"] for r in mine], ["Qui-Gon", "Jinn"])
+        self.assertEqual([r for r in pron.load(self.conn, "u1")
+                          if not r.get("builtin")], mine)
+        self.assertEqual([r for r in pron.load(self.conn, "someone else")
+                          if not r.get("builtin")], [])
 
     def test_apply_whole_word_case_insensitive(self):
         rules = [{"from": "Qui-Gon", "to": "Kwai-Gon"}]
@@ -71,12 +76,14 @@ class TestPron(unittest.TestCase):
     def test_prefs_and_pron_do_not_clobber(self):
         pron.save(self.conn, "u2", [{"from": "A", "to": "B"}])
         connections.set_prefs(self.conn, "u2", voice="v")
-        self.assertEqual(pron.load(self.conn, "u2"),
+        self.assertEqual([r for r in pron.load(self.conn, "u2")
+                          if not r.get("builtin")],
                          [{"from": "A", "to": "B", "book": "", "author": "",
                            "series": ""}])
         self.assertEqual(connections.get_prefs(self.conn, "u2")["default_voice"], "v")
         connections.set_prefs(self.conn, "u2", connection_id="c1")
-        self.assertEqual(pron.load(self.conn, "u2"),
+        self.assertEqual([r for r in pron.load(self.conn, "u2")
+                          if not r.get("builtin")],
                          [{"from": "A", "to": "B", "book": "", "author": "",
                            "series": ""}])
 
@@ -251,12 +258,15 @@ class TestPronRoutes(unittest.TestCase):
         st, out = app.pron_set({"user": "u1"},
                                {"rules": [{"from": "Qui-Gon", "to": "Kwai-Gon"}]})
         self.assertEqual(st, 200)
-        self.assertEqual(out["rules"], [{"from": "Qui-Gon", "to": "Kwai-Gon",
-                                         "book": "", "author": "", "series": ""}])
+        self.assertEqual([r for r in out["rules"] if not r.get("builtin")],
+                         [{"from": "Qui-Gon", "to": "Kwai-Gon",
+                           "book": "", "author": "", "series": ""}])
         st, out = app.pron_get({"user": "u1"}, {})
         self.assertEqual(st, 200)
-        self.assertEqual(out["rules"], [{"from": "Qui-Gon", "to": "Kwai-Gon",
-                                         "book": "", "author": "", "series": ""}])
+        # the shipped name fixes come back alongside, flagged as not the reader's
+        self.assertEqual([r for r in out["rules"] if not r.get("builtin")],
+                         [{"from": "Qui-Gon", "to": "Kwai-Gon",
+                           "book": "", "author": "", "series": ""}])
         st, out = app.pron_impact({"user": "u1"}, {})
         self.assertEqual(st, 200)
         self.assertEqual(out["chapters_affected"], 0)
@@ -400,7 +410,8 @@ class TestContextRules(unittest.TestCase):
 
     def test_two_readings_survive_a_save_and_load(self):
         conn = connect(":memory:")
-        out = pron.save(conn, "u1", self.RULES)
+        out = [r for r in pron.save(conn, "u1", self.RULES)
+               if not r.get("builtin")]
         self.assertEqual(len(out), 2)
         kept = [r for r in out if r["to"] == "Colorado"][0]
         self.assertEqual(kept["before"], r",\s*")

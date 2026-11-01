@@ -31,6 +31,7 @@ import json
 import re
 import uuid
 
+from host import pron_defaults
 from host.db import now
 
 
@@ -169,11 +170,53 @@ def _legacy_rules(conn, uid):
     return out
 
 
+def seed(conn, uid):
+    """Give a reader the built-in name fixes once, as a dictionary they own.
+
+    English place names are what a voice mangles most visibly, and nobody types
+    a fix for a word they have not reached yet, so the fix arrives before them.
+    It is an ordinary global dict: readable, editable, exportable, deletable.
+    Deleting it is respected forever, because the flag says "this account was
+    offered the set", not "this account has it".
+    """
+    uid = uid or ""
+    if not uid:
+        return False
+    try:
+        row = conn.execute("SELECT pron_seeded FROM user_prefs WHERE user_id=?",
+                           (uid,)).fetchone()
+        if row and int(row["pron_seeded"] or 0):
+            return False
+        stamp = now()
+        if row:
+            conn.execute("UPDATE user_prefs SET pron_seeded=?,updated_at=?"
+                         " WHERE user_id=?",
+                         (pron_defaults.DEFAULTS_VERSION, stamp, uid))
+        else:
+            conn.execute("INSERT INTO user_prefs(user_id,pron,pron_seeded,"
+                         "updated_at) VALUES(?,?,?,?)",
+                         (uid, "", pron_defaults.DEFAULTS_VERSION, stamp))
+        conn.commit()
+    except Exception:                   # a database older than the column
+        return False
+    # the flag is set first on purpose: save_dict reads the dictionary list back,
+    # and that read runs this function again from inside itself.
+    hit = conn.execute("SELECT id FROM pron_dicts WHERE user_id=?"
+                       " AND scope='global' AND scope_key='' AND name=? LIMIT 1",
+                       (uid, pron_defaults.DEFAULTS_NAME)).fetchone()
+    if hit:
+        return False
+    save_dict(conn, uid, pron_defaults.DEFAULTS_NAME, "global", "",
+              pron_defaults.rules(), builtin=1)
+    return True
+
+
 def dicts(conn, uid):
     """This user's dictionaries, oldest first, rules already tidied."""
+    seed(conn, uid)
     out = []
     for r in conn.execute(
-            "SELECT id,name,scope,scope_key,rules,created_at FROM pron_dicts"
+            "SELECT id,name,scope,scope_key,rules,builtin,created_at FROM pron_dicts"
             " WHERE user_id=? ORDER BY created_at,id", (uid or "",)).fetchall():
         try:
             rules = json.loads(r["rules"] or "[]")
@@ -182,6 +225,7 @@ def dicts(conn, uid):
         out.append({"id": r["id"], "name": r["name"] or "",
                     "scope": r["scope"] or "global",
                     "scope_key": r["scope_key"] or "",
+                    "builtin": int(r["builtin"] or 0),
                     "rules": _tidy(rules if isinstance(rules, list) else [])})
     return out
 
@@ -204,7 +248,7 @@ def _scope_fields(scope, key):
     return scope, key
 
 
-def save_dict(conn, uid, name, scope, scope_key, rules, dict_id=""):
+def save_dict(conn, uid, name, scope, scope_key, rules, dict_id="", builtin=0):
     """Create or update one dictionary. Returns it, or None for a bad scope.
 
     A dictionary is one named set of words attached at one scope. Two dicts on
@@ -230,8 +274,9 @@ def save_dict(conn, uid, name, scope, scope_key, rules, dict_id=""):
     else:
         dict_id = "pd_" + uuid.uuid4().hex[:16]
         conn.execute("INSERT INTO pron_dicts(id,user_id,name,scope,scope_key,rules,"
-                     "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
-                     (dict_id, uid, name, scope, key, blob, stamp, stamp))
+                     "builtin,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                     (dict_id, uid, name, scope, key, blob, 1 if builtin else 0,
+                      stamp, stamp))
     conn.commit()
     return get_dict(conn, uid, dict_id)
 
@@ -342,6 +387,8 @@ def load(conn, uid):
     for d in dicts(conn, uid):
         for r in d["rules"]:
             keep = {k: r[k] for k in ("before", "after", "exact") if r.get(k)}
+            if d.get("builtin"):
+                keep["builtin"] = True
             out.append(_rule(r["from"], r["to"],
                              d["scope_key"] if d["scope"] == "book" else "",
                              d["scope_key"] if d["scope"] == "author" else "",
@@ -369,8 +416,12 @@ def save(conn, uid, rules):
         item = {"from": frm, "to": to}
         item.update({k: r[k] for k in ("before", "after", "exact") if (r or {}).get(k)})
         groups.setdefault((scope, key), []).append(item)
-    keep = {d["id"] for d in dicts(conn, uid)}
-    existing = {(d["scope"], d["scope_key"]): d for d in dicts(conn, uid)}
+    # a shipped dictionary is not this call's to rewrite or remove: it is not in
+    # the map, so this call cannot land on it, and it is not in `keep`, so the
+    # sweep at the end cannot delete it.
+    keep = {d["id"] for d in dicts(conn, uid) if not d.get("builtin")}
+    existing = {(d["scope"], d["scope_key"]): d for d in dicts(conn, uid)
+                if not d.get("builtin")}
     for (scope, key), items in groups.items():
         hit = existing.get((scope, key))
         save_dict(conn, uid, hit["name"] if hit else "My words", scope, key, items,

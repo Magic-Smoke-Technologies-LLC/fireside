@@ -129,6 +129,17 @@ class TestApp(unittest.TestCase):
         s, one = self._jget("/estimate?book=%s&provider=fake&chapters=0" % bid)
         self.assertLess(one["chars"], e["chars"])
 
+    def test_the_shelf_is_a_bare_list_not_a_wrapper(self):
+        # The reader's pronunciation scope menu builds itself from this body. It
+        # read {"books": ...} once and the whole menu collapsed to "All books",
+        # so the shape is pinned here rather than assumed on both sides again.
+        self._post("/import", {"user": "u1", "kind": "upload",
+                               "filename": "x.epub"})
+        s, lib = self._jget("/library?user=u1")
+        self.assertEqual(s, 200)
+        self.assertIsInstance(lib, list)
+        self.assertTrue(lib and lib[0].get("id"))
+
     def test_full_flow(self):
         s, imp = self._post("/import", {"user": "u1", "kind": "upload",
                                         "filename": "x.epub"})

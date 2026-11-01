@@ -1489,7 +1489,10 @@ let PRON = [];
 // convention is the narrow case, and it wins for the same word.
 let SCOPEBOOKS = [], SCOPEAUTHORS = [];
 async function loadScopeOptions() {
-  try { const d = await api('/library'); SCOPEBOOKS = d.books || [];
+  // /library answers with the shelf itself, a bare list, not {"books": ...};
+  // reading only the wrapped shape left the scope menu with nothing but
+  // "All books", so a reader could not attach a name to her own author or book.
+  try { const d = await api('/library'); SCOPEBOOKS = Array.isArray(d) ? d : (d.books || []);
         SCOPEAUTHORS = [...new Set(SCOPEBOOKS.map(b => (b.author || '').trim()).filter(Boolean))].sort(); }
   catch (_) { SCOPEBOOKS = []; SCOPEAUTHORS = []; }
 }

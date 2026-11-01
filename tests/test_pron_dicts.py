@@ -23,6 +23,17 @@ from host import db, pron
 from plugins.reader.epub.plugin import parse_epub
 
 
+def mine(obj, uid):
+    """The dictionaries this reader wrote, without the set the host ships.
+
+    Every account inherits a global dictionary of name fixes, so a bare list is
+    no longer "what this reader made". Counting that as theirs would hide the
+    shipped set behind the tests instead of testing it (test_pron_defaults).
+    """
+    conn = getattr(obj, "conn", obj)
+    return [d for d in pron.dicts(conn, uid) if not d.get("builtin")]
+
+
 def conn_for(tmp):
     return db.connect(os.path.join(tmp, "d.db"))
 
@@ -96,7 +107,7 @@ class TestScopes(Base):
     def test_scope_without_a_key_is_refused(self):
         self.assertIsNone(pron.save_dict(self.conn, "u1", "A", "author", "",
                                         [{"from": "x", "to": "y"}]))
-        self.assertEqual(pron.dicts(self.conn, "u1"), [])
+        self.assertEqual(mine(self.conn, "u1"), [])
         # an unknown scope falls back to global rather than inventing a fifth
         got = pron.save_dict(self.conn, "u1", "A", "nonsense", "",
                              [{"from": "x", "to": "y"}])
@@ -107,24 +118,28 @@ class TestScopes(Base):
         pron.save_dict(self.conn, "u1", "no author", "author", pron.UNKNOWN_AUTHOR,
                        [{"from": "Qui-Gon", "to": "Kwai-Gon"}])
         rules = pron.load(self.conn, "u1")
-        got = pron.for_book(rules, "b1", "", [])
+        got = [r for r in pron.for_book(rules, "b1", "", []) if not r.get("builtin")]
         self.assertEqual([r["to"] for r in got], ["Kwai-Gon"])
         # a book that does name its author does not fall into the bucket
-        self.assertEqual(pron.for_book(rules, "b2", "Mira", []), [])
+        self.assertEqual([r for r in pron.for_book(rules, "b2", "Mira", [])
+                          if not r.get("builtin")], [])
 
     def test_unknown_bucket_catches_a_book_with_no_series(self):
         pron.save_dict(self.conn, "u1", "no series", "series", pron.UNKNOWN_SERIES,
                        [{"from": "Kay", "to": "Kai"}])
         rules = pron.load(self.conn, "u1")
-        self.assertEqual(len(pron.for_book(rules, "b1", "Mira", [])), 1)
-        self.assertEqual(pron.for_book(rules, "b1", "Mira", ["A Shelf"]), [])
+        self.assertEqual(len([r for r in pron.for_book(rules, "b1", "Mira", [])
+                              if not r.get("builtin")]), 1)
+        self.assertEqual([r for r in pron.for_book(rules, "b1", "Mira", ["A Shelf"])
+                          if not r.get("builtin")], [])
 
     def test_two_dicts_on_one_scope_both_apply(self):
         pron.save_dict(self.conn, "u1", "one", "global", "",
                        [{"from": "Kay", "to": "Kai"}])
         pron.save_dict(self.conn, "u1", "two", "global", "",
                        [{"from": "Bedivere", "to": "BED-ver"}])
-        got = {r["from"] for r in pron.for_book(pron.load(self.conn, "u1"), "b1", "")}
+        got = {r["from"] for r in pron.for_book(pron.load(self.conn, "u1"), "b1", "")
+               if not r.get("builtin")}
         self.assertEqual(got, {"Kay", "Bedivere"})
 
 
@@ -132,7 +147,7 @@ class TestFiles(Base):
     def test_export_then_import_is_the_words_not_the_scope(self):
         pron.save_dict(self.conn, "u1", "Arthurian", "book", "b1",
                        [{"from": "Bedivere", "to": "BED-ver"}])
-        d = pron.dicts(self.conn, "u1")[0]
+        d = mine(self.conn, "u1")[0]
         blob = json.dumps(pron.export_dict(self.conn, "u1", d["id"]))
         other = conn_for(tempfile.mkdtemp(prefix="fireside-dict2-"))
         got = pron.import_dict(other, "u2", blob)
@@ -148,7 +163,7 @@ class TestFiles(Base):
     def test_junk_import_is_refused_not_stored(self):
         self.assertIsNone(pron.import_dict(self.conn, "u1", "not json"))
         self.assertIsNone(pron.import_dict(self.conn, "u1", {"rules": "nope"}))
-        self.assertEqual(pron.dicts(self.conn, "u1"), [])
+        self.assertEqual(mine(self.conn, "u1"), [])
 
     def test_duplicate_words_inside_one_dict_collapse(self):
         got = pron.save_dict(self.conn, "u1", "x", "global", "",
@@ -169,10 +184,11 @@ class TestMigration(Base):
         self.conn.commit()
         made = pron.migrate(self.conn, "u1")
         self.assertEqual(made, 3)
-        scopes = sorted((d["scope"], d["scope_key"]) for d in pron.dicts(self.conn, "u1"))
+        scopes = sorted((d["scope"], d["scope_key"]) for d in mine(self.conn, "u1"))
         self.assertEqual(scopes, [("author", "White"), ("book", "b1"), ("global", "")])
         # the same words still come out, and nothing is left in the old slot
-        got = {r["from"]: r["to"] for r in pron.load(self.conn, "u1")}
+        got = {r["from"]: r["to"] for r in pron.load(self.conn, "u1")
+               if not r.get("builtin")}
         self.assertEqual(got, {"Kay": "Kai", "Bedivere": "BED-ver", "Gawain": "GOW-in"})
         self.assertEqual(pron.migrate(self.conn, "u1"), 0)
         row = self.conn.execute("SELECT pron FROM user_prefs WHERE user_id=?",
@@ -186,7 +202,7 @@ class TestMigration(Base):
         self.conn.commit()
         pron.save_dict(self.conn, "u1", "mine", "global", "", [{"from": "A", "to": "B"}])
         pron.migrate(self.conn, "u1")
-        self.assertEqual(len(pron.dicts(self.conn, "u1")), 1)
+        self.assertEqual(len(mine(self.conn, "u1")), 1)
 
 
 class TestFileMetadata(unittest.TestCase):
@@ -248,18 +264,19 @@ class TestDictRoutes(unittest.TestCase):
         did = out["dict"]["id"]
         st, out = self.app.pron_dicts(q, {})
         self.assertEqual(st, 200)
-        self.assertEqual([d["name"] for d in out["dicts"]], ["Arthurian"])
+        self.assertEqual([d["name"] for d in mine(self.app, "u1")], ["Arthurian"])
         self.assertEqual(out["unknown"]["author"], pron.UNKNOWN_AUTHOR)
         st, out = self.app.pron_dicts({"user": "u1", "id": did}, {})
         self.assertEqual(out["format"], pron.DICT_FORMAT)
         st, out = self.app.pron_get(q, {})
-        self.assertEqual([r["from"] for r in out["rules"]], ["Kay"])
+        self.assertEqual([r["from"] for r in out["rules"] if not r.get("builtin")],
+                         ["Kay"])
         st, _ = self.app.pron_dict_delete(q, {"id": did})
         self.assertEqual(st, 200)
-        self.assertEqual(pron.dicts(self.app.conn, "u1"), [])
+        self.assertEqual(mine(self.app, "u1"), [])
 
     def test_a_scope_with_no_key_is_a_400_not_a_silent_global(self):
         st, out = self.app.pron_dict_save({"user": "u1"},
                                           {"name": "S", "scope": "series", "rules": []})
         self.assertEqual(st, 400)
-        self.assertEqual(pron.dicts(self.app.conn, "u1"), [])
+        self.assertEqual(mine(self.app, "u1"), [])

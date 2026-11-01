@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS series_books (
 CREATE TABLE IF NOT EXISTS pron_dicts (
     id VARCHAR(128) PRIMARY KEY, user_id VARCHAR(128), name VARCHAR(255),
     scope VARCHAR(16) DEFAULT 'global', scope_key VARCHAR(255) DEFAULT '',
-    rules TEXT, created_at VARCHAR(32), updated_at VARCHAR(32));
+    rules TEXT, builtin INT DEFAULT 0,
+    created_at VARCHAR(32), updated_at VARCHAR(32));
 CREATE TABLE IF NOT EXISTS render_cache (
     `key` VARCHAR(191) PRIMARY KEY, audio_ref VARCHAR(255), audio_bytes INT,
     duration_s DOUBLE, provider VARCHAR(64), voice VARCHAR(128),
@@ -141,7 +142,8 @@ CREATE TABLE IF NOT EXISTS connection_overrides (
     PRIMARY KEY (user_id, connection_id));
 CREATE TABLE IF NOT EXISTS user_prefs (
     user_id VARCHAR(128) PRIMARY KEY, default_connection_id VARCHAR(128),
-    default_voice VARCHAR(255), pron TEXT, reading TEXT, updated_at VARCHAR(32));
+    default_voice VARCHAR(255), pron TEXT, reading TEXT,
+    pron_seeded INT DEFAULT 0, updated_at VARCHAR(32));
 CREATE TABLE IF NOT EXISTS subscriptions (
     user_id VARCHAR(128) PRIMARY KEY, plan VARCHAR(64), status VARCHAR(32),
     provider VARCHAR(32), reference VARCHAR(191), current_period_end BIGINT DEFAULT 0,
@@ -286,6 +288,13 @@ _ADDED_COLUMNS = [
     # how the player reads along: highlight, scroll, scroll mode. JSON, because
     # it is one small bag of preferences and not a thing anything else queries.
     ("user_prefs", "reading", "TEXT"),
+    # the starter pronunciation set was offered to this account. Set even if
+    # they deleted it, so a dict they removed is never quietly put back.
+    ("user_prefs", "pron_seeded", "INT DEFAULT 0"),
+    # a dictionary the host shipped, not one the reader wrote. It is editable
+    # and deletable like any other, but the old flat save must never overwrite
+    # or sweep it away: that call owns only the words it was handed.
+    ("pron_dicts", "builtin", "INT DEFAULT 0"),
     ("renditions", "pron", "VARCHAR(16) DEFAULT ''"),
     # device tracking on a session: a public id to name it, and what it is.
     ("sessions", "sid", "VARCHAR(32) DEFAULT ''"),
