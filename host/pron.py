@@ -107,16 +107,42 @@ def _scope_of(r):
     return "global", ""
 
 
+def _conds(r):
+    """A rule's optional surroundings: what must come just before, just after.
+
+    One word can have two readings, and no matcher can tell them apart from the
+    word alone: "CO" is a state after a place comma and a rank after "the". So a
+    rule may carry `before` and/or `after`, each a regex that has to line up with
+    the word's own edge. A rule with neither is the plain whole-word rule it
+    always was, so almost every dictionary is unaffected.
+    """
+    r = r or {}
+    return (str(r.get("before") or "").strip(), str(r.get("after") or "").strip())
+
+
 def _tidy(rules):
-    """Drop blanks and duplicates within one scope, keep the first spelling."""
+    """Drop blanks and duplicates within one scope, keep the first spelling.
+
+    Two rules for the same word are not duplicates when their surroundings
+    differ: that pair is the whole point of a context rule.
+    """
     out, seen = [], set()
     for r in rules or []:
         frm = str((r or {}).get("from", "")).strip()
         to = str((r or {}).get("to", "")).strip()
-        if not frm or not to or frm.lower() in seen:
+        before, after = _conds(r)
+        key = (frm.lower(), before, after)
+        if not frm or not to or key in seen:
             continue
-        seen.add(frm.lower())
-        out.append({"from": frm, "to": to})
+        seen.add(key)
+        item = {"from": frm, "to": to}
+        if before:
+            item["before"] = before
+        if after:
+            item["after"] = after
+        if (r or {}).get("exact"):
+            item["exact"] = True
+        out.append(item)
     return out
 
 
@@ -247,16 +273,19 @@ def import_dict(conn, uid, payload, scope=None, scope_key=None, name=""):
                      scope or "global", scope_key, rules)
 
 
-def _rule(frm, to, book="", author="", series=""):
+def _rule(frm, to, book="", author="", series="", extra=None):
     """A rule's stored shape. One scope at a time: book, series, author, else all."""
     book = str(book or "").strip()
     series = str(series or "").strip()
     author = str(author or "").strip()
     if book:
-        return {"from": frm, "to": to, "book": book, "author": "", "series": ""}
-    if series:
-        return {"from": frm, "to": to, "book": "", "author": "", "series": series}
-    return {"from": frm, "to": to, "book": "", "author": author, "series": ""}
+        out = {"from": frm, "to": to, "book": book, "author": "", "series": ""}
+    elif series:
+        out = {"from": frm, "to": to, "book": "", "author": "", "series": series}
+    else:
+        out = {"from": frm, "to": to, "book": "", "author": author, "series": ""}
+    out.update(extra or {})
+    return out
 
 
 def migrate(conn, uid):
@@ -312,10 +341,12 @@ def load(conn, uid):
     out = []
     for d in dicts(conn, uid):
         for r in d["rules"]:
+            keep = {k: r[k] for k in ("before", "after", "exact") if r.get(k)}
             out.append(_rule(r["from"], r["to"],
                              d["scope_key"] if d["scope"] == "book" else "",
                              d["scope_key"] if d["scope"] == "author" else "",
-                             d["scope_key"] if d["scope"] == "series" else ""))
+                             d["scope_key"] if d["scope"] == "series" else "",
+                             extra=keep))
     return out
 
 
@@ -335,7 +366,9 @@ def save(conn, uid, rules):
         if not frm or not to:
             continue
         scope, key = _scope_of(r)
-        groups.setdefault((scope, key), []).append({"from": frm, "to": to})
+        item = {"from": frm, "to": to}
+        item.update({k: r[k] for k in ("before", "after", "exact") if (r or {}).get(k)})
+        groups.setdefault((scope, key), []).append(item)
     keep = {d["id"] for d in dicts(conn, uid)}
     existing = {(d["scope"], d["scope_key"]): d for d in dicts(conn, uid)}
     for (scope, key), items in groups.items():
@@ -464,17 +497,103 @@ def _regex(rules):
     return re.compile("|".join(alts), re.I) if alts else None
 
 
+# How far back and forward a context regex may look. Wide enough for the
+# sentence around a word, narrow enough that one chapter's earlier "the" cannot
+# reach a word 400 characters later.
+WINDOW = 120
+_CTX = {}
+
+
+def _ctx_pat(pattern, at_end):
+    """A condition compiled to sit against the word's edge.
+
+    `before` has to end where the word starts; `after` has to start where it
+    ends. Anchored at compile time so a lazy pattern cannot match somewhere in
+    the middle of the window and call it context.
+    """
+    key = (pattern, bool(at_end))
+    if key in _CTX:
+        return _CTX[key]
+    try:
+        pat = re.compile(pattern + r"\Z" if at_end else r"\A" + pattern)
+    except re.error:
+        # A condition nobody can compile is a condition nothing satisfies, so
+        # the rule stays in the user's dictionary (they can see and fix it) and
+        # stops applying the broken half. Leaving the word as written is the
+        # safe reading: no rule did that.
+        pat = None
+    _CTX[key] = pat
+    return pat
+
+
+def _shape_ok(rule, word, text, end):
+    """Two things the plain matcher cannot know: whether a rule wants the exact
+    capitals the user typed, and whether a digit may sit against it.
+
+    A rule marked `exact` ("CO" meaning the abbreviation, not the syllable in
+    "co-op") only fires on the spelling as written. A replacement made of letters
+    is never allowed to swallow a digit: "CO2" stays CO2, while the currency
+    glyphs that exist precisely for that adjacency still read "&\u029b50,000".
+    """
+    if rule.get("exact") and word != rule["from"]:
+        return False
+    to = rule.get("to") or ""
+    frm = rule.get("from") or ""
+    # A one-character rule is a unit symbol (50\u029b); anything longer is a word
+    # and must not swallow the digit after it (CO2 is not an officer).
+    if (text[end:end + 1].isdigit() and to[:1].isalpha()
+            and len(frm) > 1 and not frm[-1:].isdigit()):
+        return False
+    return True
+
+
+def _fits(rule, text, start, end):
+    """Does this rule's surrounding text hold at this occurrence?"""
+    before, after = _conds(rule)
+    if not before and not after:
+        return True
+    if before:
+        pat = _ctx_pat(before, True)
+        if pat is None or not pat.search(text[max(0, start - WINDOW):start]):
+            return False
+    if after:
+        pat = _ctx_pat(after, False)
+        if pat is None or not pat.search(text[end:end + WINDOW]):
+            return False
+    return True
+
+
+def _pick(cands, text, start, end):
+    """Which of the rules spelling this word applies here.
+
+    A rule with surroundings is the narrower statement, so it is tried before a
+    rule without; among equals, the list order wins, which is what a dictionary
+    the user ordered should mean.
+    """
+    word = text[start:end]
+    if len(cands) == 1:
+        c = cands[0]
+        return c if (_fits(c, text, start, end) and _shape_ok(c, word, text, end)) else None
+    for r in sorted(cands, key=lambda r: 0 if any(_conds(r)) else 1):
+        if _fits(r, text, start, end) and _shape_ok(r, word, text, end):
+            return r
+    return None
+
+
 def apply(text, rules):
     """Swap whole words for their say-as respelling, case-insensitive. The
     replacement goes in literally, never read back as a regex."""
     pat = _regex(rules)
     if not text or pat is None:
         return text
-    repl = {r["from"].lower(): r["to"] for r in rules}
+    repl = {}
+    for r in rules:
+        repl.setdefault(r["from"].lower(), []).append(r)
 
     def _swap(m):
         word = m.group(0)
-        to = repl.get(word.lower(), word)
+        hit = _pick(repl.get(word.lower()) or [], text, m.start(), m.end())
+        to = hit["to"] if hit else word
         if to is word or to == word:
             return word
         nxt = text[m.end():m.end() + 1]
@@ -507,16 +626,30 @@ def token_for(text, rules):
     Only the matching rules go in, so adding a rule for a word that lives in one
     chapter does not invalidate chapters where that word never appears. Empty
     means no rule applies, and the chapter keeps whatever audio it already had.
+
+    A context rule counts as matching only where its surroundings hold, so
+    adding one that never fires leaves every cached chapter's tag alone.
     """
     pat = _regex(rules)
     if not pat or not text:
         return ""
-    found = {m.group(0).lower() for m in pat.finditer(text)}
-    use = [r for r in rules if r["from"].lower() in found]
+    by_word = {}
+    for r in rules:
+        by_word.setdefault(r["from"].lower(), []).append(r)
+    used = set()
+    for m in pat.finditer(text):
+        hit = _pick(by_word.get(m.group(0).lower()) or [], text, m.start(), m.end())
+        if hit is not None:
+            used.add(id(hit))
+    use = [r for r in rules if id(r) in used]
     if not use:
         return ""
-    raw = "|".join("%s>%s" % (r["from"].lower(), r["to"])
-                   for r in sorted(use, key=lambda r: r["from"].lower()))
+    raw = "|".join("%s>%s%s%s" % (r["from"].lower(), r["to"],
+                                   ("(" + _conds(r)[0] + "/" + _conds(r)[1] + ")")
+                                   if any(_conds(r)) else "",
+                                   "!" if r.get("exact") else "")
+                   for r in sorted(use, key=lambda r: (r["from"].lower(),
+                                                       _conds(r))))
     return "p" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:6]
 
 

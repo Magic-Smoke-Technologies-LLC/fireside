@@ -344,3 +344,66 @@ class TestScopes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestContextRules(unittest.TestCase):
+    """One word, two readings: the surroundings decide, not the word alone.
+
+    Cat's case: "Cheyenne Mountain, CO" is the state, and a later "CO" in the
+    same fic is the commanding officer. No whole-word matcher can tell those
+    apart, so a rule may carry `before` and/or `after`.
+    """
+
+    RULES = [{"from": "CO", "to": "Colorado", "before": r",\s*", "exact": True},
+             {"from": "CO", "to": "Commanding officer", "before": r"(?i)\bthe\s+",
+              "exact": True}]
+
+    def test_a_state_after_a_place_comma(self):
+        self.assertEqual(pron.apply("Cheyenne Mountain, CO", self.RULES),
+                         "Cheyenne Mountain, Colorado")
+
+    def test_a_rank_after_the(self):
+        self.assertEqual(pron.apply("the CO called it", self.RULES),
+                         "the Commanding officer called it")
+
+    def test_the_same_token_twice_in_one_chapter(self):
+        text = "Cheyenne Mountain, CO. Later the CO called."
+        self.assertEqual(pron.apply(text, self.RULES),
+                         "Cheyenne Mountain, Colorado. Later the Commanding officer called.")
+
+    def test_a_context_rule_alone_does_not_fire(self):
+        self.assertEqual(pron.apply("CO came back", self.RULES), "CO came back")
+
+    def test_exact_case_leaves_a_lowercase_word_alone(self):
+        self.assertEqual(pron.apply("the co-op closed", self.RULES), "the co-op closed")
+
+    def test_a_word_rule_never_swallows_a_digit(self):
+        rules = [{"from": "CO", "to": "Colorado"},
+                 {"from": "Han", "to": "Hahn"}]
+        self.assertEqual(pron.apply("CO2 is a gas", rules), "CO2 is a gas")
+        self.assertEqual(pron.apply("Han2", rules), "Han2")
+
+    def test_a_one_character_unit_still_reads_against_a_number(self):
+        rules = [{"from": "\u029b", "to": "galleon"}]
+        self.assertEqual(pron.apply("50\u029b", rules), "50 galleon")
+
+    def test_a_context_rule_that_never_fires_leaves_the_cache_tag_alone(self):
+        plain = [{"from": "Qui-Gon", "to": "Kwai-Gon"}]
+        before = pron.token_for("Qui-Gon spoke.", plain)
+        after = pron.token_for("Qui-Gon spoke.", plain + self.RULES)
+        self.assertEqual(before, after)
+        self.assertNotEqual(before, pron.token_for("Cheyenne Mountain, CO", self.RULES))
+
+    def test_a_broken_condition_leaves_the_word_as_written(self):
+        rules = [{"from": "CO", "to": "Colorado", "before": "("}]
+        self.assertEqual(pron.apply("Mountain, CO", rules), "Mountain, CO")
+
+    def test_two_readings_survive_a_save_and_load(self):
+        conn = connect(":memory:")
+        out = pron.save(conn, "u1", self.RULES)
+        self.assertEqual(len(out), 2)
+        kept = [r for r in out if r["to"] == "Colorado"][0]
+        self.assertEqual(kept["before"], r",\s*")
+        self.assertTrue(kept.get("exact"))
+        self.assertEqual(pron.apply("Cheyenne Mountain, CO", pron.load(conn, "u1")),
+                         "Cheyenne Mountain, Colorado")
