@@ -25,6 +25,7 @@ _REQUIRED_METHODS = {
     "reader": ("matches", "read"),
     "speech": ("list_voices", "synth", "quote", "report"),
     "storage": ("put", "has", "get", "delete"),
+    "disambig": ("scan",),
 }
 
 
@@ -38,6 +39,10 @@ class Host:
         self.readers = discover("reader", self.plugins_root)     # ordered list
         self.speech = discover("speech", self.plugins_root)      # id -> plugin
         self.storage = discover("storage", self.plugins_root)    # id -> plugin
+        # Reads the text that is about to be voiced and asks what it is unsure
+        # about, before any audio exists. Empty is legal: no disambiguator
+        # configured means no questions asked.
+        self.disambig = discover("disambig", self.plugins_root)   # id -> plugin
         self._check_contracts()
         return self
 
@@ -60,6 +65,7 @@ class Host:
                         for p in self.readers],
             "speech": sorted(self.speech),
             "storage": sorted(self.storage),
+            "disambig": sorted(self.disambig),
         }
 
 

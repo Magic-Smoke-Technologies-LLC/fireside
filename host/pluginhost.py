@@ -17,7 +17,7 @@ import importlib.util
 import json
 import os
 
-KINDS = ("reader", "speech", "storage")
+KINDS = ("reader", "speech", "storage", "disambig")
 _ORDERED = ("reader",)          # kinds where match order is meaningful
 _REQUIRED = ("id", "kind", "entry")
 

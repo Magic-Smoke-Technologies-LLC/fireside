@@ -186,6 +186,44 @@ class Speech:
         return None
 
 
+class Disambig:
+    """Reads the text that is about to be voiced and asks the questions that
+    must be answered before any audio exists.
+
+    A word like "live" has two readings, and the answer cannot be recovered
+    afterwards: re-voicing a chapter to fix it costs the whole chapter again.
+    So this kind runs one pass over the text, returns only the places it is not
+    sure about, and the host puts them in front of the user.
+
+    `settings()` declares the server; `list_models()` asks that server what it
+    can run; `quote()` prices one model for this text. The host renders the
+    picker and never invents a price, same as speech.
+    """
+
+    id = ""
+    needs_key = False
+
+    def settings(self) -> List[Field]:
+        """Where this thing lives: base_url and key, if it wants them."""
+        return []
+
+    def list_models(self, cred) -> List[Dict[str, Any]]:
+        """What the configured server can actually run: [{id, label, price_per_1m,
+        price_per_1m_out}]. An empty list means unknown, never 'free'."""
+        return []
+
+    def quote(self, ctx) -> Quote:
+        """What one pass costs on the chosen model, before it runs."""
+        return Quote(chars_est=0, price=0.0, eligible=True, authoritative=False)
+
+    def scan(self, sentences, model, cred) -> List[Dict[str, Any]]:
+        """Return the questions, one per ambiguous spot: {span, options, question}.
+        An empty list is a confident pass. Never guess silently: if the server
+        is down, raise, because a silent empty answer voices the wrong reading.
+        """
+        raise NotImplementedError
+
+
 class Storage:
     """Opaque blobs behind refs. The host never assumes a path and never assumes
     the bytes are still there."""
