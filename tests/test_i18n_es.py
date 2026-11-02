@@ -25,7 +25,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 LOCALE = ROOT / "ui" / "i18n"
 
 # Identical in both languages on purpose: a file extension, an acronym, a name.
-SAME_ON_PURPOSE = {".epub", "ISBN", "fireside", "https://…"}
+SAME_ON_PURPOSE = {".epub", "ISBN", "fireside", "https://…", "Plan"}
 
 
 def _load(code):
