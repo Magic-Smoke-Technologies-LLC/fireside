@@ -26,6 +26,7 @@ bucket listing is browsable, but nothing above this file depends on the layout.
 
 import base64
 import hashlib
+import re
 import hmac
 import os
 import urllib.error
@@ -147,7 +148,8 @@ class AzureBlobBackend:
         return "SharedKey %s:%s" % (self.account,
                                     base64.b64encode(digest).decode("ascii"))
 
-    def _request(self, method, path, query="", data=None, content_type=None):
+    def _request(self, method, path, query="", data=None, content_type=None,
+                 sign_query=None):
         """One signed blob request. Returns (status, headers, body)."""
         url = "%s/%s%s" % (self.endpoint, urllib.parse.quote(self.container), path)
         if query:
@@ -159,9 +161,13 @@ class AzureBlobBackend:
         if content_type:
             headers["Content-Type"] = content_type
         if not self.sas:
+            # The signature is over the DECODED query values; the URL carries
+            # them encoded. Signing the encoded form is what turns a container
+            # list into a 403 with a perfectly good account key.
             headers["Authorization"] = self._sign(
                 method, "/%s%s" % (urllib.parse.quote(self.container), path),
-                headers, len(data) if data else 0, query=query)
+                headers, len(data) if data else 0,
+                query=(query if sign_query is None else sign_query))
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
@@ -285,9 +291,11 @@ class AzureBlobBackend:
         out, marker = [], ""
         while True:
             q = "restype=container&comp=list&prefix=" + urllib.parse.quote(prefix)
+            raw = "restype=container&comp=list&prefix=" + prefix
             if marker:
                 q += "&marker=" + urllib.parse.quote(marker)
-            status, _, body = self._request("GET", "", query=q)
+                raw += "&marker=" + marker
+            status, _, body = self._request("GET", "", query=q, sign_query=raw)
             if status != 200:
                 raise IOError("azure: list failed (HTTP %s)" % status)
             text = body.decode("utf-8", "replace")
