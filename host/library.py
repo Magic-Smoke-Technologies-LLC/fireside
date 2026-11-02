@@ -20,8 +20,14 @@ def create_user(conn, user_id, name=""):
     return user_id
 
 
-def add_book(conn, storage, user_id, book):
-    """Store book + chapters. `book` is a host.contracts.Book. Returns the id."""
+def add_book(conn, storage, user_id, book, tags_from=None):
+    """Store book + chapters. `book` is a host.contracts.Book. Returns the id.
+
+    `tags_from` is the list of subject words the file itself declared (the
+    epub's dc:subject). They are stored as opf tags so the shelf can be
+    filtered by them, marked as coming from the file rather than from the
+    reader. Absent means the book arrived with no opinion about itself.
+    """
     book_id = book.id or uuid.uuid4().hex
     meta = dict(book.meta or {})
     conn.execute(
@@ -40,6 +46,9 @@ def add_book(conn, storage, user_id, book):
             "(book_id,idx,title,chars,text_ref) VALUES(?,?,?,?,?)",
             (book_id, i, ch.title, len(text), ref))
     conn.commit()
+    if tags_from:
+        from host import tags as tagmod
+        tagmod.subjects_into_tags(conn, user_id, book_id, tags_from)
     return book_id
 
 
@@ -178,32 +187,56 @@ def find_by_meta(conn, user_id, key, value):
 
 
 def list_books(conn, user_id):
+    """The whole shelf, one query set, in the order it was added.
+
+    This used to ask the database twice per book for its chapter and voiced
+    counts. On a shelf of 1,828 books that is 3,656 round trips for one screen,
+    which is exactly the shelf that never painted. Now the counts, the series
+    memberships, the tags and the listening positions are four grouped queries
+    and the loop only assembles dictionaries.
+
+    Each row carries what a filter screen needs and nothing it would have to
+    ask for again: author, series, tags (with their source), how many chapters
+    are voiced, and when it was last played.
+    """
     rows = conn.execute(
-        "SELECT * FROM books WHERE user_id=? ORDER BY created_at DESC", (user_id,))
-    # The shelf is the one place a series has to be visible as a container, so
-    # memberships ride along with the books in two queries instead of two per
-    # book. Places are stored 0-based and reported 1-based, same as the panel.
+        "SELECT id,title,author,created_at,cover_ref,series_name,series_index"
+        " FROM books WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
+    counts = {r["book_id"]: (r["n"], r["done"]) for r in conn.execute(
+        "SELECT c.book_id, COUNT(*) n,"
+        " SUM(CASE WHEN c.audio_ref IS NOT NULL THEN 1 ELSE 0 END) done"
+        " FROM chapters c JOIN books b ON b.id=c.book_id"
+        " WHERE b.user_id=? GROUP BY c.book_id", (user_id,))}
     mine = {}
     for m in conn.execute(
             "SELECT b.book_id, s.id, s.name, b.place FROM series_books b"
             " JOIN series s ON s.id=b.series_id WHERE s.user_id=?", (user_id,)):
         mine.setdefault(m["book_id"], []).append(
             {"id": m["id"], "name": m["name"], "place": (m["place"] or 0) + 1})
-    counts = {r["id"]: r["c"] for r in conn.execute(
+    series_count = {r["id"]: r["c"] for r in conn.execute(
         "SELECT series_id id, COUNT(*) c FROM series_books GROUP BY series_id")}
+    from host import tags as tagmod
+    tagmap = tagmod.for_user(conn, user_id)
+    played = {}
+    for p in conn.execute(
+            "SELECT book_id,chapter_index,offset_seconds,updated_at FROM positions"
+            " WHERE user_id=?", (user_id,)):
+        played[p["book_id"]] = {"chapter_index": p["chapter_index"],
+                                "offset_seconds": p["offset_seconds"],
+                                "updated_at": p["updated_at"]}
     out = []
     for r in rows:
-        n = conn.execute("SELECT COUNT(*) c FROM chapters WHERE book_id=?",
-                         (r["id"],)).fetchone()["c"]
-        done = conn.execute(
-            "SELECT COUNT(*) c FROM chapters WHERE book_id=? AND audio_ref IS NOT NULL",
-            (r["id"],)).fetchone()["c"]
+        n, done = counts.get(r["id"], (0, 0))
         out.append({"id": r["id"], "title": r["title"],
                     "author": (r["author"] or ""),
-                    "created_at": r["created_at"], "chapters": n, "rendered": done,
+                    "created_at": r["created_at"], "chapters": n or 0,
+                    "rendered": done or 0,
                     "cover": r["cover_ref"] or "",
-                    "series": [dict(s, count=counts.get(s["id"], 1))
-                               for s in mine.get(r["id"], [])]})
+                    "series": [dict(s, count=series_count.get(s["id"], 1))
+                               for s in mine.get(r["id"], [])],
+                    "tags": tagmap.get(r["id"], []),
+                    "last_played": (played.get(r["id"]) or {}).get("updated_at", ""),
+                    "position": played.get(r["id"])})
     return out
 
 

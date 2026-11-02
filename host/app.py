@@ -40,7 +40,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from host.host import Host
 import inspect
 
-from host import accounting, auth, billing, connections, contracts, credentials, db, draft as drafts, erase, example, grants, i18n, jobs, library, mailer, payments, playback, plans, pron, quota, ratelimit, reading, stats
+from host import accounting, auth, billing, connections, contracts, credentials, db, draft as drafts, erase, example, grants, i18n, jobs, library, mailer, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
 from host.egress import fetch as _fetch
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -565,8 +565,13 @@ class App:
             return 507, {"error": "not enough storage",
                          "detail": "this book needs about %d bytes; %d left in your plan"
                                    % (max(0, incoming - already), left)}
+        # A file's own subject list becomes opf tags on the shelf, so the
+        # import is the one place a book's metadata arrives already filterable.
+        subjects = (getattr(book, "meta", None) or {}).get("subjects") or []
         if existing:
             swapped = library.replace_book(self.conn, self.storage, existing, book)
+            if subjects:
+                tagmod.subjects_into_tags(self.conn, user, existing, subjects)
             self._file_meta(existing, book)
             self._maybe_cover(existing, book)
             out = {"book_id": existing, "title": getattr(book, "title", ""),
@@ -574,7 +579,8 @@ class App:
                    "replaced": True}
             out.update(swapped)
             return 200, out
-        bid = library.add_book(self.conn, self.storage, user, book)
+        bid = library.add_book(self.conn, self.storage, user, book,
+                               tags_from=subjects)
         self._file_meta(bid, book)
         self._maybe_cover(bid, book)
         return 200, {"book_id": bid, "title": getattr(book, "title", ""),
@@ -1160,7 +1166,9 @@ class App:
                 "published": b.get("published", ""),
                 "description": b.get("description", ""),
                 "user_edited": b.get("user_edited", 0),
-                "series": library.series_of(self.conn, book_id)}
+                "series": library.series_of(self.conn, book_id),
+                "tags": tagmod.for_user(self.conn, b.get("user_id") or "")
+                              .get(book_id, [])}
 
     # ---- metadata + series ----------------------------------------------------
     # Two calls with a sharp line between them. /book/details looks facts up by
@@ -1212,6 +1220,37 @@ class App:
                                        body.get("series", "")):
             return 404, {"error": "no such book or series"}
         return 200, {"ok": True, "book": self._book_payload(book_id)}
+
+    def tags_get(self, q, body):
+        """The shelf's vocabulary: every tag in use and how many books carry it.
+
+        One call, because the filter chips are a list of words and their
+        counts; asking per book would make the screen wait on the library.
+        """
+        user = self._uid(q, None)
+        return 200, {"tags": [{"tag": t, "books": n}
+                              for t, n in tagmod.counts(self.conn, user).items()]}
+
+    def tags_set(self, q, body):
+        """Add or remove one tag on one book.
+
+        `op` is add or remove. Removal of a tag the file itself declared hides
+        it rather than deleting it, so the next import cannot put it back.
+        """
+        user = self._uid(q, body)
+        book_id = (body or {}).get("book", "")
+        tag = (body or {}).get("tag", "")
+        op = (body or {}).get("op", "add")
+        if not user or not book_id:
+            return 400, {"error": "book required"}
+        if op == "remove":
+            ok = tagmod.remove(self.conn, user, book_id, tag)
+        else:
+            got = tagmod.add(self.conn, user, book_id, tag,
+                             source=(body or {}).get("source") or "user")
+            ok = bool(got)
+        return 200, {"ok": ok, "book": self._book_payload(book_id),
+                     "tags": tagmod.for_user(self.conn, user).get(book_id, [])}
 
     def series_move(self, q, body):
         """Up or down one place inside the series. `dir` is -1 or 1."""
@@ -2821,7 +2860,7 @@ GET_ROUTES = {
     "/icon-maskable-512.png": "icon_maskable",
     "/privacy": "privacy", "/terms": "terms", "/delete-account": "delete_account",
     "/health": "health", "/plugins": "plugins", "/library": "library_list",
-    "/series": "series_list",
+    "/series": "series_list", "/tags": "tags_get",
     "/job": "job", "/jobs": "jobs_list", "/progress": "progress", "/chapter": "chapter",
     "/estimate": "estimate",
     "/position": "get_position", "/last": "last_position", "/stop": "stop", "/text": "text",
@@ -2854,6 +2893,7 @@ POST_ROUTES = {
     "/book/details": "fetch_details", "/book/meta": "book_meta_set",
     "/book/series": "book_series_set",
     "/series": "series_save", "/series/move": "series_move",
+    "/tags": "tags_set",
     "/position": "put_position", "/claim": "claim", "/ack": "ack",
     "/listen": "listen", "/cancel": "cancel_job",
     "/credential": "put_credential", "/auth/registration": "set_registration",

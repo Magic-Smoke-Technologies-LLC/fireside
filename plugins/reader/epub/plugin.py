@@ -85,6 +85,24 @@ def _meta_of(opf: str) -> dict:
     return out
 
 
+def _subjects_of(opf: str):
+    """Every dc:subject the file declares, in order, deduped, capped.
+
+    This is the only place an ebook reliably says what it is about, and it is
+    what the shelf's filter chips are built from. It is a suggestion from the
+    publisher, not a truth: the import marks these tags as coming from the
+    file so a reader's own tag is never confused with one.
+    """
+    out = []
+    for m in re.finditer(r"(?is)<dc:subject[^>]*>(.*?)</dc:subject>", opf):
+        v = text_of(m.group(1)).strip()
+        if v and v.lower() not in [x.lower() for x in out]:
+            out.append(v[:40])
+        if len(out) >= 12:
+            break
+    return out
+
+
 def _cover_of(z, manifest, opf: str, base: str):
     """The epub's own cover image as (bytes, mime), or None.
 
@@ -186,6 +204,7 @@ def parse_epub(data: bytes, name: str) -> dict:
         raise ValueError("no readable chapters found")
     out = {"title": title, "chapters": chapters, "isbn": _isbn_of(opf)}
     out.update(_meta_of(opf))
+    out["subjects"] = _subjects_of(opf)
     cov = _cover_of(z, manifest, opf, base)
     if cov:
         out["cover"], out["cover_mime"] = cov
@@ -244,6 +263,8 @@ class Epub:
         for key in ("author", "series", "series_index", "publisher", "published"):
             if book.get(key):
                 book["meta"][key] = book[key]
+        if book.get("subjects"):
+            book["meta"]["subjects"] = list(book["subjects"])
         book["meta"]["identity"] = identity_of(
             req.get("data") or b"", req.get("filename") or "", book.get("isbn") or "")
         return to_book(book)
