@@ -160,6 +160,30 @@ class TestImportBlobBooks(unittest.TestCase):
         titles = [b["title"] for b in library.list_books(self.db, "u1")]
         self.assertEqual(titles.count("Some Comic"), 1)
 
+    def test_a_chapterless_row_does_not_hide_the_file_that_heals_it(self):
+        """Run 2026-11-02 left one book on the shelf with no chapters at all:
+        the row was written, then the chapter puts failed. Because the import
+        dedupes on identity, every later run skipped that file and the empty
+        book could never become readable. A row with nothing in it is not a
+        book on the shelf; the file it came from is still owed."""
+        from host.contracts import to_book
+        data = self.storage.blobs["books/Comics/Some Comic.epub"]
+        parsed = to_book(imp._reader().read(
+            {"kind": "upload", "filename": "Some Comic.epub", "data": data}, None))
+        meta = dict(parsed.meta or {})
+        meta["blob"] = "books/Comics/Some Comic.epub"
+        self.db.execute(
+            "INSERT INTO books(id,user_id,title,source_json,author,created_at)"
+            " VALUES(?,?,?,?,?,?)",
+            ("stub0001", "u1", "Some Comic", json.dumps(meta), "An Artist",
+             db.now()))
+        self.db.commit()
+        self._run()
+        books = [b for b in library.list_books(self.db, "u1")
+                 if b["title"] == "Some Comic"]
+        self.assertEqual(len(books), 1, "one copy, not a stub beside a real book")
+        self.assertEqual(books[0]["chapters"], 1)
+
     def test_progress_is_written_where_a_human_can_read_it(self):
         self._run()
         row = self.db.execute("SELECT value FROM settings WHERE `key`=?",

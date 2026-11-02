@@ -10,6 +10,7 @@ import hashlib
 import json
 import uuid
 
+from host.contracts import Refused
 from host.db import now
 
 
@@ -28,23 +29,44 @@ def add_book(conn, storage, user_id, book, tags_from=None):
     filtered by them, marked as coming from the file rather than from the
     reader. Absent means the book arrived with no opinion about itself.
     """
+    chapters = list(getattr(book, "chapters", None) or [])
+    # A row with no chapters is invisible on the shelf and unreadable in the
+    # reader, and the import dedupe then treats the book as present forever.
+    # Refuse it here, where the caller can still say why.
+    if not chapters:
+        raise Refused("no_chapters",
+                      "this file has no readable text to make a book of", 422)
+    # Text goes to storage BEFORE the row is written: the puts are network
+    # calls that can fail on the third chapter, and on MySQL (autocommit) a
+    # half-written book would keep its row and lose its chapters.
+    staged = []
+    for i, ch in enumerate(chapters):
+        text = ch.text if isinstance(ch.text, str) else str(ch.text)
+        staged.append((i, ch.title, len(text), storage.put(text.encode("utf-8"))))
+
     book_id = book.id or uuid.uuid4().hex
     meta = dict(book.meta or {})
-    conn.execute(
-        # The author is metadata the reader already extracted. Writing it to
-        # the column is what makes the shelf able to show it without parsing
-        # source_json per row.
-        "INSERT INTO books(id,user_id,title,source_json,author,created_at)"
-        " VALUES(?,?,?,?,?,?)",
-        (book_id, user_id, book.title, json.dumps(meta), meta.get("author", ""),
-         now()))
-    for i, ch in enumerate(book.chapters):
-        text = ch.text if isinstance(ch.text, str) else str(ch.text)
-        ref = storage.put(text.encode("utf-8"))
+    save = "addbook_" + uuid.uuid4().hex[:12]
+    conn.execute("SAVEPOINT " + save)
+    try:
         conn.execute(
-            "INSERT OR REPLACE INTO chapters"
-            "(book_id,idx,title,chars,text_ref) VALUES(?,?,?,?,?)",
-            (book_id, i, ch.title, len(text), ref))
+            # The author is metadata the reader already extracted. Writing it to
+            # the column is what makes the shelf able to show it without parsing
+            # source_json per row.
+            "INSERT INTO books(id,user_id,title,source_json,author,created_at)"
+            " VALUES(?,?,?,?,?,?)",
+            (book_id, user_id, book.title, json.dumps(meta), meta.get("author", ""),
+             now()))
+        for i, title, chars, ref in staged:
+            conn.execute(
+                "INSERT OR REPLACE INTO chapters"
+                "(book_id,idx,title,chars,text_ref) VALUES(?,?,?,?,?)",
+                (book_id, i, title, chars, ref))
+    except Exception:
+        conn.execute("ROLLBACK TO " + save)
+        conn.execute("RELEASE " + save)
+        raise
+    conn.execute("RELEASE " + save)
     conn.commit()
     if tags_from:
         from host import tags as tagmod
