@@ -27,6 +27,7 @@ from host.contracts import Disambig as Base, Field, Quote
 
 DEFAULT_BASE = "https://api.openai.com/v1"
 _TIMEOUT = 60
+MAX_FIXES = 200                # one book, not a dictionary
 
 # Words with two readings that change the sound of the sentence around them.
 # Not a dictionary: a hit means "worth asking", not "ask".
@@ -89,6 +90,35 @@ def _post(url, key, payload):
         raise RuntimeError("the model server did not answer")
     except (TimeoutError, OSError):
         raise RuntimeError("the model server did not answer")
+
+
+
+_DECIDE = (
+    "You are preparing text for a narrator. Some words have more than one "
+    "reading, and the sentence decides which one it is. For each one, write the "
+    "word the way it SOUNDS so a text-to-speech engine says it right, using "
+    "ordinary spelling and no phonetic symbols: \"live\" in \"we live here\" is "
+    "\"liv\", and \"live\" in \"a live broadcast\" is \"lyve\". Only report a "
+    "word when the sentence settles it and the plain spelling could be read the "
+    "other way. Reply with JSON only: "
+    '{"fixes":[{"word":"live","say":"liv","why":"we live here"}]}. '
+    "Fewer is better. An empty list is a good answer."
+)
+
+
+def _clean_fix(item):
+    """One decision, or None. A model that answers in prose gets dropped here."""
+    if not isinstance(item, dict):
+        return None
+    word, say = (item.get("word") or ""), (item.get("say") or "")
+    if not isinstance(word, str) or not isinstance(say, str):
+        return None
+    word, say = word.strip(), " ".join(say.split())
+    if not word or not say or len(word) > 40 or len(say) > 60:
+        return None
+    if say.lower() == word.lower():
+        return None
+    return {"word": word, "say": say, "why": (item.get("why") or "").strip()[:160]}
 
 
 class Disambig(Base):
@@ -178,3 +208,36 @@ class Disambig(Base):
             out.append({"word": word, "question": (q.get("question") or "").strip(),
                         "options": opts[:4]})
         return out
+
+    def decide(self, sentences, model, cred):
+        """The same pass, answered instead of asked: [{word, say, why}].
+
+        For a host that runs this on its own box for a reader who should not have
+        to answer twenty questions before hearing a chapter. The answers come
+        back as pronunciation rules, so the pass runs once per book and the
+        engine never hears the wrong reading to begin with.
+        """
+        cand = _candidates(sentences if isinstance(sentences, str) else " ".join(sentences or []))
+        if not cand:
+            return []
+        if not model:
+            raise RuntimeError("no model chosen")
+        payload = {
+            "model": model,
+            "messages": [{"role": "system", "content": _DECIDE},
+                         {"role": "user", "content": "\n".join(cand)}],
+            "response_format": {"type": "json_object"},
+        }
+        data = _post(self._base(cred) + "/chat/completions", (cred or {}).get("key"), payload)
+        try:
+            raw = data["choices"][0]["message"]["content"]
+            got = json.loads(raw)
+        except (KeyError, IndexError, TypeError, ValueError):
+            raise RuntimeError("the model answered in a shape we cannot read")
+        out, seen = [], set()
+        for item in got.get("fixes") or []:
+            fix = _clean_fix(item)
+            if fix and fix["word"].lower() not in seen:
+                seen.add(fix["word"].lower())
+                out.append(fix)
+        return out[:MAX_FIXES]

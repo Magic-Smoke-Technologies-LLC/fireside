@@ -223,6 +223,16 @@ class Disambig:
         """
         raise NotImplementedError
 
+    def decide(self, sentences, model, cred) -> List[Dict[str, Any]]:
+        """Answer the questions instead of asking them: [{word, say, why}].
+
+        `say` is what the engine should be handed for that word, so the host can
+        store it as a pronunciation rule and never pay for the same decision
+        twice. Same rule as scan: if the server is down, raise. Never invent an
+        empty answer, because a silent empty answer sounds confident.
+        """
+        raise NotImplementedError
+
 
 class Storage:
     """Opaque blobs behind refs. The host never assumes a path and never assumes
