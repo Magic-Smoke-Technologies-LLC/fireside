@@ -51,9 +51,15 @@ _PART = re.compile(r"-(?P<n>\d{1,2})-(?P<m>\d{1,2})(?=$|[/?#])")
 # Playlist are tabs too and must not win.
 _STORY_TAB = re.compile(r"(?i)\b(story|stories|chapter|chapters|part|parts|"
                         r"episode|episodes|book|books)\b")
+# "Season 1", "Season 2": the same idea as Story Posts, one level up. An
+# episodic work lists its episodes here, one dated post each, so the tab is the
+# story and not a shelf of unrelated works.
+_SEASON_TAB = re.compile(r"(?i)\bseasons?\b")
 _TAB = re.compile(r"""(?is)<h2\b[^>]*class="[^"]*\btabtitle\b[^"]*"[^>]*>(.*?)</h2>""")
-# a dated post URL on this site: /2024/03/a-glimpse-of-us-1-2/
-_POST_PATH = re.compile(r"^/20\d\d/\d\d/[^/]+/?$")
+# a dated post URL on this site: /2024/03/a-glimpse-of-us-1-2/ and, for older
+# posts, /2008/08/28/the-gathering-part-one/ (WordPress adds the day when the
+# post is old enough). Both are one post.
+_POST_PATH = re.compile(r"^/20\d\d/\d\d/(?:\d\d/)?[^/]+/?$")
 # Older series pages link their works by WordPress shortlink: /?p=2937. The
 # address is the query, so stripping it (as every other link here is stripped
 # of its query) turns the work into the home page. Ring of Fire lists its one
@@ -77,6 +83,12 @@ _PART_TITLE = re.compile(r"\s*[-\u2013\u2014]\s*\d+\s*/\s*\d+\s*$")
 _ENTRY = re.compile(r'(?is)<div\b[^>]*class="[^"]*\bentry-content\b[^"]*"[^>]*>')
 # "Title: ...", "Content Rating: PG-13", "Relationship(s): Gen"
 _FIELD = re.compile(r"^[A-Z][A-Za-z0-9 ()/.'\u2019-]{1,40}:\s*\S")
+# a key with its value on the next paragraph: "Summary:"
+_BARE_KEY = re.compile(r"^([A-Z][A-Za-z0-9 ()/.'\u2019-]{1,40}):\s*$")
+# Furniture that sits between the metadata fields and the story: a divider, or
+# the artist credit line ("Art by FanArts Series", "The Search by FanArtsSeries").
+_DIVIDER = re.compile(r"^\*(?:\s*\*)+$")
+_CREDIT = re.compile(r"(?i)^(.{0,90}\bby\s+(?:fan\s?arts?|fan\s?arts?\s?series)\b.*|(?:art|cover|banner|photoset)\s+by\b.{0,90})$")
 MAX_HEADER_PARAGRAPHS = 16
 MAX_PAGES = 60
 
@@ -237,6 +249,32 @@ def story_tab_links(page: str, url: str) -> list:
     """Links out of the tab that holds the story, if the tab markup is there."""
     chosen = story_tab_html(page)
     return links_in(chosen, url) if chosen else []
+
+
+def season_tab_links(page: str, url: str) -> list:
+    """The episodes of an episodic work, in reading order, one post each.
+
+    Every tab the page calls a season is read in page order, and its work links
+    are the episodes. Deduped, so a season tab that repeats a link adds nothing.
+    """
+    tabs = list(_TAB.finditer(page))
+    here = family_of(url)
+    out, seen = [], set()
+    for i, m in enumerate(tabs):
+        if not _SEASON_TAB.search(clean_fragment(m.group(1))):
+            continue
+        end = tabs[i + 1].start() if i + 1 < len(tabs) else len(page)
+        for link in links_in(page[m.end():end], url):
+            if not is_work_link(link) or link in seen:
+                continue
+            fam, n, of = split_part(last_segment(link))
+            if fam == here:
+                continue
+            seen.add(link)
+            out.append(link)
+            if len(out) >= MAX_PARTS:
+                return out
+    return out
 
 
 def part_links(page: str, url: str) -> dict:
@@ -478,25 +516,62 @@ def split_header(text: str):
     Only a run of at least three `Key: value` paragraphs counts, so a story
     paragraph that happens to contain a colon is never eaten."""
     paras = text.split("\n\n")
-    fields, end = {}, 0
-    for i, p in enumerate(paras):
+    fields, end, i = {}, 0, 0
+    while i < len(paras):
         if i >= MAX_HEADER_PARAGRAPHS:
             break
-        line = p.strip()
-        if not line:
+        line = paras[i].strip()
+        if not line or line.startswith("* * * *"):
             end = i + 1
+            i += 1
             continue
-        if line.startswith("* * * *"):
-            end = i + 1
+        # decoration lines can sit between two fields ("Art by FanArts Series",
+        # "Banner Art for the Page by CJ"). Skip a short run of them, but only
+        # when a field follows, so story text is never eaten.
+        if not (_FIELD.match(line) or _BARE_KEY.match(line)):
+            j = i
+            while j < len(paras) and j - i < 4 and j < MAX_HEADER_PARAGRAPHS:
+                nxt = paras[j].strip()
+                if _FIELD.match(nxt) or _BARE_KEY.match(nxt):
+                    break
+                j += 1
+            if j < len(paras) and j < MAX_HEADER_PARAGRAPHS and j > i \
+                    and (_FIELD.match(paras[j].strip()) or _BARE_KEY.match(paras[j].strip())):
+                i = j
+                end = i
+                continue
+        # "Summary:" / "Author's Note:" with the text in the paragraph under it
+        bare = _BARE_KEY.match(line)
+        if bare and i + 1 < len(paras):
+            fields[bare.group(1).strip()] = " ".join(paras[i + 1].split())
+            end = i + 2
+            i += 2
             continue
         if not _FIELD.match(line):
             break
         key, _, val = line.partition(":")
         fields[key.strip()] = val.strip()
         end = i + 1
+        i += 1
     if len(fields) < 3:
         return {}, text
-    return fields, "\n\n".join(paras[end:]).strip()
+    flat = "\n\n".join(paras[end:]).strip()
+    return fields, _drop_lead_furniture(flat)
+
+
+def _drop_lead_furniture(text: str) -> str:
+    """Remove the divider and artist credit that some posts leave between the
+    header block and the first line of story. A divider further down is kept:
+    inside a scene break it is doing work."""
+    paras = text.split("\n\n")
+    i = 0
+    while i < len(paras) and i < 4:
+        line = paras[i].strip()
+        if not line or _DIVIDER.match(line) or _CREDIT.match(line):
+            i += 1
+            continue
+        break
+    return "\n\n".join(paras[i:]).strip()
 
 
 def post_title(page: str) -> str:
@@ -542,7 +617,11 @@ class Keiramarcos:
                 start_url = canon
         pages[start_url] = start_page
 
-        works = series_items(start_page, start_url)
+        # An episodic work (Season 1, Season 2) lists one dated post per episode.
+        # That is one book read in order, not a shelf: importing it as a series
+        # would hand back a picker of 21 episodes and no text at all.
+        episodes = season_tab_links(start_page, start_url)
+        works = series_items(start_page, start_url) if len(episodes) < 2 else []
         if len(works) == 1 and works[0]["url"] != start_url and series_marked(start_page):
             # a series page holding one work is one work, not a shelf
             return self.read({"kind": "url", "url": works[0]["url"]}, fetch, cred)
@@ -557,10 +636,15 @@ class Keiramarcos:
                 series={"title": series_title(start_page) or "Series",
                         "page": start_url, "works": works})
 
-        found = part_links(start_page, start_url)
-        ordered = ordered_parts(found, start_url) if found else [start_url]
-        if is_post_url(start_url) and start_url not in ordered:
-            ordered = [start_url] + ordered
+        title_hint = ""
+        if len(episodes) >= 2:
+            ordered = episodes
+            title_hint = series_title(start_page)
+        else:
+            found = part_links(start_page, start_url)
+            ordered = ordered_parts(found, start_url) if found else [start_url]
+            if is_post_url(start_url) and start_url not in ordered:
+                ordered = [start_url] + ordered
 
         fetched = []
         for part_url in ordered[:MAX_PARTS]:
@@ -571,7 +655,7 @@ class Keiramarcos:
                 pages[part_url] = page
             fetched.append((part_url, page))
 
-        book = self._assemble(fetched, start_url)
+        book = self._assemble(fetched, start_url, title_hint=title_hint)
         book["meta"]["parts"] = len(fetched)
         book["meta"]["identity"] = identity_of(start_url)
         return to_book(book)
@@ -589,8 +673,8 @@ class Keiramarcos:
             return None
         return {"title": series_title(page) or "Series", "page": url, "works": works}
 
-    def _assemble(self, fetched: list, work_url: str) -> dict:
-        chapters, meta, title = [], {}, ""
+    def _assemble(self, fetched: list, work_url: str, title_hint: str = "") -> dict:
+        chapters, meta, title = [], {}, title_hint
         for i, (part_url, page) in enumerate(fetched):
             body = _JUNK_P.sub(" ", content_region(drop_widgets(strip_furniture(page))))
             fallback = _PART_TITLE.sub("", post_title(page)) or ("Part %d" % (i + 1))
@@ -601,7 +685,7 @@ class Keiramarcos:
                 prelude = body[:first_h1.start()] if first_h1 else body
                 fields, _rest = split_header(clean_fragment(prelude))
                 if fields:
-                    title = fields.get("Title", "") or title
+                    title = title or fields.get("Title", "")
                     for k in ("Author", "Fandom", "Summary", "Word Count"):
                         if fields.get(k):
                             meta[k.lower().replace(" ", "_")] = fields[k]
@@ -611,12 +695,15 @@ class Keiramarcos:
                                  "or the story builds itself in JavaScript)")
             for j, ch in enumerate(pieces):
                 text = ch["text"]
-                if i == 0 and j == 0:
+                # every part page of an episodic work opens with the same
+                # Title/Author/Warnings block and its own Summary: strip it on
+                # all of them, or episodes 2..N get read aloud from the header.
+                if j == 0:
                     fields, text = split_header(text)
                     if fields:
                         title = title or fields.get("Title", "")
                         for k in ("Author", "Fandom", "Summary", "Word Count"):
-                            if fields.get(k) and k.lower() not in meta:
+                            if fields.get(k) and k.lower().replace(" ", "_") not in meta:
                                 meta[k.lower().replace(" ", "_")] = fields[k]
                 if len(text) < 2:
                     continue
@@ -626,6 +713,10 @@ class Keiramarcos:
                              "(site markup may have changed)")
         if not title:
             title = _PART_TITLE.sub("", post_title(fetched[0][1])) or "Untitled"
+        if title_hint:
+            # the per-episode Word Count in a header is that episode's, not the
+            # book's. One book of episodes gets its own count.
+            meta["word_count"] = "{:,}".format(sum(len(c["text"].split()) for c in chapters))
         meta.update({"source": self.id, "url": work_url})
         return {"title": title[:200], "chapters": chapters, "meta": meta}
 
