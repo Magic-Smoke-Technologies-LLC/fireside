@@ -86,6 +86,17 @@ class TestLibrary(unittest.TestCase):
             library.add_book(self.conn, self.storage, "u1", Book(title="Empty"))
         self.assertEqual(library.list_books(self.conn, "u1"), [])
 
+    def test_an_empty_reimport_cannot_wipe_a_good_book(self):
+        """Replacing keeps the id and drops chapters the reader no longer
+        returns. A reader that returns nothing would therefore delete the
+        whole book, so that case is refused instead."""
+        from host.contracts import Refused
+        library.create_user(self.conn, "u1")
+        bid = library.add_book(self.conn, self.storage, "u1", _book())
+        with self.assertRaises(Refused):
+            library.replace_book(self.conn, self.storage, bid, Book(title="Fire"))
+        self.assertEqual(len(library.chapters(self.conn, bid)), 3)
+
     def test_rendition_by_voice_can_name_the_speed(self):
         """Two rows for one voice at different speeds are different audio.
 

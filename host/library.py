@@ -130,6 +130,11 @@ def replace_book(conn, storage, book_id, book):
     whose text changed loses its voice, because that audio belongs to the old
     text. A chapter the reader no longer returns is removed with its voices.
     """
+    # A re-import that reads nothing must not be allowed to empty a book that
+    # is on the shelf: the reader would lose the text and every voice with it.
+    if not (getattr(book, "chapters", None) or []):
+        raise Refused("no_chapters",
+                      "this file has no readable text to replace the book with", 422)
     meta = dict(book.meta or {})
     old = {c["idx"]: c for c in chapters(conn, book_id)}
     refs, kept, dropped = [], 0, 0
