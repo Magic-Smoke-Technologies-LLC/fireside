@@ -62,6 +62,13 @@ CREATE TABLE IF NOT EXISTS render_cache (
     `key` VARCHAR(191) PRIMARY KEY, audio_ref VARCHAR(255), audio_bytes INT,
     duration_s DOUBLE, provider VARCHAR(64), voice VARCHAR(128),
     model VARCHAR(128), created_at VARCHAR(32));
+CREATE TABLE IF NOT EXISTS tags (
+    book_id VARCHAR(128), user_id VARCHAR(128), tag VARCHAR(64),
+    source VARCHAR(16) DEFAULT 'user', created_at VARCHAR(32),
+    PRIMARY KEY (book_id, tag));
+CREATE TABLE IF NOT EXISTS tag_hidden (
+    book_id VARCHAR(128), tag VARCHAR(64), user_id VARCHAR(128),
+    created_at VARCHAR(32), PRIMARY KEY (book_id, tag));
 CREATE TABLE IF NOT EXISTS renditions (
     rk VARCHAR(191) PRIMARY KEY, book_id VARCHAR(128), idx INT,
     provider VARCHAR(64), voice VARCHAR(128), voice_label VARCHAR(255),

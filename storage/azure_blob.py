@@ -36,6 +36,14 @@ from email.utils import formatdate
 API_VERSION = "2021-08-06"
 
 
+def _unescape(s):
+    """The five entities Azure escapes blob names with. &amp; last, so a name
+    containing the literal text '&amp;' is not unescaped twice."""
+    s = (s or "").replace("&lt;", "<").replace("&gt;", ">")
+    s = s.replace("&quot;", '"').replace("&apos;", "'")
+    return s.replace("&amp;", "&")
+
+
 def parse_connection_string(s):
     """Split a storage connection string into a dict. Last value wins."""
     out = {}
@@ -230,6 +238,73 @@ class AzureBlobBackend:
         if got != ref:
             raise IOError("checksum mismatch: stored %s != asked %s" % (got, ref))
         return body
+
+    # ---- raw keys -------------------------------------------------------------
+    # The content-addressed contract names blobs by hash. Some things arrive
+    # with a name already: a book dropped in a folder has a path, and the import
+    # that turns those paths into shelf rows needs to read them back by that
+    # name, not by a hash nobody recorded. These two are for that traffic only;
+    # nothing on the serve path uses them.
+
+    def get_key(self, key):
+        """GET a blob by its literal name (e.g. books/Some Folder/Book.epub)."""
+        status, _, body = self._request("GET", "/" + urllib.parse.quote(key))
+        if status == 404:
+            raise FileNotFoundError(key)
+        if status != 200:
+            raise IOError("azure: get %s failed (HTTP %s)" % (key, status))
+        return body
+
+    def put_key(self, key, data):
+        """PUT a blob under a literal name. Used for small manifests only."""
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        path = "/" + urllib.parse.quote(key)
+        url = "%s/%s%s" % (self.endpoint, urllib.parse.quote(self.container), path)
+        if self.sas:
+            url += ("&" if "?" in url else "?") + self.sas
+        headers = {"x-ms-date": formatdate(usegmt=True),
+                   "x-ms-version": API_VERSION,
+                   "x-ms-blob-type": "BlockBlob",
+                   "Content-Type": "application/json"}
+        if not self.sas:
+            headers["Authorization"] = self._sign(
+                "PUT", "/%s%s" % (urllib.parse.quote(self.container), path),
+                headers, len(data))
+        req = urllib.request.Request(url, data=data, headers=headers, method="PUT")
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status
+
+    def list_keys(self, prefix="", limit=None):
+        """Every blob name under `prefix`, paged. Returns [{"key","bytes"}].
+
+        Azure answers at most 5,000 names per page and hands back a marker; a
+        caller that reads one page and calls it the folder is how an import
+        finds 1,800 of 1,827 books and nobody notices for a day.
+        """
+        out, marker = [], ""
+        while True:
+            q = "restype=container&comp=list&prefix=" + urllib.parse.quote(prefix)
+            if marker:
+                q += "&marker=" + urllib.parse.quote(marker)
+            status, _, body = self._request("GET", "", query=q)
+            if status != 200:
+                raise IOError("azure: list failed (HTTP %s)" % status)
+            text = body.decode("utf-8", "replace")
+            for m in re.finditer(r"<Blob>(.*?)</Blob>", text, re.S):
+                chunk = m.group(1)
+                name = re.search(r"<Name>(.*?)</Name>", chunk, re.S)
+                size = re.search(r"<Content-Length>(\d+)</Content-Length>", chunk)
+                if name:
+                    out.append({"key": _unescape(name.group(1)),
+                                "bytes": int(size.group(1)) if size else 0})
+            nxt = re.search(r"<NextMarker>(.*?)</NextMarker>", text, re.S)
+            marker = _unescape(nxt.group(1)) if nxt else ""
+            if not marker or (limit and len(out) >= limit):
+                break
+            if limit:
+                out = out[:limit]
+        return out
 
     def delete(self, ref):
         status, _, _ = self._request("DELETE", "/" + self._name(ref))

@@ -159,6 +159,35 @@
   .serieshd .sname{font:600 15px/1.2 var(--serif);color:var(--text)}
   .serieshd .sbtn{margin-left:0;opacity:.85}
   .serieshd .sbtn:first-of-type{margin-left:auto}
+  /* library tools: one shelf, narrowed. Search, an order, and chips that are
+     facts about the books (unread, in a series, a tag) rather than folders a
+     book can only belong to once. */
+  .libtools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:26px}
+  .libtools input[type=search]{flex:1 1 240px;min-width:170px;background:var(--bg);
+    border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:15px;color:var(--text)}
+  .libtools input[type=search]:focus{outline:none;border-color:var(--flame)}
+  .libtools select{background:var(--bg);border:1px solid var(--line);border-radius:999px;
+    padding:9px 12px;font-size:14px;color:var(--text);max-width:190px}
+  .libtools[hidden],.chips[hidden]{display:none}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{border:1px solid var(--line);background:transparent;color:var(--soft);
+    border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
+  .chip:hover{border-color:var(--faint)}
+  .chip[aria-pressed=true]{background:var(--flame);border-color:var(--flame);color:var(--on-flame)}
+  .chip small{opacity:.65;margin-left:5px;font-size:11px}
+  .bkauthor{font-size:12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;margin-top:1px}
+  .bktags{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+  .bktags span{font-size:10.5px;color:var(--faint);border:1px solid var(--line);
+    border-radius:999px;padding:1px 6px;max-width:96px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .recentwrap .recent{display:flex;gap:14px;overflow-x:auto;padding:8px 0 6px;margin:0}
+  .recent .bk{flex:0 0 128px;max-width:128px}
+  .recent .bk .cover{max-width:128px;font-size:12px}
+  .libmore{display:block;margin:24px auto 0}
+  .libnone{color:var(--faint);margin-top:16px}
+  .libauth{grid-column:1/-1;font:600 14px/1.2 var(--serif);color:var(--soft);
+    margin:18px 0 0;border-bottom:1px solid var(--line);padding-bottom:6px}
   /* playing */
   .np{display:grid;grid-template-columns:1fr 260px;gap:40px}
   .story p{font:19px/1.75 var(--serif);color:var(--soft);margin-top:18px;max-width:62ch}
@@ -512,6 +541,20 @@
       <p class="sub" data-t="Fireside reads a book with a voice you control. Three steps.">Fireside reads a book with a voice you control. Three steps.</p>
       <ol class="wsteps" id="wsteps"></ol>
     </div>
+    <div class="recentwrap" id="recentwrap" hidden>
+      <p class="small" style="margin:30px 0 0" data-t="Recently played">Recently played</p>
+      <div class="recent" id="recent"></div>
+    </div>
+    <div class="libtools" id="libtools" hidden>
+      <input type="search" id="libq" autocomplete="off" aria-label="Search your library" data-t-aria="Search your library" placeholder="Search title, author, or tag" data-t-ph="Search title, author, or tag">
+      <select id="libsort" aria-label="Sort the shelf" data-t-aria="Sort the shelf">
+        <option value="added" data-t="Recently added">Recently added</option>
+        <option value="played" data-t="Recently played">Recently played</option>
+        <option value="title" data-t="Title A–Z">Title A–Z</option>
+        <option value="author" data-t="Author A–Z">Author A–Z</option>
+      </select>
+    </div>
+    <div class="chips" id="libchips" role="group" aria-label="Filter the shelf" data-t-aria="Filter the shelf" hidden></div>
     <div style="margin-top:28px"><button class="btn" id="addbtn" type="button" data-t="＋ Add a book">＋ Add a book</button></div>
     <div class="addpanel" id="addpanel" hidden>
       <p class="sub" data-t="Drop an EPUB or paste a story link. Fireside reads it, breaks it into chapters, and voices each one.">Drop an EPUB or paste a story link. Fireside reads it, breaks it into chapters, and voices each one.</p>
@@ -542,6 +585,8 @@
     </div>
     <p class="small" id="shelflabel" style="margin:34px 0 0;display:none" data-t="On your shelf">On your shelf</p>
     <div class="shelf" id="shelf"></div>
+    <button class="btn quiet libmore" id="libmore" type="button" data-t="Show more" hidden>Show more</button>
+    <p class="libnone" id="libnone" hidden></p>
     <p class="small" id="libempty" style="color:var(--faint)" data-t="Nothing here yet. Add a book to start.">Nothing here yet. Add a book to start.</p>
     <div class="legend" id="legend" style="display:none" aria-hidden="false">
       <span><span class="spine" aria-hidden="true"><i class="ready"></i></span>on this device</span>
@@ -967,6 +1012,12 @@
       <span class="small" id="sseriespos"></span>
     </div>
     <p class="small" id="sseriesnote" style="margin-top:6px" hidden></p>
+    <label style="margin-top:14px" data-t="Tags">Tags</label>
+    <div class="setrow">
+      <input type="text" id="stags" autocomplete="off" placeholder="mystery, historical, unread" data-t-ph="mystery, historical, unread">
+      <button class="btn quiet" id="stagsave" type="button" data-t="Save tags">Save tags</button>
+    </div>
+    <p class="small" id="stagsnote" style="margin-top:6px"></p>
     <label style="margin-top:14px" data-t="Cover">Cover</label>
     <div class="coverprev" id="scovprev"></div>
     <div class="setrow">
@@ -3178,14 +3229,26 @@ function spineEl(states, curIdx) {
   states.forEach((s, i) => { const it = document.createElement('i'); it.className = s + (i === curIdx ? ' cur' : ''); d.append(it); });
   return d;
 }
-function shelfCell(b) {
+function shelfTags(b) { return (b.tags || []).map(t => t.tag); }
+function shelfCell(b, compact) {
   const cell = document.createElement('div'); cell.className = 'bk'; cell.onclick = () => { openBook(b.id); show('play'); };
   const cover = document.createElement('div'); cover.className = 'cover'; fillCover(cover, b.id, b.title, b.cover);
   const t = document.createElement('div'); t.style.cssText = 'font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; t.textContent = b.title;
+  cell.append(cover, t);
+  if (b.author) { const a = document.createElement('div'); a.className = 'bkauthor'; a.textContent = b.author; cell.append(a); }
+  if (compact) return cell;
   const states = Array.from({ length: b.chapters }, (_, i) => i < b.rendered ? 'avail' : 'todo');
   const sp = spineEl(states, -1);
   const s = document.createElement('div'); s.className = 'small'; s.textContent = b.rendered + ' of ' + b.chapters + ' voiced';
-  cell.append(cover, t, sp, s);
+  cell.append(sp, s);
+  // Two tags is what a 170px card can say without becoming a paragraph. The
+  // filter chips are the full list.
+  const tags = shelfTags(b);
+  if (tags.length) {
+    const row = document.createElement('div'); row.className = 'bktags';
+    tags.slice(0, 2).forEach(x => { const i = document.createElement('span'); i.textContent = x; row.append(i); });
+    cell.append(row);
+  }
   return cell;
 }
 // A series you can see, not just a field in one book's settings: its name over
@@ -3213,16 +3276,110 @@ function seriesHead(g) {
   hd.append(name, n, ren, del);
   return hd;
 }
-async function loadLibrary() {
-  if (!USER) return;
-  try {
-    books = await api('/library?user=' + encodeURIComponent(USER));
-    const shelf = $('#shelf'); shelf.innerHTML = '';
-    $('#shelflabel').style.display = books.length ? 'block' : 'none';
-    $('#libempty').style.display = books.length ? 'none' : 'block';
-    $('#legend').style.display = books.length ? 'flex' : 'none';
+// --- the shelf: one list, narrowed -----------------------------------------
+// A shelf of 1,828 books cannot be scrolled, so the screen is a list plus four
+// ways to cut it: a search, an order, chips that are facts about the books, and
+// a page size. The chips are not folders - a book can carry several tags at
+// once and stays in one shelf - because a book that belongs in two containers
+// is the first thing a folder UI gets wrong.
+const LIB_PAGE = 120;
+const libState = { q: '', sort: 'added', chip: 'all', tagsOpen: false };
+let libShown = LIB_PAGE;
+let LIBTAGS = [];              // [{tag, books}] for the chip row
+
+function libHas(b, chip) {
+  if (chip === 'all') return true;
+  if (chip === 'unread') return !b.last_played;
+  if (chip === 'series') return (b.series || []).length > 0;
+  if (chip.indexOf('tag:') === 0) return shelfTags(b).indexOf(chip.slice(4)) >= 0;
+  return true;
+}
+function libMatch(b) {
+  if (!libHas(b, libState.chip)) return false;
+  const q = libState.q.trim().toLowerCase();
+  if (!q) return true;
+  const hay = [b.title, b.author].concat(shelfTags(b),
+    (b.series || []).map(s => s.name)).join(' ').toLowerCase();
+  return hay.indexOf(q) >= 0;
+}
+function libSorted(list) {
+  const by = libState.sort;
+  const out = list.slice();
+  if (by === 'title') out.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  else if (by === 'author') out.sort((a, b) => {
+    const x = (a.author || '\uffff'), y = (b.author || '\uffff');
+    return x.localeCompare(y) || (a.title || '').localeCompare(b.title || '');
+  });
+  else if (by === 'played') out.sort((a, b) => (b.last_played || '').localeCompare(a.last_played || ''));
+  return out;
+}
+function libFiltered() {
+  let out = books.filter(libMatch);
+  if (libState.sort === 'played') out = out.filter(b => b.last_played);
+  return libSorted(out);
+}
+function libNarrowed() {
+  return !!(libState.q.trim() || libState.chip !== 'all' || libState.sort !== 'added');
+}
+function renderChips() {
+  const box = $('#libchips'); if (!box) return;
+  box.innerHTML = '';
+  if (!books.length) { box.hidden = true; return; }
+  box.hidden = false;
+  const unread = books.filter(b => !b.last_played).length;
+  const series = books.filter(b => (b.series || []).length).length;
+  const chips = [['all', T('All'), books.length], ['unread', T('Unread'), unread],
+                 ['series', T('In a series'), series]];
+  // Eight tags is a row; the rest are one tap away. A shelf with 1,800 books
+  // can easily carry sixty subjects, and sixty chips is a second shelf.
+  LIBTAGS.slice(0, libState.tagsOpen ? LIBTAGS.length : 8)
+         .forEach(t => chips.push(['tag:' + t.tag, t.tag, t.books]));
+  chips.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.setAttribute('aria-pressed', libState.chip === c[0] ? 'true' : 'false');
+    b.textContent = c[1];
+    const n = document.createElement('small'); n.textContent = c[2]; b.append(n);
+    b.onclick = () => { libState.chip = c[0]; libShown = LIB_PAGE; renderLibrary(); };
+    box.append(b);
+  });
+  const rest = LIBTAGS.length - 8;
+  if (rest > 0 && !libState.chip.startsWith('tag:')) {
+    const more = document.createElement('button');
+    more.type = 'button'; more.className = 'chip';
+    more.textContent = libState.tagsOpen ? T('Fewer tags') : T('+{n} more tags', { n: rest });
+    more.onclick = () => { libState.tagsOpen = !libState.tagsOpen; renderChips(); };
+    box.append(more);
+  }
+}
+function renderRecent() {
+  const wrap = $('#recentwrap'), row = $('#recent');
+  if (!wrap || !row) return;
+  const played = books.filter(b => b.last_played)
+                      .sort((a, b) => (b.last_played || '').localeCompare(a.last_played || ''))
+                      .slice(0, 12);
+  row.innerHTML = '';
+  if (!played.length || libNarrowed()) { wrap.hidden = true; return; }
+  played.forEach(b => row.append(shelfCell(b, true)));
+  wrap.hidden = false;
+}
+function renderLibrary() {
+  const shelf = $('#shelf'); if (!shelf) return;
+  shelf.innerHTML = '';
+  renderChips();
+  renderRecent();
+  const list = libFiltered();
+  const none = $('#libnone');
+  if (none) {
+    none.hidden = list.length > 0 || !books.length;
+    none.textContent = list.length ? '' : T('Nothing matches that yet.');
+  }
+  const page = list.slice(0, libShown);
+  // Old behaviour kept on purpose: an untouched shelf shows series together,
+  // because a series is a real container the reader made. The moment a search,
+  // a chip or an order is active, the shelf is a list and stays a list.
+  if (!libNarrowed()) {
     const groups = [], loose = [];
-    books.forEach(b => {
+    page.forEach(b => {
       const s = (b.series || [])[0];
       if (!s) { loose.push(b); return; }
       let g = groups.find(x => x.id === s.id);
@@ -3236,10 +3393,53 @@ async function loadLibrary() {
       g.items.forEach(it => shelf.append(shelfCell(it.b)));
     });
     loose.forEach(b => shelf.append(shelfCell(b)));
+  } else if (libState.sort === 'author') {
+    let last = null;
+    page.forEach(b => {
+      const a = b.author || T('No author');
+      if (a !== last) {
+        const hd = document.createElement('div'); hd.className = 'libauth'; hd.textContent = a;
+        shelf.append(hd); last = a;
+      }
+      shelf.append(shelfCell(b));
+    });
+  } else {
+    page.forEach(b => shelf.append(shelfCell(b)));
+  }
+  const more = $('#libmore');
+  if (more) {
+    more.hidden = list.length <= libShown;
+    more.textContent = T('Show more ({n} left)', { n: Math.max(0, list.length - libShown) });
+  }
+}
+async function loadLibrary() {
+  if (!USER) return;
+  try {
+    books = await api('/library?user=' + encodeURIComponent(USER));
+    try {
+      const r = await (await fetch('/tags?user=' + encodeURIComponent(USER))).json();
+      LIBTAGS = (r.tags || []).filter(t => t.books > 0);
+    } catch (_) { LIBTAGS = []; }
+    const shelf = $('#shelf'); shelf.innerHTML = '';
+    const tools = $('#libtools');
+    if (tools) tools.hidden = !books.length;
+    $('#shelflabel').style.display = books.length ? 'block' : 'none';
+    $('#libempty').style.display = books.length ? 'none' : 'block';
+    $('#legend').style.display = books.length ? 'flex' : 'none';
+    libShown = LIB_PAGE;
+    renderLibrary();
     renderResume();
     renderWelcome();
   } catch (e) { /* library is optional until a name is set */ }
 }
+$('#libq').addEventListener('input', () => {
+  libState.q = $('#libq').value; libShown = LIB_PAGE; renderLibrary();
+});
+$('#libsort').addEventListener('change', () => {
+  libState.sort = $('#libsort').value; libShown = LIB_PAGE; renderLibrary();
+});
+$('#libmore').addEventListener('click', () => { libShown += LIB_PAGE; renderLibrary(); });
+
 // --- get started: the first-run guide --------------------------------------
 // A new account lands on an empty library with no idea the shape is
 // book -> voice -> listen, and the voice step is invisible until it blocks
@@ -3411,7 +3611,8 @@ async function openBook(id, jumpPlay) {
              isbn: bk.isbn || '', author: bk.author || '',
              description: bk.description || '', publisher: bk.publisher || '',
              published: bk.published || '', chapters: prog.chapters || [],
-             url: bk.url || '', source: bk.source || '' };
+             url: bk.url || '', source: bk.source || '',
+             tags: bk.tags || [], series: bk.series || [] };
     await syncBookAudio(id, prev, book.chapters);
     SELECT.clear();
     selVoice = defaultVoiceKey();       // the newest voice, until the reader picks another
@@ -4049,6 +4250,41 @@ $('#convertbtn').onclick = openConvert;
 // cover". The ISBN drives the rest: fetch it and the author, description,
 // publisher and date fill in from OpenLibrary, with a cover if the book has none.
 
+// --- tags ------------------------------------------------------------------
+// A tag the reader types is theirs; a tag the book file declared is marked as
+// such and can be hidden, not deleted. The difference is visible in this field
+// because a publisher's subject list is noisy and a reader's word is not.
+function renderTagEditor() {
+  if (!book) return;
+  const tags = book.tags || [];
+  const mine = tags.filter(t => t.source !== 'opf').map(t => t.tag);
+  const file = tags.filter(t => t.source === 'opf').map(t => t.tag);
+  $('#stags').value = mine.join(', ');
+  const note = $('#stagsnote');
+  note.hidden = !file.length;
+  note.textContent = file.length
+    ? T('From the book file: {tags}. Removing one hides it for good.',
+        { tags: file.join(', ') }) : '';
+}
+async function saveTags() {
+  if (!book) return;
+  const want = $('#stags').value.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+  const have = (book.tags || []).filter(t => t.source !== 'opf').map(t => t.tag);
+  $('#err').textContent = ''; busy(T('Saving tags…'));
+  try {
+    for (const t of want) if (have.indexOf(t) < 0) await jpost('/tags', { book: book.id, tag: t, op: 'add' });
+    for (const t of have) if (want.indexOf(t) < 0) await jpost('/tags', { book: book.id, tag: t, op: 'remove' });
+    // File tags the reader typed over are the same words; show them too.
+    const r = await (await fetch('/progress?user=' + encodeURIComponent(USER) +
+                                 '&book=' + encodeURIComponent(book.id))).json();
+    book.tags = (r.book || {}).tags || [];
+    renderTagEditor();
+    await loadLibrary();
+    idle(T('Tags saved.'));
+  } catch (e) { fail(e); }
+}
+$('#stagsave').onclick = saveTags;
+
 function openSettings() {
   if (!book) return;
   EDIT_META = false;
@@ -4174,6 +4410,7 @@ function renderSettings() {
     ? T('These came from the ISBN. Press Edit to change them; your version then wins over any future lookup.')
     : '';
   renderSeries();
+  renderTagEditor();
   $('#scovrmbtn').hidden = !(book && book.cover);
   $('#scovautobtn').hidden = !((book && book.isbn) || ($('#sisbn').value || '').trim());
   const meta = $('#smeta'); meta.innerHTML = '';
