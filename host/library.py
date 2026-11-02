@@ -202,7 +202,12 @@ def list_books(conn, user_id):
     rows = conn.execute(
         "SELECT id,title,author,created_at,cover_ref,series_name,series_index"
         " FROM books WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
-    counts = {r["book_id"]: (r["n"], r["done"]) for r in conn.execute(
+    # SUM() comes back as Decimal from MySQL and an int from SQLite. A Decimal
+    # in this dict reaches json.dumps and the shelf answers a connection reset
+    # instead of a page, so the cast is not tidiness - it is the difference
+    # between a shelf and a 502.
+    counts = {r["book_id"]: (int(r["n"] or 0), int(r["done"] or 0))
+              for r in conn.execute(
         "SELECT c.book_id, COUNT(*) n,"
         " SUM(CASE WHEN c.audio_ref IS NOT NULL THEN 1 ELSE 0 END) done"
         " FROM chapters c JOIN books b ON b.id=c.book_id"

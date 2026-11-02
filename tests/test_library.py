@@ -75,3 +75,38 @@ class TestLibrary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestShelfPayload(unittest.TestCase):
+    """The shelf is JSON that leaves the process.
+
+    MySQL hands back SUM() as Decimal and sqlite as int, and a Decimal in the
+    payload is not a slow page: json.dumps raises, the handler dies and the
+    shelf answers a connection reset. That is how this shipped once.
+    """
+
+    def test_a_decimal_count_is_still_json(self):
+        import json
+        from decimal import Decimal
+        tmp = tempfile.mkdtemp(prefix="fireside-lib-")
+        storage = LocalBackend(tmp + "/blobs")
+        conn = connect(":memory:")
+        library.create_user(conn, "u1")
+        library.add_book(conn, storage, "u1", _book())
+
+        class DecimalRows:
+            """A connection whose SUM column looks like MySQL's: a Decimal."""
+            def __init__(self, real):
+                self.real = real
+
+            def execute(self, sql, args=()):
+                rows = self.real.execute(sql, args)
+                if "SUM(" in sql:
+                    rows = [dict(r, done=Decimal(str(r["done"] or 0)),
+                                 n=Decimal(str(r["n"] or 0))) for r in rows]
+                return rows
+
+        shelf = library.list_books(DecimalRows(conn), "u1")
+        json.dumps(shelf)          # the page's body: raising here is a reset
+        self.assertIsInstance(shelf[0]["rendered"], int)
+        self.assertIsInstance(shelf[0]["chapters"], int)
