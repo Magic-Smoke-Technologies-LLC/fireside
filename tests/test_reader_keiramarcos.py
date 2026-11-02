@@ -313,5 +313,79 @@ class TestParse(unittest.TestCase):
                                 {"url": "https://keiramarcos.com/fan-fiction/daylight/"}))
 
 
+# ---- an episodic work: the season tab is the story, not a shelf ----------------
+
+EP = "https://keiramarcos.com/fan-fiction/sentinels/"
+E1 = "https://keiramarcos.com/2008/08/28/the-gathering-part-one/"
+E2 = "https://keiramarcos.com/2010/03/the-sentinel/"
+
+EPISODE_HEADER = """<p>Reading Time: 140 Minutes</p>
+<p>Title: %s</p>
+<p>Author: Keira Marcos</p>
+<p>Series: The Sentinels of Atlantis</p>
+<p>Series Order: 1</p>
+<p>Pairing: McKay/Sheppard</p>
+<p>Warning: explicit sex</p>
+<p>Summary:</p>
+<p>Sentinel John Sheppard thought he would spend his life unbonded.</p>
+<p>Banner Art for the Page by CJ</p>
+<p>Series title: The Sentinels of Atlantis</p>
+<p>* * * *</p>"""
+
+
+def episode(title, line):
+    return """<html><body><article><h1 class="entry-title">%s</h1>
+<div class="entry-content">%s
+<p>%s</p></div></article></body></html>""" % (title, EPISODE_HEADER % title, line)
+
+
+EPISODIC = """<html><body>
+<h1 class="entry-title">The Sentinels of Atlantis (Series)</h1>
+<div class="entry-content"><p>The story of the Sentinels of Atlantis.</p>
+<div class="responsive-tabs">
+<h2 class="tabtitle">Season 1</h2>
+<div class="tabcontent">
+<p><a href="%s">The Gathering</a></p>
+<p><a href="%s">The Sentinel</a></p>
+</div>
+<h2 class="tabtitle">The Cast</h2>
+<div class="tabcontent"><a href="https://keiramarcos.com/fan-fiction/sentinels/joan/">Joan</a></div>
+</div></div></body></html>""" % (E1, E2)
+
+
+class TestEpisodic(unittest.TestCase):
+    def fetch(self):
+        return FakeFetch({EP: EPISODIC,
+                          E1: episode("The Gathering", "There is an unbonded Guide here."),
+                          E2: episode("The Sentinel", "Dean Bates sat down on his footlocker.")})
+
+    def test_a_season_tab_is_one_book_read_in_order(self):
+        book = km.Keiramarcos().read({"kind": "url", "url": EP}, self.fetch())
+        self.assertEqual(book.title, "The Sentinels of Atlantis")
+        self.assertEqual([c.title for c in book.chapters], ["The Gathering", "The Sentinel"])
+        self.assertEqual(book.meta["parts"], 2)
+
+    def test_a_day_dated_permalink_is_a_post(self):
+        self.assertTrue(km.is_post_url(E1))
+        self.assertTrue(km.is_post_url("https://keiramarcos.com/2024/03/a-glimpse-of-us-1-2/"))
+
+    def test_every_episode_loses_its_own_metadata_block(self):
+        book = km.Keiramarcos().read({"kind": "url", "url": EP}, self.fetch())
+        for ch in book.chapters:
+            self.assertNotIn("Title:", ch.text)
+            self.assertNotIn("Series Order", ch.text)
+            self.assertNotIn("Reading Time", ch.text)
+            self.assertNotIn("Banner Art", ch.text)
+            self.assertNotIn("* * * *", ch.text)
+            self.assertNotIn("Author: Keira Marcos", ch.text)
+        self.assertTrue(book.chapters[1].text.startswith("Dean Bates"))
+
+    def test_the_book_counts_its_own_words_not_one_episodes(self):
+        book = km.Keiramarcos().read({"kind": "url", "url": EP}, self.fetch())
+        self.assertNotEqual(book.meta["word_count"], "140")
+        total = sum(len(c.text.split()) for c in book.chapters)
+        self.assertEqual(book.meta["word_count"], "{:,}".format(total))
+
+
 if __name__ == "__main__":
     unittest.main()
