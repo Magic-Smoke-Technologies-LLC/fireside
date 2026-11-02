@@ -298,6 +298,11 @@ class App:
                                   "settings": self._fields(o)})
         for pid, p in self.host.storage.items():
             out["storage"].append({"id": pid, "info": p.obj.info()})
+        # The disambiguator declares its server the same way a voice provider
+        # does, and the host renders it the same way. No plugin markup.
+        out["disambig"] = [{"id": pid, "label": p.label,
+                            "settings": self._fields(p.obj)}
+                           for pid, p in self.host.disambig.items()]
         return 200, out
 
     def voices(self, q, body):
@@ -317,6 +322,80 @@ class App:
             return 400, {"error": "unknown provider"}
         raw = self.host.speech[provider].obj.list_voices(cred)
         return 200, {"voices": [v.dict() if hasattr(v, "dict") else dict(v) for v in raw]}
+
+    # ---- disambiguation: ask before audio, never after ---------------------
+
+    def _disambig(self, body, q, uid):
+        """Resolve which disambiguator and which credential this request runs on.
+
+        A connection named `disambig:<id>` is kept apart from the voice servers
+        because they are usually different machines: the llama box that reads
+        and the Kokoro box that speaks. Returns (plugin, cred) or (None, error).
+        """
+        pid = body.get("provider") or q.get("provider") or ""
+        cid = body.get("connection_id") or q.get("connection_id") or ""
+        cred = body.get("cred") or {}
+        if cid:
+            c = connections.get(self.conn, cid)
+            if not c or not connections.may_use(
+                    c, uid, auth.is_admin(self.conn, uid)):
+                return None, (403, {"error": "no such connection"})
+            resolved = connections.resolve(self.conn, uid, cid)
+            if resolved is None:
+                return None, (403, {"error": "connection is switched off"})
+            pid, cred = c["provider"].split(":", 1)[-1], resolved
+        if not pid:
+            pid = next(iter(self.host.disambig), "")
+        p = self.host.disambig.get(pid)
+        if p is None:
+            return None, (400, {"error": "unknown disambiguator"})
+        return (p.obj, cred), None
+
+    def disambig_models(self, q, body):
+        """What the configured server can run, with prices where we have them.
+        An empty list is 'unknown', never 'free'."""
+        uid = self._uid(q, body)
+        got, err = self._disambig(body, q, uid)
+        if err:
+            return err
+        obj, cred = got
+        try:
+            models = obj.list_models(cred)
+        except Exception:
+            models = []
+        return 200, {"models": models or []}
+
+    def disambig_quote(self, q, body):
+        """Price one pass for this text on this model. The plugin is the
+        authority; the host only carries the number."""
+        uid = self._uid(q, body)
+        got, err = self._disambig(body, q, uid)
+        if err:
+            return err
+        obj, cred = got
+        ctx = {"text": body.get("text") or "", "model": body.get("model") or ""}
+        qt = obj.quote(ctx)
+        out = {"chars_est": qt.chars_est, "price": qt.price,
+               "currency": qt.currency, "eligible": qt.eligible,
+               "authoritative": qt.authoritative,
+               "refusal_reason": qt.refusal_reason}
+        return 200, {"quote": out}
+
+    def disambig_scan(self, q, body):
+        """The pass itself: text in, the questions that must be answered before
+        any audio exists, out. A server that is down is an error, not an empty
+        list, because an empty list silently voices the wrong reading."""
+        uid = self._uid(q, body)
+        got, err = self._disambig(body, q, uid)
+        if err:
+            return err
+        obj, cred = got
+        try:
+            questions = obj.scan(body.get("text") or body.get("sentences") or [],
+                                 body.get("model") or "", cred)
+        except Exception as e:
+            return 502, {"error": "scan failed", "detail": str(e)}
+        return 200, {"questions": questions or []}
 
     def ui(self, q, body):
         """Serve the browser client. The host owns its own UI; plugins ship none."""
@@ -2761,6 +2840,7 @@ GET_ROUTES = {
     "/billing": "billing_get",
     "/plans": "plans_get",
     "/storage": "storage_get",
+    "/disambig/models": "disambig_models",
 }
 POST_ROUTES = {
     "/import": "import_book", "/import/preview": "preview_import",
@@ -2781,6 +2861,7 @@ POST_ROUTES = {
     "/source-creds": "source_cred_save", "/source-creds/delete": "source_cred_delete",
     "/connections/override": "connection_override", "/prefs": "prefs_set",
     "/pron": "pron_set", "/pron/dicts": "pron_dict_save",
+    "/disambig/scan": "disambig_scan", "/disambig/quote": "disambig_quote",
     "/pron/dicts/delete": "pron_dict_delete",
     "/credits/purchase": "credits_purchase",
     "/grants": "grants_set",

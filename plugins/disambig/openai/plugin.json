@@ -1,0 +1,8 @@
+{
+  "id": "openai",
+  "kind": "disambig",
+  "label": "OpenAI-compatible (local or hosted)",
+  "version": "1.0",
+  "entry": "plugin.py",
+  "class": "Disambig"
+}

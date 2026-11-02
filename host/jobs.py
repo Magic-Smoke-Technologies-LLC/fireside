@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 
-from host import chunks, library, pron
+from host import chunks, disambig, library, pron
 from host.db import now
 
 
@@ -343,6 +343,17 @@ def render_book(conn, storage, speech, user_id, book_id, voice="", model="",
     rules = pron.for_book(pron.load(conn, user_id), book_id,
                           pron.book_author(conn, book_id),
                           pron.book_series(conn, book_id))
+    # The optional model pass, before a single character is voiced: for an
+    # account that has it switched on, a book's two-reading words are decided
+    # once and stored as ordinary rules, so the first render is already right
+    # and a re-render costs nothing. Off for every other account (it is checked
+    # inside, before any call), and a failure here never fails the render.
+    disambig_rules, disambig_error = disambig.ensure(conn, storage, user_id,
+                                                     book_id, idxs)
+    if disambig_rules:
+        rules = pron.for_book(pron.load(conn, user_id), book_id,
+                              pron.book_author(conn, book_id),
+                              pron.book_series(conn, book_id))
     tokens = {}
     for i in idxs:
         try:
@@ -358,6 +369,11 @@ def render_book(conn, storage, speech, user_id, book_id, voice="", model="",
     if (job(conn, job_id) or {}).get("status") == "cancelled" or is_cancelled(job_id):
         release_cancel(job_id)
         return job_id
+    if disambig_error:
+        # the render is fine; say out loud that the model pass was skipped so a
+        # silent box cannot look like a book with no two-reading words
+        conn.execute("UPDATE jobs SET error=?,updated_at=? WHERE id=?",
+                     ("model pass skipped: " + disambig_error, now(), job_id))
     done = len(already)
     conn.execute("UPDATE jobs SET current=?,done_chars=?,updated_at=? WHERE id=?",
                  (done, done_chars, now(), job_id))
