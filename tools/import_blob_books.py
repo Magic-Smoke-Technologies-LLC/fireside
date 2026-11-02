@@ -93,7 +93,7 @@ def _known_identities(conn, user):
     """
     ids, keys = set(), set()
     empty = {}
-    held = {}
+    held_by_id = {}
     id_of = {}
     rows = conn.execute(
         "SELECT b.id, b.source_json, COUNT(c.idx) AS n,"
@@ -114,10 +114,13 @@ def _known_identities(conn, user):
         if meta.get("identity"):
             ids.add(meta["identity"])
             id_of[meta["identity"]] = r["id"]
+            # Keyed by identity, not by blob key: a row can be the same work
+            # reached through a different path, and a missing key must mean
+            # "not known", never "holds nothing".
+            held_by_id[meta["identity"]] = int(r["chars"] or 0)
         if meta.get("blob"):
             keys.add(meta["blob"])
-            held[meta["blob"]] = int(r["chars"] or 0)
-    return ids, keys, empty, held, id_of
+    return ids, keys, empty, held_by_id, id_of
 
 
 def main():
@@ -152,7 +155,7 @@ def main():
     state_key = "import:" + a.prefix
     state = _status_get(conn, state_key)
     failed = {} if a.retry_failed else dict(state.get("failed") or {})
-    have_ids, have_keys, empty_ids, held, id_of = _known_identities(conn, a.user)
+    have_ids, have_keys, empty_ids, held_by_id, id_of = _known_identities(conn, a.user)
     reader = _reader()
 
     if a.repair:
@@ -192,7 +195,8 @@ def main():
             # every file under the prefix.
             damaged = bool(a.repair and ident and ident in have_ids
                            and parsed_chars > 0
-                           and held.get(key, 0) * 2 < parsed_chars)
+                           and ident in held_by_id
+                           and held_by_id[ident] * 2 < parsed_chars)
             if ident and ident in have_ids and not damaged:
                 skipped += 1
                 have_keys.add(key)

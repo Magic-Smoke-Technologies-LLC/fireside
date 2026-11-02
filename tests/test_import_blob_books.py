@@ -224,6 +224,34 @@ class TestImportBlobBooks(unittest.TestCase):
                if b["title"] == "Some Comic"]
         self.assertEqual(ids, [bid], "same book, same id, no second copy")
 
+    def test_repair_does_not_touch_a_book_that_arrived_by_another_path(self):
+        """The 2026-11-02 full sweep replaced 29 books when 14 had actually been
+        damaged. The lookup was keyed by blob key, so a book whose identity was
+        on the shelf under a DIFFERENT path looked like it held nothing and got
+        replaced (harmlessly, but the count lied and the run re-read files for
+        no reason). A missing measurement means unknown, never zero."""
+        from host.contracts import to_book
+        parsed = to_book(imp._reader().read(
+            {"kind": "upload", "filename": "Some Comic.epub",
+             "data": self.storage.blobs["books/Comics/Some Comic.epub"]}, None))
+        meta = dict(parsed.meta or {})
+        meta["blob"] = "elsewhere/Some Comic.epub"   # a path this run never walks
+        bid = library.add_book(self.db, self.storage, "u1",
+                               to_book({"title": "Some Comic", "author": "An Artist",
+                                        "chapters": parsed.chapters, "meta": meta}))
+        before = self.db.execute(
+            "SELECT SUM(chars) AS c FROM chapters WHERE book_id=?",
+            (bid,)).fetchone()["c"]
+        self._run("--repair")
+        row = self.db.execute("SELECT value FROM settings WHERE `key`=?",
+                              ("import:books/",)).fetchone()
+        state = json.loads(row["value"])
+        self.assertEqual(state["repaired"], 0)
+        after = self.db.execute(
+            "SELECT SUM(chars) AS c FROM chapters WHERE book_id=?",
+            (bid,)).fetchone()["c"]
+        self.assertEqual(after, before)
+
     def test_progress_is_written_where_a_human_can_read_it(self):
         self._run()
         row = self.db.execute("SELECT value FROM settings WHERE `key`=?",
