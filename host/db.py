@@ -462,6 +462,13 @@ def now():
 
 _INSERT_OR_IGNORE = re.compile(r"\bINSERT\s+OR\s+IGNORE\b", re.I)
 _INSERT_OR_REPLACE = re.compile(r"\bINSERT\s+OR\s+REPLACE\b", re.I)
+# SQLite accepts `RELEASE name`; MySQL's grammar is `RELEASE SAVEPOINT name` and
+# rejects the short form with a syntax error. That error used to land AFTER the
+# rows were written on autocommit, so an add_book that had fully succeeded was
+# reported as a broken file and the import counted a real book as damage.
+_RELEASE_SAVEPOINT = re.compile(
+    r"\bRELEASE\s+(?!SAVEPOINT\b)([A-Za-z_][A-Za-z0-9_]*)", re.I)
+# ROLLBACK TO name is valid on both engines; leave it alone.
 # SQLite's upsert clause: ON CONFLICT(cols) DO UPDATE SET a=excluded.a, ...
 # MySQL has no ON CONFLICT; the equivalent is ON DUPLICATE KEY UPDATE a=VALUES(a).
 _ON_CONFLICT = re.compile(
@@ -494,6 +501,7 @@ def translate(sql):
     if sql.strip().upper().startswith("BEGIN IMMEDIATE"):
         sql = "START TRANSACTION"
     sql = _ON_CONFLICT.sub(_on_duplicate_key, sql)
+    sql = _RELEASE_SAVEPOINT.sub(r"RELEASE SAVEPOINT \1", sql)
     return sql.replace("?", "%s")
 
 
