@@ -45,6 +45,12 @@ def base_url():
     return _env("FIRESIDE_DISAMBIG_URL")
 
 
+def key():
+    """The bearer token a hosted server wants. Empty is legal: a box on the LAN
+    takes no key, and the plugin treats an empty string as "send no header"."""
+    return _env("FIRESIDE_DISAMBIG_KEY")
+
+
 def configured():
     return bool(base_url() and model())
 
@@ -116,7 +122,8 @@ def ensure(conn, storage, uid, book_id, idxs, plugins_root=None, run=None):
         return [], "no disambiguator plugin is installed"
     call = run or plugin.decide
     try:
-        fixes = call("\n".join(text), model(), {"base_url": base_url()})
+        fixes = call("\n".join(text), model(),
+                     {"base_url": base_url(), "key": key()})
     except Exception as e:
         return [], "%s: %s" % (type(e).__name__, e)
     rules = _rules(book_id, fixes)

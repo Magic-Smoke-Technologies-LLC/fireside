@@ -42,10 +42,12 @@ class FakeSpeech:
 class Env:
     """Set the three FIRESIDE_DISAMBIG_* variables for the length of a test."""
 
-    def __init__(self, accounts=UID, url="http://box:11434/v1", model="qwen2.5:3b"):
+    def __init__(self, accounts=UID, url="http://box:11434/v1", model="qwen2.5:3b",
+                 key=None):
         self.vals = {"FIRESIDE_DISAMBIG_ACCOUNTS": accounts,
                      "FIRESIDE_DISAMBIG_URL": url,
-                     "FIRESIDE_DISAMBIG_MODEL": model}
+                     "FIRESIDE_DISAMBIG_MODEL": model,
+                     "FIRESIDE_DISAMBIG_KEY": key}
 
     def __enter__(self):
         self.old = {k: os.environ.get(k) for k in self.vals}
@@ -104,6 +106,33 @@ class TestGates(Base):
         self.assertEqual((rules, err), ([], ""))
         self.assertEqual(called, [])
         self.assertIsNone(disambig.existing(self.conn, UID, self.bid))
+
+
+class TestTheKey(Base):
+    """A hosted model wants a token; a box on the LAN does not."""
+
+    def test_a_hosted_model_is_handed_its_key(self):
+        seen = {}
+
+        def run(text, model, cred):
+            seen.update(cred)
+            return []
+
+        with Env(key="k-123"):
+            self.run_pass(run=run)
+        self.assertEqual(seen.get("key"), "k-123")
+        self.assertEqual(seen.get("base_url"), "http://box:11434/v1")
+
+    def test_a_local_box_is_handed_an_empty_key(self):
+        seen = {}
+
+        def run(text, model, cred):
+            seen.update(cred)
+            return []
+
+        with Env():
+            self.run_pass(run=run)
+        self.assertEqual(seen.get("key"), "")
 
 
 class TestThePass(Base):
