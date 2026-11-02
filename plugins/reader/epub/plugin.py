@@ -14,13 +14,47 @@ if _ROOT not in sys.path:
 from host.contracts import Field, Refused, to_book
 
 
+import html
 import io
 import os
 import re
 import hashlib
+import urllib.parse
 import zipfile
 
 from host.textutil import text_of
+
+
+def _zip_read(z, path):
+    """Read one member, allowing for the two ways an epub writes a filename.
+
+    The href is a URL, so a file literally named "A & B.xhtml" arrives as
+    "A &amp; B.xhtml", and one named "CR!AB.html" can arrive percent-encoded as
+    "CR%21AB.html". The zip entry itself is neither. Try the spelling in the
+    file first, then the decoded forms, and only then give up.
+    """
+    seen = []
+    for cand in (path, html.unescape(path), urllib.parse.unquote(path),
+                 urllib.parse.unquote(html.unescape(path))):
+        if cand in seen:
+            continue
+        seen.append(cand)
+        try:
+            return z.read(cand)
+        except KeyError:
+            continue
+    raise KeyError(path)
+
+
+def _tag(name):
+    """A tag pattern that accepts an XML namespace prefix.
+
+    EPUB 3 allows the package document to prefix its own elements
+    (<opf:item>, <opf:itemref>, <opf:spine>), and real books do it. A parser
+    that only knows the unprefixed spelling reads those files as a title with
+    no chapters at all and refuses a perfectly good book.
+    """
+    return r"(?:[A-Za-z0-9_.-]+:)?" + name
 
 
 def _first_heading(xhtml: str, fallback: str) -> str:
@@ -66,8 +100,8 @@ def _meta_of(opf: str) -> dict:
                      ("series_index", "calibre:series_index"),
                      ("publisher", "dc:publisher"), ("published", "dc:date")):
         m = (re.search(r"(?is)<" + tag + r"[^>]*>(.*?)</" + tag + r">", opf)
-             or re.search(r'(?is)<meta[^>]*name="' + tag + r'"[^>]*content="([^"]*)"', opf)
-             or re.search(r'(?is)<meta[^>]*property="' + tag + r'"[^>]*>(.*?)</meta>', opf))
+             or re.search(r'(?is)<' + _tag("meta") + r'[^>]*name="' + tag + r'"[^>]*content="([^"]*)"', opf)
+             or re.search(r'(?is)<' + _tag("meta") + r'[^>]*property="' + tag + r'"[^>]*>(.*?)</' + _tag("meta") + r'>', opf))
         if m:
             v = text_of(m.group(1)).strip()
             if v:
@@ -77,7 +111,7 @@ def _meta_of(opf: str) -> dict:
                       ("series_index", "group-position")):
         if out.get(key):
             continue
-        m = re.search(r'(?is)<meta[^>]*property="' + prop + r'"[^>]*>(.*?)</meta>', opf)
+        m = re.search(r'(?is)<' + _tag("meta") + r'[^>]*property="' + prop + r'"[^>]*>(.*?)</' + _tag("meta") + r'>', opf)
         if m:
             v = text_of(m.group(1)).strip()
             if v:
@@ -112,7 +146,7 @@ def _cover_of(z, manifest, opf: str, base: str):
     slightly-off epub from losing its art.
     """
     href = ""
-    m = re.search(r'(?is)<meta[^>]*name="cover"[^>]*content="([^"]+)"', opf)
+    m = re.search(r'(?is)<' + _tag("meta") + r'[^>]*name="cover"[^>]*content="([^"]+)"', opf)
     if m and m.group(1) in manifest:
         href = manifest[m.group(1)][0]
     if not href:
@@ -134,7 +168,7 @@ def _cover_of(z, manifest, opf: str, base: str):
         return None
     p = (href if not base else os.path.join(base, href)).replace("\\", "/")
     try:
-        data = z.read(p)
+        data = _zip_read(z, p)
     except KeyError:
         return None
     if not data:
@@ -153,7 +187,7 @@ def parse_epub(data: bytes, name: str) -> dict:
         m = re.search(r'full-path="([^"]+)"',
                       z.read("META-INF/container.xml").decode("utf-8", "replace"))
         if m:
-            opf_path = m.group(1)
+            opf_path = html.unescape(m.group(1))
     if not opf_path:
         opf_path = next((n for n in names if n.lower().endswith(".opf")), None)
     if not opf_path:
@@ -168,18 +202,22 @@ def parse_epub(data: bytes, name: str) -> dict:
         title = text_of(m.group(1)) or title
 
     manifest = {}
-    for m in re.finditer(r"(?is)<item\b[^>]*/?>", opf):
+    for m in re.finditer(r"(?is)<" + _tag("item") + r"\b[^>]*/?>", opf):
         tag = m.group(0)
         i = re.search(r'id="([^"]+)"', tag)
         h = re.search(r'href="([^"]+)"', tag)
         mt = re.search(r'media-type="([^"]+)"', tag)
         pr = re.search(r'properties="([^"]+)"', tag)
         if i and h:
-            manifest[i.group(1)] = (h.group(1), (mt.group(1) if mt else ""),
+            # href is an XML attribute, so an ampersand in a filename arrives
+            # as &amp; while the zip entry is named with a bare &. Unescaping
+            # is what lets a book whose chapter files carry & be read at all.
+            manifest[i.group(1)] = (html.unescape(h.group(1)),
+                                    (mt.group(1) if mt else ""),
                                     (pr.group(1) if pr else ""))
 
     order = []
-    for m in re.finditer(r"(?is)<itemref\b[^>]*/?>", opf):
+    for m in re.finditer(r"(?is)<" + _tag("itemref") + r"\b[^>]*/?>", opf):
         i = re.search(r'idref="([^"]+)"', m.group(0))
         if i and i.group(1) in manifest:
             order.append(manifest[i.group(1)])
@@ -191,7 +229,7 @@ def parse_epub(data: bytes, name: str) -> dict:
         p = href if not base else os.path.join(base, href)
         p = p.replace("\\", "/")
         try:
-            raw = z.read(p).decode("utf-8", "replace")
+            raw = _zip_read(z, p).decode("utf-8", "replace")
         except KeyError:
             continue
         txt = text_of(raw)

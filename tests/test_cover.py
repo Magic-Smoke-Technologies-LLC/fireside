@@ -83,6 +83,70 @@ class TestEpubCover(unittest.TestCase):
         self.assertNotIn("cover", b)
 
 
+class TestOpfSpellings(unittest.TestCase):
+    """Real .opf files that the first parser refused.
+
+    Two shapes, both from the 2026-11-02 batch: a package document that prefixes
+    its own elements (<opf:item>), and chapter files whose names contain an
+    ampersand, which XML escapes to &amp; in the href while the zip entry keeps
+    the bare &. Each one made a readable book look like a book with no chapters.
+    """
+
+    def _epub(self, opf, names=("a.xhtml",)):
+        buf = io.BytesIO()
+        z = zipfile.ZipFile(buf, "w")
+        z.writestr("content.opf", opf)
+        for n in names:
+            z.writestr(n, "<html><body><h1>T</h1><p>%s</p></body></html>"
+                       % ("word " * 40))
+        z.close()
+        return buf.getvalue()
+
+    def test_namespaced_package_elements(self):
+        from plugins.reader.epub.plugin import parse_epub
+        opf = ('<opf:package xmlns:opf="http://www.idpf.org/2007/opf">'
+               '<opf:metadata><dc:title xmlns:dc="x">Passenger</dc:title>'
+               '<dc:creator xmlns:dc="x">Alexandra Bracken</dc:creator>'
+               '</opf:metadata><opf:manifest>'
+               '<opf:item id="c1" href="a.xhtml" media-type="application/xhtml+xml"/>'
+               '</opf:manifest><opf:spine><opf:itemref idref="c1"/></opf:spine>'
+               '</opf:package>')
+        b = parse_epub(self._epub(opf), "p.epub")
+        self.assertEqual(b["title"], "Passenger")
+        self.assertEqual(b["author"], "Alexandra Bracken")
+        self.assertEqual(len(b["chapters"]), 1)
+
+    def test_ampersand_in_a_chapter_filename(self):
+        from plugins.reader.epub.plugin import parse_epub
+        opf = ('<package><metadata><dc:title xmlns:dc="x">S</dc:title></metadata>'
+               '<manifest><item id="c1" href="A &amp; B.xhtml" '
+               'media-type="application/xhtml+xml"/></manifest>'
+               '<spine><itemref idref="c1"/></spine></package>')
+        b = parse_epub(self._epub(opf, names=("A & B.xhtml",)), "s.epub")
+        self.assertEqual(len(b["chapters"]), 1)
+
+    def test_a_percent_encoded_chapter_filename(self):
+        from plugins.reader.epub.plugin import parse_epub
+        opf = ('<package><metadata><dc:title xmlns:dc="x">S</dc:title></metadata>'
+               '<manifest><item id="c1" href="CR%21AB.xhtml" '
+               'media-type="application/xhtml+xml"/></manifest>'
+               '<spine><itemref idref="c1"/></spine></package>')
+        b = parse_epub(self._epub(opf, names=("CR!AB.xhtml",)), "s.epub")
+        self.assertEqual(len(b["chapters"]), 1)
+
+    def test_subjects_survive_the_prefix(self):
+        from plugins.reader.epub.plugin import parse_epub
+        opf = ('<opf:package xmlns:opf="x"><opf:metadata>'
+               '<dc:title xmlns:dc="x">T</dc:title>'
+               '<dc:subject xmlns:dc="x">Mystery</dc:subject>'
+               '<dc:subject xmlns:dc="x">Romance</dc:subject></opf:metadata>'
+               '<opf:manifest><opf:item id="c" href="a.xhtml" '
+               'media-type="application/xhtml+xml"/></opf:manifest>'
+               '<opf:spine><opf:itemref idref="c"/></opf:spine></opf:package>')
+        b = parse_epub(self._epub(opf), "s.epub")
+        self.assertEqual(b["subjects"], ["Mystery", "Romance"])
+
+
 class TestCoverHttp(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
