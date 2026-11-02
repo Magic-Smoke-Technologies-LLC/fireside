@@ -79,20 +79,36 @@ def _known_identities(conn, user):
     One pass over the source_json of the user's books. The identity is what the
     import dedupes on; the blob key is what makes a resumed run cheap, because
     a book that came from blob knows which blob it came from.
+
+    A row with no chapters is NOT a book on this shelf: it was written and then
+    lost its chapters (a failed put, a killed job), so it shows nowhere and can
+    never be read. Counting its identity as present is how such a row becomes
+    permanent - the retry skips the file that would have healed it. Returns the
+    empty rows by identity, so the caller can replace one when it has the file
+    in hand.
     """
     ids, keys = set(), set()
-    for r in conn.execute("SELECT source_json FROM books WHERE user_id=?", (user,)):
+    empty = {}
+    rows = conn.execute(
+        "SELECT b.id, b.source_json, COUNT(c.idx) AS n FROM books b"
+        " LEFT JOIN chapters c ON c.book_id=b.id"
+        " WHERE b.user_id=? GROUP BY b.id", (user,))
+    for r in rows:
         try:
             meta = json.loads(r["source_json"] or "{}")
         except ValueError:
             continue
         if not isinstance(meta, dict):
             continue
+        if not r["n"]:
+            if meta.get("identity"):
+                empty[meta["identity"]] = r["id"]
+            continue
         if meta.get("identity"):
             ids.add(meta["identity"])
         if meta.get("blob"):
             keys.add(meta["blob"])
-    return ids, keys
+    return ids, keys, empty
 
 
 def main():
@@ -124,7 +140,7 @@ def main():
     state_key = "import:" + a.prefix
     state = _status_get(conn, state_key)
     failed = {} if a.retry_failed else dict(state.get("failed") or {})
-    have_ids, have_keys = _known_identities(conn, a.user)
+    have_ids, have_keys, empty_ids = _known_identities(conn, a.user)
     reader = _reader()
 
     todo = [b for b in blobs if b["key"] not in have_keys
@@ -154,6 +170,11 @@ def main():
                 skipped += 1
                 have_keys.add(key)
             else:
+                # Replace a chapterless row for this same work rather than
+                # leaving it invisible next to the copy we are about to write.
+                if ident and ident in empty_ids:
+                    library.delete_book(conn, storage, empty_ids.pop(ident))
+                    have_ids.discard(ident)
                 meta = dict(parsed.meta or {})
                 meta["blob"] = key
                 # Where it came from, for a reader who wonders why a book with

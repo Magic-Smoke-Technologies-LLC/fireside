@@ -50,6 +50,53 @@ class TestLibrary(unittest.TestCase):
         library.add_book(self.conn, self.storage, "u1", _book())
         self.assertEqual(library.list_books(self.conn, "u2"), [])
 
+    def test_a_book_that_lost_a_chapter_put_is_not_half_written(self):
+        """Storage puts happen before the row, so a failed put writes nothing.
+
+        The blob backend is a network call per chapter. On the live MySQL the
+        connection is autocommit, so the old order (row, then puts) left a book
+        on the shelf with some of its chapters or none, and the import dedupe
+        then counted it as present forever.
+        """
+
+        class FlakyStorage(LocalBackend):
+            def __init__(self, root):
+                LocalBackend.__init__(self, root)
+                self.calls = 0
+
+            def put(self, data):
+                self.calls += 1
+                if self.calls == 2:
+                    raise IOError("blob put timed out")
+                return LocalBackend.put(self, data)
+
+        storage = FlakyStorage(self.tmp + "/flaky")
+        library.create_user(self.conn, "u1")
+        with self.assertRaises(IOError):
+            library.add_book(self.conn, storage, "u1", _book())
+        self.assertEqual(library.list_books(self.conn, "u1"), [])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) AS n FROM chapters")
+                         .fetchone()["n"], 0)
+
+    def test_a_book_with_no_chapters_is_refused(self):
+        """A row with nothing in it shows nowhere and can never be read."""
+        from host.contracts import Refused
+        library.create_user(self.conn, "u1")
+        with self.assertRaises(Refused):
+            library.add_book(self.conn, self.storage, "u1", Book(title="Empty"))
+        self.assertEqual(library.list_books(self.conn, "u1"), [])
+
+    def test_an_empty_reimport_cannot_wipe_a_good_book(self):
+        """Replacing keeps the id and drops chapters the reader no longer
+        returns. A reader that returns nothing would therefore delete the
+        whole book, so that case is refused instead."""
+        from host.contracts import Refused
+        library.create_user(self.conn, "u1")
+        bid = library.add_book(self.conn, self.storage, "u1", _book())
+        with self.assertRaises(Refused):
+            library.replace_book(self.conn, self.storage, bid, Book(title="Fire"))
+        self.assertEqual(len(library.chapters(self.conn, bid)), 3)
+
     def test_rendition_by_voice_can_name_the_speed(self):
         """Two rows for one voice at different speeds are different audio.
 
