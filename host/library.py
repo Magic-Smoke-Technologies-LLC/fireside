@@ -49,6 +49,18 @@ def add_book(conn, storage, user_id, book, tags_from=None):
     save = "addbook_" + uuid.uuid4().hex[:12]
     conn.execute("SAVEPOINT " + save)
     try:
+        # Chapters FIRST, the books row last. The row is what makes a book
+        # visible, so the failure this ordering can leave behind is orphan
+        # chapter rows: invisible on the shelf, reclaimable. The old order left
+        # the opposite, a shelf entry with no readable text, and the reader
+        # cannot repair that on its own. Ordering is the real guard, not the
+        # savepoint: the live MySQL connection is autocommit, so a savepoint
+        # undoes only what this process has not already committed.
+        for i, title, chars, ref in staged:
+            conn.execute(
+                "INSERT OR REPLACE INTO chapters"
+                "(book_id,idx,title,chars,text_ref) VALUES(?,?,?,?,?)",
+                (book_id, i, title, chars, ref))
         conn.execute(
             # The author is metadata the reader already extracted. Writing it to
             # the column is what makes the shelf able to show it without parsing
@@ -57,11 +69,6 @@ def add_book(conn, storage, user_id, book, tags_from=None):
             " VALUES(?,?,?,?,?,?)",
             (book_id, user_id, book.title, json.dumps(meta), meta.get("author", ""),
              now()))
-        for i, title, chars, ref in staged:
-            conn.execute(
-                "INSERT OR REPLACE INTO chapters"
-                "(book_id,idx,title,chars,text_ref) VALUES(?,?,?,?,?)",
-                (book_id, i, title, chars, ref))
     except Exception:
         conn.execute("ROLLBACK TO " + save)
         conn.execute("RELEASE " + save)

@@ -21,6 +21,24 @@ class Translate(unittest.TestCase):
     def test_begin_immediate(self):
         self.assertEqual(db.translate("BEGIN IMMEDIATE"), "START TRANSACTION")
 
+    def test_release_savepoint_gets_its_keyword(self):
+        """SQLite accepts `RELEASE x`; MySQL's grammar is `RELEASE SAVEPOINT x`.
+
+        The short form is what add_book writes, so on the live MySQL every
+        successful insert ended with a syntax error: the book was written and
+        the import still reported the file as broken.
+        """
+        self.assertEqual(db.translate("RELEASE addbook_ab12cd34ef56"),
+                         "RELEASE SAVEPOINT addbook_ab12cd34ef56")
+
+    def test_release_savepoint_already_spelled_out_is_left_alone(self):
+        self.assertEqual(db.translate("RELEASE SAVEPOINT sp1"),
+                         "RELEASE SAVEPOINT sp1")
+
+    def test_rollback_to_is_legal_on_both_engines(self):
+        self.assertEqual(db.translate("ROLLBACK TO addbook_ab12cd34ef56"),
+                         "ROLLBACK TO addbook_ab12cd34ef56")
+
     def test_plain_statement_only_reparameterised(self):
         self.assertEqual(db.translate("SELECT * FROM t WHERE a=? AND b=?"),
                          "SELECT * FROM t WHERE a=%s AND b=%s")

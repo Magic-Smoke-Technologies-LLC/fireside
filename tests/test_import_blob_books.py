@@ -184,6 +184,46 @@ class TestImportBlobBooks(unittest.TestCase):
         self.assertEqual(len(books), 1, "one copy, not a stub beside a real book")
         self.assertEqual(books[0]["chapters"], 1)
 
+    def test_repair_replaces_a_row_that_holds_a_fragment_of_the_file(self):
+        """Nine rows on the live shelf hold 56-267 characters of a book whose
+        file is 150k-600k characters. They are the same work, not a different
+        book, so a repair must replace them IN PLACE: the id is what playback
+        positions and voices hang off.
+
+        Without --repair the import still treats them as present, because
+        answering "is this the whole file" costs a parse of every file.
+        """
+        from host.contracts import to_book
+        key = "books/Comics/Some Comic.epub"
+        parsed = to_book(imp._reader().read(
+            {"kind": "upload", "filename": "Some Comic.epub",
+             "data": self.storage.blobs[key]}, None))
+        meta = dict(parsed.meta or {})
+        meta["blob"] = key
+        bid = library.add_book(
+            self.db, self.storage, "u1",
+            to_book({"title": "Some Comic", "author": "An Artist",
+                     "chapters": [{"title": "One", "text": "tiny" * 8}],
+                     "meta": meta}))
+        old_chars = self.db.execute(
+            "SELECT SUM(chars) AS c FROM chapters WHERE book_id=?",
+            (bid,)).fetchone()["c"]
+
+        self._run()                                    # no --repair: leave it
+        after = self.db.execute(
+            "SELECT SUM(chars) AS c FROM chapters WHERE book_id=?",
+            (bid,)).fetchone()["c"]
+        self.assertEqual(after, old_chars)
+
+        self._run("--repair")                          # --repair: heal it
+        row = self.db.execute(
+            "SELECT SUM(chars) AS c FROM chapters WHERE book_id=?",
+            (bid,)).fetchone()
+        self.assertGreater(row["c"], old_chars * 10)
+        ids = [b["id"] for b in library.list_books(self.db, "u1")
+               if b["title"] == "Some Comic"]
+        self.assertEqual(ids, [bid], "same book, same id, no second copy")
+
     def test_progress_is_written_where_a_human_can_read_it(self):
         self._run()
         row = self.db.execute("SELECT value FROM settings WHERE `key`=?",

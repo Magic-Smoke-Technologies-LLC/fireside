@@ -78,6 +78,28 @@ class TestLibrary(unittest.TestCase):
         self.assertEqual(self.conn.execute("SELECT COUNT(*) AS n FROM chapters")
                          .fetchone()["n"], 0)
 
+    def test_a_failed_chapter_write_never_leaves_a_visible_book(self):
+        """The books row is the last write, so a chapter failure leaves nothing
+        on the shelf. Orphan chapter rows are invisible and reclaimable; a book
+        with no readable text is the state Cat's shelf was stuck in."""
+
+        class FailsOnChapters:
+            def __init__(self, conn):
+                self._conn = conn
+
+            def execute(self, sql, params=()):
+                if "INTO chapters" in sql:
+                    raise RuntimeError("chapter write failed")
+                return self._conn.execute(sql, params)
+
+            def commit(self):
+                return self._conn.commit()
+
+        library.create_user(self.conn, "u1")
+        with self.assertRaises(RuntimeError):
+            library.add_book(FailsOnChapters(self.conn), self.storage, "u1", _book())
+        self.assertEqual(library.list_books(self.conn, "u1"), [])
+
     def test_a_book_with_no_chapters_is_refused(self):
         """A row with nothing in it shows nowhere and can never be read."""
         from host.contracts import Refused

@@ -86,11 +86,18 @@ def _known_identities(conn, user):
     permanent - the retry skips the file that would have healed it. Returns the
     empty rows by identity, so the caller can replace one when it has the file
     in hand.
+
+    It also returns, per blob key, how many characters this shelf actually holds
+    for that file, so --repair can ask whether the copy is the whole file or a
+    fragment of it without a second query per book.
     """
     ids, keys = set(), set()
     empty = {}
+    held = {}
+    id_of = {}
     rows = conn.execute(
-        "SELECT b.id, b.source_json, COUNT(c.idx) AS n FROM books b"
+        "SELECT b.id, b.source_json, COUNT(c.idx) AS n,"
+        " COALESCE(SUM(c.chars),0) AS chars FROM books b"
         " LEFT JOIN chapters c ON c.book_id=b.id"
         " WHERE b.user_id=? GROUP BY b.id", (user,))
     for r in rows:
@@ -106,9 +113,11 @@ def _known_identities(conn, user):
             continue
         if meta.get("identity"):
             ids.add(meta["identity"])
+            id_of[meta["identity"]] = r["id"]
         if meta.get("blob"):
             keys.add(meta["blob"])
-    return ids, keys, empty
+            held[meta["blob"]] = int(r["chars"] or 0)
+    return ids, keys, empty, held, id_of
 
 
 def main():
@@ -120,6 +129,9 @@ def main():
     ap.add_argument("--list", action="store_true", help="print the folder and exit")
     ap.add_argument("--retry-failed", action="store_true",
                     help="try files that this prefix's last run could not read")
+    ap.add_argument("--repair", action="store_true",
+                    help="re-read every file under the prefix and replace a "
+                         "shelf row that holds only a fragment of the file's text")
     a = ap.parse_args()
 
     storage = _storage()
@@ -140,11 +152,16 @@ def main():
     state_key = "import:" + a.prefix
     state = _status_get(conn, state_key)
     failed = {} if a.retry_failed else dict(state.get("failed") or {})
-    have_ids, have_keys, empty_ids = _known_identities(conn, a.user)
+    have_ids, have_keys, empty_ids, held, id_of = _known_identities(conn, a.user)
     reader = _reader()
 
-    todo = [b for b in blobs if b["key"] not in have_keys
-            and b["key"] not in failed]
+    if a.repair:
+        # Repair means reading the file, because only the file knows how long it
+        # is. The prefix bounds that cost.
+        todo = [b for b in blobs if b["key"] not in failed]
+    else:
+        todo = [b for b in blobs if b["key"] not in have_keys
+                and b["key"] not in failed]
     already = len(blobs) - len(todo)
     if a.limit:
         todo = todo[:a.limit]
@@ -156,7 +173,7 @@ def main():
         return 0
 
     started = time.time()
-    done = skipped = broken = 0
+    done = skipped = broken = repaired = 0
     chars = 0
     for i, b in enumerate(todo, 1):
         key = b["key"]
@@ -166,23 +183,44 @@ def main():
                 {"kind": "upload", "filename": key.rsplit("/", 1)[-1], "data": data},
                 fetch=None))
             ident = (parsed.meta or {}).get("identity") or ""
-            if ident and ident in have_ids:
+            parsed_chars = sum(len(c.text or "") for c in parsed.chapters)
+            # A row that holds a fraction of the file's own text is the same
+            # book, damaged: an import that read the file but stored almost none
+            # of it. Half is generous on purpose (the damaged rows measured
+            # under 2% and a genuinely short book measures 100%), and it is only
+            # ever asked with --repair, because answering it costs a parse of
+            # every file under the prefix.
+            damaged = bool(a.repair and ident and ident in have_ids
+                           and parsed_chars > 0
+                           and held.get(key, 0) * 2 < parsed_chars)
+            if ident and ident in have_ids and not damaged:
                 skipped += 1
                 have_keys.add(key)
             else:
-                # Replace a chapterless row for this same work rather than
-                # leaving it invisible next to the copy we are about to write.
-                if ident and ident in empty_ids:
-                    library.delete_book(conn, storage, empty_ids.pop(ident))
-                    have_ids.discard(ident)
+                target = None
+                if damaged:
+                    target = id_of.get(ident)
+                else:
+                    # Replace a chapterless row for this same work rather than
+                    # leaving it invisible next to the copy we are about to write.
+                    if ident and ident in empty_ids:
+                        library.delete_book(conn, storage, empty_ids.pop(ident))
+                        have_ids.discard(ident)
                 meta = dict(parsed.meta or {})
                 meta["blob"] = key
                 # Where it came from, for a reader who wonders why a book with
                 # no cover has a folder name in its history.
                 meta.setdefault("source", "epub")
                 parsed.meta = meta
-                bid = library.add_book(conn, storage, a.user, parsed,
-                                       tags_from=(meta.get("subjects") or []))
+                if target:
+                    # Same id, so playback positions and every voice whose text
+                    # is unchanged survive the repair.
+                    bid = target
+                    library.replace_book(conn, storage, bid, parsed)
+                    repaired += 1
+                else:
+                    bid = library.add_book(conn, storage, a.user, parsed,
+                                           tags_from=(meta.get("subjects") or []))
                 # The file's own series claim rides on the columns the shelf
                 # already reads, so a calibre series groups without the import
                 # inventing its own container.
@@ -209,21 +247,24 @@ def main():
         if i % 10 == 0 or i == len(todo):
             _status_set(conn, state_key, {
                 "user": a.user, "folder": len(blobs), "done": done,
-                "skipped": skipped, "broken": broken, "todo": len(todo),
+                "skipped": skipped, "broken": broken, "repaired": repaired,
+                "todo": len(todo),
                 "chars": chars, "elapsed_s": round(time.time() - started, 1),
                 "failed": dict(list(failed.items())[:200]),
                 "updated_at": db.now(), "finished": i == len(todo)})
             print(json.dumps({"i": i, "of": len(todo), "done": done,
-                              "skipped": skipped, "broken": broken}), flush=True)
+                              "skipped": skipped, "broken": broken,
+                              "repaired": repaired}), flush=True)
 
     _status_set(conn, state_key, {
         "user": a.user, "folder": len(blobs), "done": done, "skipped": skipped,
-        "broken": broken, "todo": len(todo), "chars": chars,
-        "elapsed_s": round(time.time() - started, 1),
+        "broken": broken, "repaired": repaired, "todo": len(todo),
+        "chars": chars, "elapsed_s": round(time.time() - started, 1),
         "failed": dict(list(failed.items())[:200]),
         "updated_at": db.now(), "finished": True})
     print(json.dumps({"done": done, "skipped": skipped, "broken": broken,
-                      "chars": chars, "seconds": round(time.time() - started, 1)}))
+                      "repaired": repaired, "chars": chars,
+                      "seconds": round(time.time() - started, 1)}))
     return 0
 
 
