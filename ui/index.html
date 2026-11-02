@@ -3941,9 +3941,17 @@ async function runConvert(list, label) {
     const charsOf = i => (book.chapters.find(c => c.idx === i) || {}).chars || 0;
     const totalChars = order.reduce((a, i) => a + charsOf(i), 0);
     const t0 = Date.now();
+    let shown = -1;
     while (true) {
       await new Promise(res => setTimeout(res, 1200));
       const j = await api('/job?id=' + encodeURIComponent(r.job_id));
+      // A conversion is not a wall. Chapters land one at a time, so when the
+      // job's counter moves, re-read the book and repaint: the reader can start
+      // on a chapter that is already voiced instead of waiting for the last one.
+      if (j.current !== shown) {
+        shown = j.current;
+        await refreshChaptersDuringJob(book.id);
+      }
       if (j.status === 'cancelled') {
         idle(T('Conversion cancelled. The chapters already finished are kept.'));
         return;
@@ -3970,6 +3978,21 @@ async function runConvert(list, label) {
   } catch (e) { fail(e); }
   finally { RENDERJOB = null; $('#rcancel').hidden = true; SELECT.clear();
             await openBook(book.id); renderActiveJobs(); refreshBalance(); }
+}
+
+// Repaint the chapter list from the server while a conversion is still running.
+// Kept separate from openBook so it never moves the reader's place or clears the
+// current selection: it only refreshes what is voiced right now.
+async function refreshChaptersDuringJob(id) {
+  try {
+    const prog = await api('/progress?user=' + encodeURIComponent(USER)
+      + '&book=' + encodeURIComponent(id));
+    if (!book || book.id !== id) return;
+    book.chapters = prog.chapters || book.chapters;
+    if (player && player.id === id) player.chapters = book.chapters;
+    refreshStates();
+    renderPlay();
+  } catch (_) { /* a refresh is never worth breaking the run for */ }
 }
 
 // --- cancel a conversion ---------------------------------------------------
