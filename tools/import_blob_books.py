@@ -129,9 +129,10 @@ def main():
 
     todo = [b for b in blobs if b["key"] not in have_keys
             and b["key"] not in failed]
+    already = len(blobs) - len(todo)
     if a.limit:
         todo = todo[:a.limit]
-    print(json.dumps({"folder": len(blobs), "already": len(blobs) - len(todo),
+    print(json.dumps({"folder": len(blobs), "already": already,
                       "todo": len(todo), "user": a.user}), flush=True)
     if a.dry_run:
         for b in todo[:20]:
