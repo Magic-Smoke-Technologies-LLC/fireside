@@ -19,9 +19,31 @@ import io
 import os
 import re
 import hashlib
+import urllib.parse
 import zipfile
 
 from host.textutil import text_of
+
+
+def _zip_read(z, path):
+    """Read one member, allowing for the two ways an epub writes a filename.
+
+    The href is a URL, so a file literally named "A & B.xhtml" arrives as
+    "A &amp; B.xhtml", and one named "CR!AB.html" can arrive percent-encoded as
+    "CR%21AB.html". The zip entry itself is neither. Try the spelling in the
+    file first, then the decoded forms, and only then give up.
+    """
+    seen = []
+    for cand in (path, html.unescape(path), urllib.parse.unquote(path),
+                 urllib.parse.unquote(html.unescape(path))):
+        if cand in seen:
+            continue
+        seen.append(cand)
+        try:
+            return z.read(cand)
+        except KeyError:
+            continue
+    raise KeyError(path)
 
 
 def _tag(name):
@@ -146,7 +168,7 @@ def _cover_of(z, manifest, opf: str, base: str):
         return None
     p = (href if not base else os.path.join(base, href)).replace("\\", "/")
     try:
-        data = z.read(p)
+        data = _zip_read(z, p)
     except KeyError:
         return None
     if not data:
@@ -207,7 +229,7 @@ def parse_epub(data: bytes, name: str) -> dict:
         p = href if not base else os.path.join(base, href)
         p = p.replace("\\", "/")
         try:
-            raw = z.read(p).decode("utf-8", "replace")
+            raw = _zip_read(z, p).decode("utf-8", "replace")
         except KeyError:
             continue
         txt = text_of(raw)

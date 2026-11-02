@@ -125,6 +125,15 @@ class TestOpfSpellings(unittest.TestCase):
         b = parse_epub(self._epub(opf, names=("A & B.xhtml",)), "s.epub")
         self.assertEqual(len(b["chapters"]), 1)
 
+    def test_a_percent_encoded_chapter_filename(self):
+        from plugins.reader.epub.plugin import parse_epub
+        opf = ('<package><metadata><dc:title xmlns:dc="x">S</dc:title></metadata>'
+               '<manifest><item id="c1" href="CR%21AB.xhtml" '
+               'media-type="application/xhtml+xml"/></manifest>'
+               '<spine><itemref idref="c1"/></spine></package>')
+        b = parse_epub(self._epub(opf, names=("CR!AB.xhtml",)), "s.epub")
+        self.assertEqual(len(b["chapters"]), 1)
+
     def test_subjects_survive_the_prefix(self):
         from plugins.reader.epub.plugin import parse_epub
         opf = ('<opf:package xmlns:opf="x"><opf:metadata>'
