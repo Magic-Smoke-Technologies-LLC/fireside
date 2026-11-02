@@ -2293,6 +2293,76 @@ class App:
         row = billing.upsert(self.conn, target, plan, "active", provider="admin")
         return 200, {"ok": True, "subscription": row}
 
+    def admin_accounts(self, q, body):
+        """Admin: every account as one row, with the numbers that decide what to
+        do about it.
+
+        The admin screen used to stack three separate lists (grants, plans,
+        sessions) and each one repeated every account, so a server with twelve
+        accounts drew thirty-six rows and the answer to "what is going on with
+        this person" was spread across three of them. One row per account is the
+        unit an admin actually thinks in.
+
+        Everything here is measured, per account: what the shelf holds, what has
+        been voiced, how long it has been listened to, when it was last seen.
+        A missing row is zero, never a guess.
+        """
+        uid = (q or {}).get("_user") or ""
+        if not auth.is_admin(self.conn, uid):
+            return 403, {"error": "admin only"}
+        subs = billing.list_all(self.conn)
+        all_grants = grants.list_all(self.conn)
+        admins = {r["user_id"] for r in
+                  self.conn.execute("SELECT user_id FROM admins")}
+        named = {}
+        for r in self.conn.execute("SELECT username,user_id FROM local_accounts"):
+            named.setdefault(r["user_id"], r["username"])
+        books = {}
+        for r in self.conn.execute(
+                "SELECT user_id,COUNT(*) n FROM books GROUP BY user_id"):
+            books[r["user_id"]] = int(r["n"] or 0)
+        seen, sessions = {}, {}
+        for s in auth.list_all_sessions(self.conn, (q or {}).get("_token") or ""):
+            u = s["user"]
+            sessions[u] = sessions.get(u, 0) + 1
+            seen[u] = max(seen.get(u, 0), int(s.get("last_seen") or 0))
+        rows = []
+        for r in self.conn.execute("SELECT id,name,created_at FROM users ORDER BY created_at"):
+            who = r["id"]
+            sub = subs.get(who) or {}
+            plan = sub.get("plan") or quota.FREE_PLAN
+            blocks = billing.blocks(self.conn, who)
+            g = all_grants.get(who) or {}
+            use = stats.user_stats(self.conn, who)
+            try:
+                stor = quota.usage(self.conn, self.storage, who)["own_bytes"]
+            except Exception:
+                stor = 0
+            rows.append({
+                "user_id": who,
+                "username": named.get(who) or r["name"] or who,
+                "admin": who in admins,
+                "created_at": int(r["created_at"] or 0) if str(r["created_at"] or "").isdigit() else 0,
+                "plan": plan,
+                "plan_status": sub.get("status") or "",
+                "plan_provider": sub.get("provider") or "",
+                "storage_blocks": blocks,
+                "storage_bytes": stor,
+                "allowance_bytes": quota.allowance_bytes(plan, blocks),
+                "storage_unlimited": bool(g.get("storage_unlimited")),
+                "credits_unlimited": bool(g.get("credits_unlimited")),
+                "books": books.get(who, 0),
+                "chars_voiced": int(use.get("chars_total") or 0),
+                "books_listened": int(use.get("books_listened") or 0),
+                "listen_seconds": float(use.get("listen_seconds") or 0.0),
+                "sessions": sessions.get(who, 0),
+                "last_seen": seen.get(who, 0),
+            })
+        rows.sort(key=lambda r: (not r["admin"], r["username"].lower()))
+        return 200, {"accounts": rows, "you": uid,
+                     "tiers": [quota.FREE_PLAN, quota.PLATFORM_PLAN],
+                     "registration_open": auth.registration_open(self.conn)}
+
     def set_registration(self, q, body):
         uid = (q or {}).get("_user") or ""
         if not auth.is_admin(self.conn, uid):
@@ -2617,6 +2687,53 @@ class App:
         out["logout"] = True
         return 200, out
 
+    def admin_account_delete(self, q, body):
+        """Admin: erase somebody else's account.
+
+        Approval to delete is not the same as taking the decision to delete, so
+        the confirmation is the target's own name typed out, not a button. This
+        never deletes the calling admin (the account page is the place for
+        that, and it knows the password rules) and never deletes another admin:
+        an admin removes admin rights where it leaves a trace, rather than by
+        erasing the person.
+        """
+        uid = (q or {}).get("_user") or ""
+        if not auth.is_admin(self.conn, uid):
+            return 403, {"error": "admin only"}
+        body = body or {}
+        target = (body.get("user") or "").strip()
+        if not target:
+            return 400, {"error": "user required"}
+        if target == uid:
+            return 409, {"error": "that is your own account",
+                         "detail": "delete your own account from Settings > Account"}
+        if auth.is_admin(self.conn, target):
+            return 409, {"error": "that account is an admin",
+                         "detail": "remove the admin row first, then delete it"}
+        row = self.conn.execute("SELECT id,name FROM users WHERE id=?",
+                                (target,)).fetchone()
+        if not row:
+            return 404, {"error": "no such account"}
+        typed = (body.get("confirm") or "").strip()
+        expect = {target}
+        for r in self.conn.execute("SELECT username FROM local_accounts WHERE user_id=?",
+                                   (target,)):
+            expect.add(r["username"])
+        if row["name"]:
+            expect.add(row["name"])
+        if typed not in expect:
+            return 400, {"error": "confirm",
+                         "detail": "type the account's username to confirm"}
+        billing_out = self._cancel_billing_for(target)
+        out = erase.purge_user(self.conn, self.storage, target)
+        auth.revoke_sessions(self.conn, target, "")
+        if billing_out.get("subscription_id") and not billing_out["cancelled"]:
+            self._claim_payment(
+                "cancel-failed:%s:%s" % (target, db.now()), "cancel_failed",
+                target, billing_out.get("subscription_id", ""), 0,
+                billing_out.get("detail", ""))
+        return 200, {"ok": True, "user": target, "books": out.get("books", 0),
+                     "freed": out.get("freed", 0), "billing": billing_out}
 
 GET_ROUTES = {
     "/": "ui", "/index.html": "ui", "/favicon.ico": "favicon", "/i18n.js": "i18n_js",
@@ -2640,6 +2757,7 @@ GET_ROUTES = {
     "/auth/users": "auth_users", "/credits": "credits",
     "/grants": "grants_list",
     "/admin/plans": "plans_admin",
+    "/admin/accounts": "admin_accounts",
     "/billing": "billing_get",
     "/plans": "plans_get",
     "/storage": "storage_get",
@@ -2667,6 +2785,7 @@ POST_ROUTES = {
     "/credits/purchase": "credits_purchase",
     "/grants": "grants_set",
     "/admin/plan": "plans_admin_set",
+    "/admin/account/delete": "admin_account_delete",
     "/billing/checkout": "billing_checkout", "/billing/confirm": "billing_confirm",
     "/billing/cancel": "billing_cancel", "/billing/portal": "billing_portal",
     "/credits/confirm": "credits_confirm",
