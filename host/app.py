@@ -971,6 +971,46 @@ class App:
         return 200, {"ok": True, "title": title, "freed": out["freed"],
                      "storage": quota.usage(self.conn, self.storage, uid)}
 
+    BULK_DELETE_MAX = 500
+
+    def delete_books(self, q, body):
+        """Remove a picked set from the shelf in one call: the same removal as
+        /book/delete, once per book, then one storage recount.
+
+        A book this user does not hold, or one with a conversion still running,
+        is left alone and named back in `kept` with its reason - one stuck job
+        must not block the other twenty-nine. Nothing partial is hidden: the
+        caller gets the count it actually removed."""
+        uid = self._uid(q, body)
+        ids = []
+        for x in (body.get("books") or []):
+            x = str(x or "").strip()
+            if x and x not in ids:
+                ids.append(x)
+        if not ids:
+            return 400, {"error": "no books named"}
+        if len(ids) > self.BULK_DELETE_MAX:
+            return 413, {"error": "too many books in one call",
+                         "detail": "remove at most %d at a time" % self.BULK_DELETE_MAX}
+        removed, kept = [], []
+        for book_id in ids:
+            b, err = self._owned_book(uid, book_id)
+            if err:
+                kept.append({"book": book_id, "title": "",
+                             "reason": err[1].get("error", "not yours to remove")})
+                continue
+            if jobs.active_for_book(self.conn, book_id):
+                kept.append({"book": book_id, "title": b.get("title", ""),
+                             "reason": "a conversion for this book is still running"})
+                continue
+            library.delete_book(self.conn, self.storage, book_id)
+            playback.discard_book(self.conn, uid, book_id)
+            stats.discard_book(self.conn, uid, book_id)
+            removed.append({"book": book_id, "title": b.get("title", "")})
+        return 200, {"ok": True, "deleted": len(removed), "books": removed,
+                     "kept": kept,
+                     "storage": quota.usage(self.conn, self.storage, uid)}
+
     # a cover URL is user input, so it only ever reaches the public internet:
     # http(s), an image content-type (or a recognised image signature), and a
     # host that does not resolve into a private / loopback / link-local range.
@@ -2897,6 +2937,7 @@ POST_ROUTES = {
     "/import/series": "import_series", "/book/example": "add_example_book",
     "/render": "render", "/voices": "voices",
     "/book/renditions/delete": "remove_renditions", "/book/delete": "delete_book",
+    "/books/delete": "delete_books",
     "/account/delete": "account_delete",
     "/account/password": "account_password",
     "/speak": "speak",

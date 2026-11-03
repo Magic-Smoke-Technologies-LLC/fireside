@@ -160,6 +160,18 @@
     cursor:pointer;padding:0;z-index:2}
   .bkread:hover{color:var(--text);border-color:var(--flame)}
   .bk.isread .bkread{color:var(--flame);border-color:var(--flame)}
+  /* picking a set: a tap marks instead of opening, and the tick says which */
+  .bksel{position:absolute;top:0;right:0;transform:translate(26%,-26%);width:26px;height:26px;
+    border-radius:50%;border:1.5px solid var(--line);background:var(--bg);color:var(--on-flame);
+    font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:3}
+  .bk.ispicked .bksel{background:var(--flame);border-color:var(--flame)}
+  .bk.ispicked .cover{outline:2px solid var(--flame);outline-offset:2px}
+  .bk.picking{cursor:pointer}
+  .libselbar{position:sticky;bottom:12px;z-index:4;display:flex;flex-wrap:wrap;gap:10px;
+    align-items:center;border:1px solid var(--flame);border-radius:12px;
+    background:var(--surface);padding:10px 12px;margin-top:18px;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+  .libselbar[hidden]{display:none}
+  .libselbar .libselcount{font-size:14px;color:var(--text);flex:1 1 auto}
   .bk .cover{aspect-ratio:2/3;font-size:14px;margin-bottom:8px;max-width:170px}
   .bk .spine{margin:8px 0 6px}
   /* a series on the shelf: a name over its books, in your order */
@@ -561,6 +573,13 @@
         <option value="title" data-t="Title A–Z">Title A–Z</option>
         <option value="author" data-t="Author A–Z">Author A–Z</option>
       </select>
+      <button class="btn quiet" id="libselbtn" type="button" aria-pressed="false" data-t="Select">Select</button>
+    </div>
+    <div class="libselbar" id="libselbar" hidden role="group" aria-label="Book selection" data-t-aria="Book selection">
+      <span class="libselcount" id="libselcount" role="status" aria-live="polite"></span>
+      <button class="btn quiet" id="libselall" type="button" data-t="Select all shown">Select all shown</button>
+      <button class="btn" id="libseldel" type="button" data-t="Delete">Delete</button>
+      <button class="btn quiet" id="libselcancel" type="button" data-t="Cancel">Cancel</button>
     </div>
     <div class="chips" id="libchips" role="group" aria-label="Filter the shelf" data-t-aria="Filter the shelf" hidden></div>
     <div style="margin-top:28px"><button class="btn" id="addbtn" type="button" data-t="＋ Add a book">＋ Add a book</button></div>
@@ -3258,10 +3277,27 @@ async function setRead(b, read) {
   catch (e) { fail(e); }
 }
 function shelfCell(b, compact) {
-  const cell = document.createElement('div'); cell.className = 'bk' + (b.read ? ' isread' : '');
-  cell.onclick = () => { openBook(b.id); show('play'); };
+  const picking = libPicking();
+  const cell = document.createElement('div');
+  cell.className = 'bk' + (b.read ? ' isread' : '') + (picking ? ' picking' : '')
+    + (picking && LIB_SEL.has(b.id) ? ' ispicked' : '');
+  cell.onclick = () => {
+    if (picking) libSelToggle(b);
+    else { openBook(b.id); show('play'); }
+  };
   const cover = document.createElement('div'); cover.className = 'cover'; fillCover(cover, b.id, b.title, b.cover);
   const t = document.createElement('div'); t.style.cssText = 'font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; t.textContent = b.title;
+  if (picking) {
+    const tick = document.createElement('span'); tick.className = 'bksel';
+    tick.textContent = LIB_SEL.has(b.id) ? '\u2713' : '';
+    tick.setAttribute('aria-hidden', 'true');
+    cell.setAttribute('role', 'checkbox');
+    cell.setAttribute('aria-checked', LIB_SEL.has(b.id) ? 'true' : 'false');
+    cell.setAttribute('aria-label', b.title || '');
+    cell.append(cover, t, tick);
+    if (b.author) { const a = document.createElement('div'); a.className = 'bkauthor'; a.textContent = b.author; cell.append(a); }
+    return cell;
+  }
   const rm = document.createElement('button');
   rm.type = 'button'; rm.className = 'bkread';
   const rlabel = b.read ? T('Mark unread') : T('Mark read');
@@ -3334,6 +3370,48 @@ function libHas(b, chip) {
   if (chip.indexOf('tag:') === 0) return shelfTags(b).indexOf(chip.slice(4)) >= 0;
   return true;
 }
+// --- picking several books at once ----------------------------------------
+// Removing a set (a kid's books, one bad import batch) should not be thirty
+// taps and thirty confirmations. Select mode turns the shelf into a picker: a
+// tap marks instead of opening, "select all shown" takes whatever the search
+// and chips are currently showing, and one confirm removes the lot. It is a
+// mode, not a checkbox on every card, so an ordinary shelf stays ordinary.
+let LIB_SEL = null;            // null when not picking, else a Set of book ids
+const libPicking = () => LIB_SEL !== null;
+function libSelToggle(b) {
+  if (LIB_SEL.has(b.id)) LIB_SEL.delete(b.id); else LIB_SEL.add(b.id);
+  renderLibrary();
+}
+function libSelCountText(n) {
+  return n === 1 ? T('1 book selected') : T('{n} books selected', { n: n });
+}
+function renderSelBar() {
+  const bar = $('#libselbar'), btn = $('#libselbtn');
+  const on = libPicking();
+  if (btn) {
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.textContent = on ? T('Done') : T('Select');
+  }
+  if (!bar) return;
+  if (!on) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const n = LIB_SEL.size;
+  // A pick survives a change of search or chip, because a half-built set is
+  // work. But a book you cannot see is a book you can forget you are about to
+  // remove, so the count says how many are out of sight.
+  const visible = new Set(libFiltered().map(b => b.id));
+  let hidden = 0;
+  LIB_SEL.forEach(id => { if (!visible.has(id)) hidden += 1; });
+  $('#libselcount').textContent = libSelCountText(n) +
+    (hidden ? T(' · {n} not shown', { n: hidden }) : '');
+  const del = $('#libseldel');
+  del.disabled = n === 0;
+  del.textContent = n ? T('Delete {n}', { n: n }) : T('Delete');
+  const shown = visible.size;
+  const all = $('#libselall');
+  all.disabled = shown === 0 || n >= shown;
+}
+
 function libMatch(b) {
   if (!libHas(b, libState.chip)) return false;
   const q = libState.q.trim().toLowerCase();
@@ -3400,7 +3478,9 @@ function renderRecent() {
                       .sort((a, b) => (b.last_played || '').localeCompare(a.last_played || ''))
                       .slice(0, 12);
   row.innerHTML = '';
-  if (!played.length || libNarrowed()) { wrap.hidden = true; return; }
+  // A picker over the main shelf: the recent strip is a second, unmarked view
+  // of books already on it, so while picking it would only be a trap.
+  if (!played.length || libNarrowed() || libPicking()) { wrap.hidden = true; return; }
   played.forEach(b => row.append(shelfCell(b, true)));
   wrap.hidden = false;
 }
@@ -3474,6 +3554,7 @@ function renderLibrary() {
     more.hidden = list.length <= libShown;
     more.textContent = T('Show more ({n} left)', { n: Math.max(0, list.length - libShown) });
   }
+  renderSelBar();
 }
 async function loadLibrary() {
   if (!USER) return;
@@ -3502,6 +3583,51 @@ $('#libsort').addEventListener('change', () => {
   libState.sort = $('#libsort').value; libShown = LIB_PAGE; renderLibrary();
 });
 $('#libmore').addEventListener('click', () => { libShown += LIB_PAGE; renderLibrary(); });
+
+// Select mode: enter, mark, remove. The confirm names the count, because one
+// tap that can remove thirty books should say thirty out loud first.
+$('#libselbtn').addEventListener('click', () => {
+  LIB_SEL = libPicking() ? null : new Set();
+  renderLibrary();
+});
+$('#libselcancel').addEventListener('click', () => { LIB_SEL = null; renderLibrary(); });
+// Escape leaves the mode without touching anything: the cheap exit a picker
+// needs, so a mistap does not have to be undone by hand.
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && libPicking()) { LIB_SEL = null; renderLibrary(); }
+});
+$('#libselall').addEventListener('click', () => {
+  if (!libPicking()) return;
+  libFiltered().forEach(b => LIB_SEL.add(b.id));
+  renderLibrary();
+});
+$('#libseldel').addEventListener('click', async () => {
+  if (!libPicking() || !LIB_SEL.size) return;
+  const ids = Array.from(LIB_SEL);
+  const n = ids.length;
+  if (!(await askConfirm(n === 1
+    ? T('Remove 1 book from your library? Its voices go with it.')
+    : T('Remove {n} books from your library? Their voices go with them.', { n: n })))) return;
+  $('#err').textContent = '';
+  busy(T('Removing {n} books…', { n: n }));
+  let done = 0; const kept = [];
+  try {
+    // The server takes 500 at a time; a shelf-wide pick can be larger, so the
+    // page sends batches and adds up what actually came off.
+    for (let i = 0; i < ids.length; i += 200) {
+      const out = await jpost('/books/delete', { books: ids.slice(i, i + 200), user: USER });
+      done += out.deleted || 0;
+      (out.kept || []).forEach(k => kept.push(k));
+    }
+  } catch (err) { fail(err); return; }
+  LIB_SEL = null;
+  await loadLibrary();
+  if (!kept.length) { idle(done === 1 ? T('Book removed.') : T('Removed {n} books.', { n: done })); return; }
+  const names = kept.slice(0, 3).map(k => k.title || T('a book')).join(', ');
+  const rest = kept.length > 3 ? T(' and {n} more', { n: kept.length - 3 }) : '';
+  idle(done ? T('Removed {n}. Left alone: {names}{rest}.', { n: done, names: names, rest: rest })
+            : T('Nothing was removed: {names}{rest}.', { names: names, rest: rest }));
+});
 
 // --- get started: the first-run guide --------------------------------------
 // A new account lands on an empty library with no idea the shape is
