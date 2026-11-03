@@ -441,6 +441,56 @@ class TestRemoval(Base):
         self.assertEqual(s, 409)
 
 
+class TestBulkRemoval(Base):
+    def _jobs_row(self, jid, uid, bid):
+        self.conn.execute(
+            "INSERT INTO jobs(id,user_id,book_id,kind,provider,voice,model,"
+            "status,total,current,error,created_at,updated_at) "
+            "VALUES(?,?,?,?,'sale','v','','queued',1,0,'','t','t')",
+            (jid, uid, bid, "render"))
+        self.conn.commit()
+
+    def test_delete_books_removes_the_whole_set(self):
+        a, b, c = self.import_book(), self.import_book(), self.import_book()
+        s, out = self.app.delete_books({}, {"user": "u1", "books": [a, b]})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(out["deleted"], 2)
+        self.assertEqual(out["kept"], [])
+        self.assertEqual(self.app._owned_book("u1", a)[1][0], 404)
+        self.assertEqual(self.app._owned_book("u1", b)[1][0], 404)
+        self.assertEqual(self.app._owned_book("u1", c)[0]["id"], c)
+
+    def test_delete_books_leaves_a_running_conversion_and_names_it(self):
+        a, b = self.import_book(), self.import_book()
+        self._jobs_row("j9", "u1", b)
+        s, out = self.app.delete_books({}, {"user": "u1", "books": [a, b]})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(out["deleted"], 1, "one stuck job must not block the rest")
+        self.assertEqual([k["book"] for k in out["kept"]], [b])
+        self.assertIn("still running", out["kept"][0]["reason"])
+        self.assertEqual(self.app._owned_book("u1", b)[0]["id"], b)
+
+    def test_delete_books_never_touches_another_shelf(self):
+        mine, theirs = self.import_book(), self.import_book(user="u2")
+        s, out = self.app.delete_books({}, {"user": "u1", "books": [mine, theirs]})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(out["deleted"], 1)
+        self.assertEqual([k["book"] for k in out["kept"]], [theirs])
+        self.assertEqual(self.app._owned_book("u2", theirs)[0]["id"], theirs)
+
+    def test_delete_books_needs_a_list_and_has_a_ceiling(self):
+        self.assertEqual(self.app.delete_books({}, {"user": "u1", "books": []})[0], 400)
+        self.assertEqual(self.app.delete_books({}, {"user": "u1"})[0], 400)
+        many = ["b%d" % i for i in range(self.app.BULK_DELETE_MAX + 1)]
+        self.assertEqual(self.app.delete_books({}, {"user": "u1", "books": many})[0], 413)
+
+    def test_delete_books_ignores_a_repeated_id(self):
+        a = self.import_book()
+        s, out = self.app.delete_books({}, {"user": "u1", "books": [a, a, ""]})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(out["deleted"], 1)
+
+
 class TestSpeak(Base):
     def test_speak_refusals(self):
         self.assertEqual(self.app.speak({}, {"user": "u1", "text": "  "})[0], 400)
