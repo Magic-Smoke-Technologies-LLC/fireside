@@ -151,7 +151,15 @@
   .convjobs[hidden]{display:none}
   .convrow{display:flex;gap:12px;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
   .shelf{display:grid;grid-template-columns:repeat(auto-fill,170px);gap:22px;margin-top:12px;justify-content:start}
-  .bk{cursor:pointer;max-width:170px}
+  .bk{cursor:pointer;max-width:170px;position:relative}
+  /* a book the reader finished: dimmed, and out of the way unless asked for */
+  .bk.isread .cover{opacity:.5}
+  .bkread{position:absolute;top:0;right:0;transform:translate(26%,-26%);width:24px;height:24px;
+    border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--faint);
+    font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;padding:0;z-index:2}
+  .bkread:hover{color:var(--text);border-color:var(--flame)}
+  .bk.isread .bkread{color:var(--flame);border-color:var(--flame)}
   .bk .cover{aspect-ratio:2/3;font-size:14px;margin-bottom:8px;max-width:170px}
   .bk .spine{margin:8px 0 6px}
   /* a series on the shelf: a name over its books, in your order */
@@ -3230,11 +3238,25 @@ function spineEl(states, curIdx) {
   return d;
 }
 function shelfTags(b) { return (b.tags || []).map(t => t.tag); }
+// Read or unread, from the shelf. The flag is the reader's own shelf state,
+// held per user by the server, so this is one write and the shelf reloads.
+async function setRead(b, read) {
+  try { await jpost('/book/read', { book: b.id, read: read, user: USER }); await loadLibrary(); }
+  catch (e) { fail(e); }
+}
 function shelfCell(b, compact) {
-  const cell = document.createElement('div'); cell.className = 'bk'; cell.onclick = () => { openBook(b.id); show('play'); };
+  const cell = document.createElement('div'); cell.className = 'bk' + (b.read ? ' isread' : '');
+  cell.onclick = () => { openBook(b.id); show('play'); };
   const cover = document.createElement('div'); cover.className = 'cover'; fillCover(cover, b.id, b.title, b.cover);
   const t = document.createElement('div'); t.style.cssText = 'font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; t.textContent = b.title;
-  cell.append(cover, t);
+  const rm = document.createElement('button');
+  rm.type = 'button'; rm.className = 'bkread';
+  const rlabel = b.read ? T('Mark unread') : T('Mark read');
+  rm.title = rlabel;
+  rm.setAttribute('aria-label', rlabel);
+  rm.textContent = b.read ? '\u2713' : '';
+  rm.onclick = (ev) => { ev.stopPropagation(); setRead(b, !b.read); };
+  cell.append(cover, t, rm);
   if (b.author) { const a = document.createElement('div'); a.className = 'bkauthor'; a.textContent = b.author; cell.append(a); }
   if (compact) return cell;
   const states = Array.from({ length: b.chapters }, (_, i) => i < b.rendered ? 'avail' : 'todo');
@@ -3288,8 +3310,13 @@ let libShown = LIB_PAGE;
 let LIBTAGS = [];              // [{tag, books}] for the chip row
 
 function libHas(b, chip) {
-  if (chip === 'all') return true;
-  if (chip === 'unread') return !b.last_played;
+  // "read" is a mark the reader made, not a listening position: a book can be
+  // half heard and finished, and can be started and never finished. Finished
+  // books leave the main shelf, which is what "not prominent" has to mean on a
+  // shelf of 1,800, and come back with one click.
+  if (chip === 'all') return !b.read;
+  if (chip === 'read') return !!b.read;
+  if (chip === 'unread') return !b.last_played && !b.read;
   if (chip === 'series') return (b.series || []).length > 0;
   if (chip.indexOf('tag:') === 0) return shelfTags(b).indexOf(chip.slice(4)) >= 0;
   return true;
@@ -3326,10 +3353,12 @@ function renderChips() {
   box.innerHTML = '';
   if (!books.length) { box.hidden = true; return; }
   box.hidden = false;
-  const unread = books.filter(b => !b.last_played).length;
+  const unread = books.filter(b => !b.last_played && !b.read).length;
   const series = books.filter(b => (b.series || []).length).length;
-  const chips = [['all', T('All'), books.length], ['unread', T('Unread'), unread],
+  const done = books.filter(b => b.read).length;
+  const chips = [['all', T('All'), books.length - done], ['unread', T('Unread'), unread],
                  ['series', T('In a series'), series]];
+  if (done) chips.push(['read', T('Finished'), done]);
   // Eight tags is a row; the rest are one tap away. A shelf with 1,800 books
   // can easily carry sixty subjects, and sixty chips is a second shelf.
   LIBTAGS.slice(0, libState.tagsOpen ? LIBTAGS.length : 8)
@@ -3394,14 +3423,35 @@ function renderLibrary() {
     });
     loose.forEach(b => shelf.append(shelfCell(b)));
   } else if (libState.sort === 'author') {
-    let last = null;
+    // An author is a bucket, and inside it a series stays together: a shelf
+    // sorted by who wrote it is only useful if the books of one series are not
+    // scattered through it. Same key the server computes, so two spellings of
+    // one author land in one bucket.
+    const buckets = new Map();
     page.forEach(b => {
-      const a = b.author || T('No author');
-      if (a !== last) {
-        const hd = document.createElement('div'); hd.className = 'libauth'; hd.textContent = a;
-        shelf.append(hd); last = a;
-      }
-      shelf.append(shelfCell(b));
+      const name = (b.author || '').trim() || T('No author');
+      const key = b.author_key || (name === T('No author') ? '' : name.toLowerCase());
+      if (!buckets.has(key)) buckets.set(key, { name, books: [] });
+      buckets.get(key).books.push(b);
+    });
+    buckets.forEach(g => {
+      const hd = document.createElement('div'); hd.className = 'libauth';
+      hd.textContent = g.name + ' \u00b7 ' + g.books.length;
+      shelf.append(hd);
+      const sgroups = [], loose = [];
+      g.books.forEach(b => {
+        const s = (b.series || [])[0];
+        if (!s) { loose.push(b); return; }
+        let sg = sgroups.find(x => x.id === s.id);
+        if (!sg) { sg = { id: s.id, name: s.name, count: s.count || 1, items: [] }; sgroups.push(sg); }
+        sg.items.push({ b, place: s.place || 1 });
+      });
+      sgroups.forEach(sg => {
+        sg.items.sort((x, y) => x.place - y.place);
+        shelf.append(seriesHead(sg));
+        sg.items.forEach(it => shelf.append(shelfCell(it.b)));
+      });
+      loose.forEach(b => shelf.append(shelfCell(b)));
     });
   } else {
     page.forEach(b => shelf.append(shelfCell(b)));

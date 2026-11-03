@@ -29,6 +29,8 @@ exactly as the author wrote it.
 import hashlib
 import json
 import re
+
+from host.authors import author_key
 import uuid
 
 from host.db import now
@@ -391,7 +393,9 @@ def for_book(rules, book_id="", author="", series=()):
     statement and the user typed it on purpose.
     """
     bid = book_id or ""
-    who = (author or "").strip().lower() or UNKNOWN_AUTHOR
+    # the key, not the spelling: a rule typed against "B. Arthur" belongs to
+    # the books whose author reads "B Arthur" too.
+    who = author_key(author) or UNKNOWN_AUTHOR
     names = {str(s or "").strip().lower() for s in (series or ())}
     names.discard("")
     if not names:
@@ -401,7 +405,7 @@ def for_book(rules, book_id="", author="", series=()):
         return [r for r in (rules or []) if match(r)]
 
     out = layer(lambda r: not r.get("book") and not r.get("series") and not r.get("author"))
-    for mine in (layer(lambda r: r.get("author") and (r["author"] or "").strip().lower() == who),
+    for mine in (layer(lambda r: r.get("author") and author_key(r["author"]) == who),
                  layer(lambda r: r.get("series") and (r["series"] or "").strip().lower() in names),
                  layer(lambda r: bid and r.get("book") == bid)):
         if not mine:

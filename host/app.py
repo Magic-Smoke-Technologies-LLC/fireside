@@ -1191,6 +1191,17 @@ class App:
         library.set_user_details(self.conn, book_id, **fields)
         return 200, {"ok": True, "book": self._book_payload(book_id)}
 
+    def book_read_set(self, q, body):
+        """Mark a book read or unread. Nothing is charged and no text moves: it
+        is the reader's own shelf state, which is why it lives on the book the
+        reader owns and not on the work."""
+        book_id = body.get("book", "")
+        b = library.get_book(self.conn, book_id)
+        if not b or b.get("user_id") != self._uid(q, body):
+            return 404, {"error": "no such book"}
+        library.set_read(self.conn, book_id, bool(body.get("read", True)))
+        return 200, {"ok": True, "read": library.is_read(self.conn, book_id)}
+
     def series_list(self, q, body):
         return 200, {"series": library.list_series(self.conn, self._uid(q, body))}
 
@@ -2891,7 +2902,7 @@ POST_ROUTES = {
     "/speak": "speak",
     "/cover": "put_cover", "/cover/auto": "cover_auto", "/cover/clear": "clear_cover",
     "/book/details": "fetch_details", "/book/meta": "book_meta_set",
-    "/book/series": "book_series_set",
+    "/book/series": "book_series_set", "/book/read": "book_read_set",
     "/series": "series_save", "/series/move": "series_move",
     "/tags": "tags_set",
     "/position": "put_position", "/claim": "claim", "/ack": "ack",
