@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS books (
     cover_mime VARCHAR(64) DEFAULT '', author VARCHAR(255) DEFAULT '',
     isbn VARCHAR(32) DEFAULT '', publisher VARCHAR(255) DEFAULT '',
     published VARCHAR(64) DEFAULT '', description TEXT,
+    read_at VARCHAR(32) DEFAULT '',
     created_at VARCHAR(32));
 CREATE TABLE IF NOT EXISTS chapters (
     book_id VARCHAR(128), idx INT, title TEXT, chars INT,
@@ -289,6 +290,9 @@ _ADDED_COLUMNS = [
     # a reader changed the looked-up metadata by hand, so a later lookup must
     # never quietly decide it knows better.
     ("books", "user_edited", "INT DEFAULT 0"),
+    # the reader finished it. A timestamp, not a flag: '' means unread, so an
+    # old row and a new one read the same way.
+    ("books", "read_at", "VARCHAR(32) DEFAULT ''"),
     ("user_prefs", "pron", "TEXT"),
     # how the player reads along: highlight, scroll, scroll mode. JSON, because
     # it is one small bag of preferences and not a thing anything else queries.

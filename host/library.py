@@ -11,6 +11,7 @@ import json
 import uuid
 
 from host.contracts import Refused
+from host.authors import author_key
 from host.db import now
 
 
@@ -234,7 +235,8 @@ def list_books(conn, user_id):
     are voiced, and when it was last played.
     """
     rows = conn.execute(
-        "SELECT id,title,author,created_at,cover_ref,series_name,series_index"
+        "SELECT id,title,author,created_at,cover_ref,series_name,series_index,"
+        " read_at"
         " FROM books WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
     # SUM() comes back as Decimal from MySQL and an int from SQLite. A Decimal
     # in this dict reaches json.dumps and the shelf answers a connection reset
@@ -266,8 +268,14 @@ def list_books(conn, user_id):
     out = []
     for r in rows:
         n, done = counts.get(r["id"], (0, 0))
+        author = r["author"] or ""
         out.append({"id": r["id"], "title": r["title"],
-                    "author": (r["author"] or ""),
+                    "author": author,
+                    # the comparison key, so a list groups "B. Arthur" and
+                    # "B Arthur" as one author without touching the spelling
+                    # the reader sees.
+                    "author_key": author_key(author),
+                    "read": bool(r["read_at"] or ""),
                     "created_at": r["created_at"], "chapters": n or 0,
                     "rendered": done or 0,
                     "cover": r["cover_ref"] or "",
@@ -698,6 +706,23 @@ def remove_renditions(conn, storage, book_id, provider="", voice="", model=""):
     conn.commit()
     freed = gc_blobs(conn, storage, refs)
     return {"removed": removed, "freed": freed}
+
+
+def set_read(conn, book_id, read=True):
+    """Mark a book read (or clear the mark). Per user, because a book row is.
+
+    The mark is a timestamp rather than a boolean: "read" and "read in March"
+    cost the same to store, and the second one is what makes a shelf sortable
+    later. Clearing it writes '' so a fresh book and an unmarked one agree.
+    """
+    conn.execute("UPDATE books SET read_at=? WHERE id=?",
+                 (now() if read else "", book_id))
+    conn.commit()
+
+
+def is_read(conn, book_id):
+    r = conn.execute("SELECT read_at FROM books WHERE id=?", (book_id,)).fetchone()
+    return bool(r and (r["read_at"] or ""))
 
 
 def delete_book(conn, storage, book_id):
