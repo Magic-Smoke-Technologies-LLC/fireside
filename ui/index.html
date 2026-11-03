@@ -738,6 +738,7 @@
       <div id="pronrows"></div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn quiet" id="pronadd" type="button" data-t="＋ Add a word">＋ Add a word</button>
+        <button class="btn quiet" id="proncheck" type="button" data-t="Check audio">Check audio</button>
         <button class="btn" id="pronsave" type="button" data-t="Save">Save</button>
       </div>
       <div id="pronmsg" class="sub" style="margin-top:8px"></div>
@@ -1661,6 +1662,10 @@ async function testPron(text) {
 }
 $('#pronadd').onclick = () => pronRow('', '');
 $('#pronsave').onclick = savePron;
+// Saving is not the only way to ask. If you said Later on the audio dialog,
+// or you are coming back to it a day later, this opens the same check without
+// touching your words.
+$('#proncheck').onclick = () => showPronImpact(true);
 
 // --- pronunciation impact: a rule change only re-encodes what it touches ---
 // Saving a word does not re-encode anything by itself. This asks the server
@@ -1670,12 +1675,15 @@ let PRONIMPACT = null;
 function findConnFor(provider) {
   return CONNS.find(c => c.enabled !== false && c.provider === provider) || null;
 }
-async function showPronImpact() {
+async function showPronImpact(manual) {
   let im = null;
   try { im = await api('/pron/impact'); }
   catch (e) { $('#pronmsg').textContent += '  Words saved. (Could not check which chapters need re-encoding: ' + String(e && e.message ? e.message : e) + ')'; return; }
   PRONIMPACT = im;
-  if (!im || !im.chapters_affected) return;
+  if (!im || !im.chapters_affected) {
+    if (manual) $('#pronmsg').textContent = 'Nothing to redo. All of your audio already matches your words.';
+    return;
+  }
   const n = im.chapters_affected, m = im.books_affected;
   const secs = im.est_seconds || 0;
   const t = secs < 1 ? 'under a second'
@@ -1706,7 +1714,12 @@ async function showPronImpact() {
   $('#pigo').disabled = !any;
   $('#pronimpactdlg').hidden = false;
 }
-$('#pilater').onclick = () => { $('#pronimpactdlg').hidden = true; };
+$('#pilater').onclick = () => {
+  $('#pronimpactdlg').hidden = true;
+  // The dialog is re-openable: say so, so Later does not look like a dead end.
+  $('#pronmsg').textContent = $('#pimsg').textContent.split('.')[0]
+    + '.  Press "Check audio" to go back to this list.';
+};
 $('#pigo').onclick = reencodePronImpact;
 async function reencodePronImpact() {
   const im = PRONIMPACT;
