@@ -262,6 +262,28 @@ class TestSeriesRoutes(unittest.TestCase):
         self.assertEqual((got["book"]["title"], got["book"]["author"],
                           got["book"]["user_edited"]), ("Mine", "Me", 1))
 
+    def test_mark_read_over_http_and_the_shelf_agrees(self):
+        got = self._post("/book/read", {"book": self.books[0], "read": True})
+        self.assertTrue(got["read"])
+        by_id = {b["id"]: b for b in self._get("/library?user=u1")}
+        self.assertTrue(by_id[self.books[0]]["read"])
+        self.assertFalse(by_id[self.books[1]]["read"])
+        back = self._post("/book/read", {"book": self.books[0], "read": False})
+        self.assertFalse(back["read"])
+
+    def test_the_shelf_reports_a_key_so_two_spellings_group(self):
+        shelf = self._get("/library?user=u1")
+        self.assertIn("author_key", shelf[0])
+
+    def test_marking_someone_elses_book_read_is_a_404(self):
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/book/read" % self.port,
+            data=json.dumps({"book": self.books[0], "read": True, "user": "u2"}).encode(),
+            headers={"Content-Type": "application/json"})
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        self.assertEqual(e.exception.code, 404)
+
     def _post_raw(self, path, body):
         req = urllib.request.Request(
             "http://127.0.0.1:%d%s" % (self.port, path), data=json.dumps(body).encode(),
