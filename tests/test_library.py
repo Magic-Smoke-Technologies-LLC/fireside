@@ -100,6 +100,33 @@ class TestLibrary(unittest.TestCase):
             library.add_book(FailsOnChapters(self.conn), self.storage, "u1", _book())
         self.assertEqual(library.list_books(self.conn, "u1"), [])
 
+    def test_a_book_is_written_on_a_connection_without_savepoints(self):
+        """The hosted MySQL runs with autocommit on, where a savepoint is gone
+        before it can be released, and RELEASE answers 1305. That error arrived
+        after the rows were committed, so every add_book on the live server
+        raised on a book it had already written. The book must be written
+        without touching savepoints on an engine that has none."""
+
+        class NoSavepoints:
+            nested_transactions = False
+
+            def __init__(self, conn):
+                self._conn = conn
+
+            def execute(self, sql, params=()):
+                head = sql.strip().upper()
+                if head.startswith(("SAVEPOINT", "RELEASE", "ROLLBACK")):
+                    raise RuntimeError("(1305, 'SAVEPOINT addbook_x does not exist')")
+                return self._conn.execute(sql, params)
+
+            def commit(self):
+                return self._conn.commit()
+
+        library.create_user(self.conn, "u1")
+        bid = library.add_book(NoSavepoints(self.conn), self.storage, "u1", _book())
+        self.assertEqual(library.get_book(self.conn, bid)["title"], "Fire")
+        self.assertEqual(len(library.chapters(self.conn, bid)), 3)
+
     def test_a_book_with_no_chapters_is_refused(self):
         """A row with nothing in it shows nowhere and can never be read."""
         from host.contracts import Refused
