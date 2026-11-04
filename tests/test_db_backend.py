@@ -73,6 +73,64 @@ class Translate(unittest.TestCase):
             "ON DUPLICATE KEY UPDATE b=b+1,c=VALUES(c)")
 
 
+class Savepoints(unittest.TestCase):
+    """A savepoint is a SQLite-only feature in this codebase.
+
+    The hosted MySQL runs with autocommit on, so the transaction a SAVEPOINT
+    opens is gone before the next statement can use it: SAVEPOINT x then
+    RELEASE SAVEPOINT x is 1305 on MySQL 8 with nothing in between. Measured on
+    the live server. The helpers below are the only place that decision is
+    made, and the failure they prevent lands at the end of a write that has
+    already committed.
+    """
+
+    class Recording:
+        def __init__(self, nested=True):
+            self.nested_transactions = nested
+            self.sql = []
+
+        def execute(self, sql, params=()):
+            self.sql.append(sql)
+
+        def commit(self):
+            self.sql.append("COMMIT")
+
+    def test_a_sqlite_connection_has_nested_transactions(self):
+        c = db.connect(":memory:")
+        try:
+            self.assertTrue(db.nested_transactions(c))
+        finally:
+            c.close()
+
+    def test_a_mysql_connection_says_it_does_not(self):
+        c = object.__new__(db.MySQLConnection)
+        self.assertFalse(db.nested_transactions(c))
+
+    def test_helpers_write_the_statements_on_sqlite(self):
+        c = self.Recording()
+        db.savepoint(c, "sp1")
+        db.release_savepoint(c, "sp1")
+        db.savepoint(c, "sp2")
+        db.rollback_to_savepoint(c, "sp2")
+        self.assertEqual(c.sql, ["SAVEPOINT sp1", "RELEASE sp1",
+                                 "SAVEPOINT sp2",
+                                 "ROLLBACK TO sp2", "RELEASE sp2"])
+
+    def test_helpers_write_nothing_where_a_savepoint_does_not_hold(self):
+        c = self.Recording(nested=False)
+        db.savepoint(c, "sp1")
+        db.release_savepoint(c, "sp1")
+        db.rollback_to_savepoint(c, "sp1")
+        self.assertEqual(c.sql, [], "MySQL must not see a savepoint statement")
+
+    def test_an_unknown_connection_keeps_the_old_behaviour(self):
+        """Wrappers and test doubles that predate the flag still get savepoints,
+        so a SQLite caller cannot silently lose its nested undo."""
+        c = self.Recording()
+        del c.nested_transactions
+        self.assertTrue(db.nested_transactions(c))
+
+
 class Backend(unittest.TestCase):
     def test_sqlite_is_default(self):
         self.assertEqual(db.backend_name(""), "sqlite")

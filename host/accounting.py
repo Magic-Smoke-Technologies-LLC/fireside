@@ -14,7 +14,8 @@ without a duplicate debit.
 import sqlite3
 import uuid
 
-from host.db import now
+from host.db import (now, savepoint, release_savepoint,
+                     rollback_to_savepoint)
 
 _OPEN = ("reserved", "pending")        # reservation states still holding credits
 
@@ -78,14 +79,17 @@ def reserve(conn, user_id, amount, currency="USD", job_id=None, note=""):
         raise ValueError("reserve amount must be positive")
     # A SAVEPOINT, not BEGIN IMMEDIATE: the host serves requests from a thread
     # pool over one shared connection, so a transaction opened here is the same
-    # transaction another thread is writing into. BEGIN IMMEDIATE raises
+    # transaction another thread is writing into. (On MySQL, which runs with
+    # autocommit on, db.savepoint writes nothing: the savepoint cannot survive
+    # the statement that sets it. The read-then-insert below is still guarded by
+    # the balance UPDATE, which is atomic on its own.) BEGIN IMMEDIATE raises
     # "cannot start a transaction within a transaction" the moment a concurrent
     # write is pending, and the ROLLBACK that used to follow discarded that
     # other thread's work along with ours (a session row not yet committed, so
     # the cookie the client already holds stops resolving). A savepoint nests,
     # and rolling back to it undoes only what this reservation did.
     save = "reserve_" + uuid.uuid4().hex[:12]
-    conn.execute("SAVEPOINT " + save)
+    savepoint(conn, save)
     try:
         avail = available(conn, user_id)
         if avail < amount:
@@ -96,10 +100,9 @@ def reserve(conn, user_id, amount, currency="USD", job_id=None, note=""):
             "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
             (rid, user_id, amount, currency, "reserved", job_id or "", now(), now()))
     except Exception:
-        conn.execute("ROLLBACK TO " + save)
-        conn.execute("RELEASE " + save)
+        rollback_to_savepoint(conn, save)
         raise
-    conn.execute("RELEASE " + save)
+    release_savepoint(conn, save)
     conn.commit()
     return rid
 

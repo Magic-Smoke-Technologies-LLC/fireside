@@ -12,7 +12,8 @@ import uuid
 
 from host.contracts import Refused
 from host.authors import author_key
-from host.db import now
+from host.db import (now, savepoint, release_savepoint,
+                     rollback_to_savepoint)
 
 
 def create_user(conn, user_id, name=""):
@@ -48,15 +49,20 @@ def add_book(conn, storage, user_id, book, tags_from=None):
     book_id = book.id or uuid.uuid4().hex
     meta = dict(book.meta or {})
     save = "addbook_" + uuid.uuid4().hex[:12]
-    conn.execute("SAVEPOINT " + save)
+    savepoint(conn, save)
     try:
         # Chapters FIRST, the books row last. The row is what makes a book
         # visible, so the failure this ordering can leave behind is orphan
         # chapter rows: invisible on the shelf, reclaimable. The old order left
         # the opposite, a shelf entry with no readable text, and the reader
-        # cannot repair that on its own. Ordering is the real guard, not the
-        # savepoint: the live MySQL connection is autocommit, so a savepoint
-        # undoes only what this process has not already committed.
+        # cannot repair that on its own.
+        #
+        # Ordering is the whole guard on MySQL, and the savepoint is only a
+        # guard on SQLite. MySQL here runs with autocommit on, where a savepoint
+        # does not survive the statement that set it, so `db.savepoint` writes
+        # nothing there rather than issuing a RELEASE that answers 1305 AFTER
+        # the book is already committed. That 1305 was live: every add_book on
+        # the hosted MySQL raised on a book it had successfully written.
         for i, title, chars, ref in staged:
             conn.execute(
                 "INSERT OR REPLACE INTO chapters"
@@ -71,10 +77,9 @@ def add_book(conn, storage, user_id, book, tags_from=None):
             (book_id, user_id, book.title, json.dumps(meta), meta.get("author", ""),
              now()))
     except Exception:
-        conn.execute("ROLLBACK TO " + save)
-        conn.execute("RELEASE " + save)
+        rollback_to_savepoint(conn, save)
         raise
-    conn.execute("RELEASE " + save)
+    release_savepoint(conn, save)
     conn.commit()
     if tags_from:
         from host import tags as tagmod

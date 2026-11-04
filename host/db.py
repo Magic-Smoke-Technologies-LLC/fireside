@@ -399,6 +399,9 @@ class Result:
 class SQLiteConnection:
     """One SQLite connection, safe to share across request threads.
 
+    `nested_transactions` is True: a SAVEPOINT here really does undo only the
+    caller's own work. See the savepoint helpers above.
+
     The host is a ThreadingHTTPServer and every thread reaches for the same
     App.conn, so statements from different threads land on one sqlite3
     connection at the same time. sqlite3 releases the GIL around a statement,
@@ -418,9 +421,13 @@ class SQLiteConnection:
 
     Transactions stay connection-wide (commit commits, rollback rolls back),
     which is what every module already assumes. Callers that need to undo only
-    their own work should use a SAVEPOINT rather than a bare ROLLBACK: a
-    connection-wide rollback also discards whatever another thread had pending.
+    their own work should use the savepoint helpers above rather than a bare
+    ROLLBACK: a connection-wide rollback also discards whatever another thread
+    had pending, and the helpers are the ones that know whether this engine has
+    a nested transaction to undo at all.
     """
+
+    nested_transactions = True
 
     def __init__(self, path):
         self._lock = threading.RLock()
@@ -457,6 +464,50 @@ class SQLiteConnection:
 
 def now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+# ---- savepoints -------------------------------------------------------------
+# A SAVEPOINT is a nested undo point inside a transaction. Both engines parse
+# the statement, so it is tempting to write it everywhere and assume it works.
+# It does not work on MySQL here, and the failure lands at the END of a write
+# that has already succeeded:
+#
+#   the host opens MySQL with autocommit on, so every statement is its own
+#   transaction and commits immediately. A savepoint set by one statement is
+#   discarded the moment that statement ends, so the matching RELEASE (or
+#   ROLLBACK TO) answers 1305 "SAVEPOINT x does not exist". Measured on the live
+#   server (MySQL 8.0.46, autocommit=1): SAVEPOINT t2 then RELEASE SAVEPOINT t2,
+#   nothing in between, is 1305.
+#
+# So a savepoint is not a portability feature, it is an SQLite-only one, and
+# these three helpers are how callers ask for it without pretending otherwise.
+# Callers that need MySQL correctness get it from write ordering instead (write
+# the invisible rows first, the visible row last), because on autocommit there
+# is no rollback to lean on and one shared connection means a real transaction
+# would be another thread's transaction too.
+
+def nested_transactions(conn):
+    """Whether a savepoint on `conn` actually holds. False on MySQL."""
+    return getattr(conn, "nested_transactions", True)
+
+
+def savepoint(conn, name):
+    """Open a nested undo point, on engines that have one."""
+    if nested_transactions(conn):
+        conn.execute("SAVEPOINT " + name)
+
+
+def rollback_to_savepoint(conn, name):
+    """Undo back to `name` and drop it, on engines that have one."""
+    if nested_transactions(conn):
+        conn.execute("ROLLBACK TO " + name)
+        conn.execute("RELEASE " + name)
+
+
+def release_savepoint(conn, name):
+    """Drop `name`, keeping its work, on engines that have one."""
+    if nested_transactions(conn):
+        conn.execute("RELEASE " + name)
 
 
 # ---- MySQL shim -------------------------------------------------------------
@@ -515,7 +566,12 @@ class MySQLConnection:
     All access is serialised behind one lock: a pymysql connection is not
     thread-safe and the host serves requests from a thread pool. For a home
     server that is exactly the right amount of concurrency control.
+
+    `nested_transactions` is False: autocommit is on, so a savepoint is gone
+    before it can be used. See the savepoint helpers above.
     """
+
+    nested_transactions = False
 
     def __init__(self, url, cursor_dict=True):
         import pymysql  # imported here so SQLite deployments need not install it
