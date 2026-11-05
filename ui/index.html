@@ -205,11 +205,13 @@
   .recent .bk{flex:0 0 128px;max-width:128px}
   .recent .bk .cover{max-width:128px;font-size:12px}
   .libmore{display:block;margin:24px auto 0}
+  .libmore[hidden]{display:none}
   .libnone{color:var(--faint);margin-top:16px}
   .libauth{grid-column:1/-1;font:600 14px/1.2 var(--serif);color:var(--soft);
     margin:18px 0 0;border-bottom:1px solid var(--line);padding-bottom:6px}
   /* playing */
-  .np{display:grid;grid-template-columns:1fr 260px;gap:40px}
+  .np{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:40px}
+  .np>*{min-width:0}
   .story p{font:19px/1.75 var(--serif);color:var(--soft);margin-top:18px;max-width:62ch}
   .story p:first-child{margin-top:0}
   .story .lead{color:var(--text)}
@@ -238,11 +240,19 @@
   .tag{font-size:11px;color:var(--flame);margin-left:6px}
   @media(max-width:760px){
     main{padding:22px 18px 70px}
-    .np{grid-template-columns:1fr;gap:22px}
+    .np{grid-template-columns:minmax(0,1fr);gap:22px}
     .np aside{order:2}
     .shelf{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:16px}
     .resume{flex-direction:column;align-items:flex-start}
     .resume .cover{width:104px}
+  }
+  /* A scrolling tab row with no cue reads as a complete row with missing tabs:
+     Plans and Account were simply never found on a phone. Wrapping shows every
+     tab; the tagline gives up its line first. */
+  @media(max-width:600px){
+    nav.tabs,.settabs{flex-wrap:wrap;overflow-x:visible}
+    nav.tabs button{padding:9px 9px;font-size:13px}
+    header p{display:none}
   }
   /* --- the door: the whole app sits behind a session ---------------------- */
   body.locked > header, body.locked > main { display:none }
@@ -1208,7 +1218,6 @@ function idle(t) { clearInterval(_tick); $('#rcancel').hidden = true; $('#rspin'
   $('#rprog').style.display = 'none'; $('#rprogfill').style.width = '0%';
   if (!t) { _ribbon('', ''); $('#rdismiss').hidden = true; return; }
   _ribbon('on ok', t); $('#rdismiss').hidden = false;
-  toast('ok', t);
   _hideTimer = setTimeout(() => { _ribbon('', ''); }, 6000); }
 function fail(e) { clearInterval(_tick); $('#rcancel').hidden = true; $('#rspin').style.display = 'none'; $('#rtime').textContent = '';
   $('#rprog').style.display = 'none';
