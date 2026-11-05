@@ -387,5 +387,114 @@ class TestEpisodic(unittest.TestCase):
         self.assertEqual(book.meta["word_count"], "{:,}".format(total))
 
 
+# ---- a story published one post per chapter -----------------------------------
+#
+# The live shape, from No Enemy Within: the work's own index page is a PAGE
+# titled with the work, and it lists the chapters as shortlinks labelled
+# "Chapter One", "Chapter Six", ... in two columns, so the page order runs
+# One, Six, Two, Seven. Nothing in the URL says these are chapters of one work:
+# every chapter is its own dated post with its own slug. Imported as a list of
+# works, this shelf got ten books of one chapter each.
+
+INDEX_WORK = ("https://keiramarcos.com/fan-fiction/stargate-atlantis-fan-fiction/"
+              "the-lantean-legacy/lantean-legacy-no-enemy-within/")
+
+
+def chapter_link(p, label):
+    return '<p><a href="https://keiramarcos.com/?p=%d">%s</a></p>' % (p, label)
+
+
+INDEX_PAGE = """<html><head><title>No Enemy Within &#8211; Keira Marcos</title>
+<link rel="canonical" href="%s" /></head><body>
+<h1 class="entry-title">No Enemy Within</h1>
+<div class="entry-content"><p>Reading Time: 1 Minutes</p>
+<p>Art by FanArts Series</p>
+%s
+<p><a href="https://keiramarcos.com/?page_id=2266">Return to the Series Page</a></p>
+</div></body></html>""" % (INDEX_WORK, "".join([
+    chapter_link(2408, "Chapter One"),
+    chapter_link(2437, "Chapter Three"),
+    chapter_link(2413, "Chapter Two"),
+    chapter_link(2442, "Chapter Four"),
+]))
+
+
+def chapter_post(label, p):
+    return """<html><body><h1 class="entry-title">No Enemy Within &#8211; %s</h1>
+<div class="entry-content"><p>Art by FanArts Series</p>
+<p>%s body text, long enough to be read aloud, and with no chapter heading of
+its own: this post is one chapter of the story and says so only in its title.
+The reader has to keep that whole body as one chapter rather than guessing.</p>
+</div></body></html>""" % (label, label)
+
+
+CHAPTER_PAGES = {
+    "https://keiramarcos.com/?p=2408": chapter_post("Chapter One", 2408),
+    "https://keiramarcos.com/?p=2413": chapter_post("Chapter Two", 2413),
+    "https://keiramarcos.com/?p=2437": chapter_post("Chapter Three", 2437),
+    "https://keiramarcos.com/?p=2442": chapter_post("Chapter Four", 2442),
+}
+
+
+class TestStoryIndex(unittest.TestCase):
+    """A page that lists chapters is one book, not a shelf of one-chapter books."""
+
+    def read_index(self, url="https://keiramarcos.com/?page_id=2404"):
+        pages = dict(CHAPTER_PAGES)
+        pages[url] = INDEX_PAGE
+        fetch = FakeFetch(pages)
+        return km.Keiramarcos().read({"kind": "url", "url": url}, fetch), fetch
+
+    def test_the_ordinal_in_a_label_is_read_off_the_words(self):
+        self.assertEqual(km.chapter_ordinal("Chapter One"), 1)
+        self.assertEqual(km.chapter_ordinal("Chapter Ten"), 10)
+        self.assertEqual(km.chapter_ordinal("Ch. 7"), 7)
+        self.assertEqual(km.chapter_ordinal("Part 2"), 2)
+        self.assertIsNone(km.chapter_ordinal("Epilogue"))
+        self.assertIsNone(km.chapter_ordinal("Heart&#8217;s Desire"))
+        self.assertIsNone(km.chapter_ordinal("1. A Caged Tiger"))
+
+    def test_a_page_of_chapters_is_one_book_in_chapter_order(self):
+        book, _ = self.read_index()
+        self.assertEqual(book.title, "No Enemy Within")
+        self.assertEqual([c.title for c in book.chapters],
+                         ["Chapter One", "Chapter Two", "Chapter Three", "Chapter Four"])
+        self.assertEqual(book.meta["parts"], 4)
+
+    def test_reading_order_comes_from_the_label_not_the_layout(self):
+        # the fixture lists One, Three, Two, Four: page order is a lie
+        book, _ = self.read_index()
+        self.assertEqual([c.text.split(" body")[0] for c in book.chapters],
+                         ["Chapter One", "Chapter Two", "Chapter Three", "Chapter Four"])
+
+    def test_the_book_is_named_by_the_address_the_page_declares(self):
+        book, _ = self.read_index()
+        self.assertEqual(book.meta["url"], INDEX_WORK)
+        self.assertEqual(book.meta["identity"], km.identity_of(INDEX_WORK))
+        # the shortlink entry page and the pretty address are the same book
+        pretty, _ = self.read_index(INDEX_WORK)
+        self.assertEqual(pretty.meta["identity"], book.meta["identity"])
+
+    def test_an_index_page_never_offers_a_series_picker(self):
+        pages = dict(CHAPTER_PAGES)
+        pages[INDEX_WORK] = INDEX_PAGE
+        self.assertIsNone(km.Keiramarcos().series(
+            {"kind": "url", "url": INDEX_WORK}, FakeFetch(pages)))
+
+    def test_the_art_credit_is_not_read_as_the_first_line(self):
+        book, _ = self.read_index()
+        for ch in book.chapters:
+            self.assertFalse(ch.text.startswith("Art by"), ch.text[:40])
+
+    def test_a_series_listing_is_not_mistaken_for_a_chapter_index(self):
+        series = """<html><body><h1 class="entry-title">Hold My Coffee (Series)</h1>
+<div class="entry-content">
+<h2><a href="https://keiramarcos.com/2017/02/a-caged-tiger/">1. A Caged Tiger</a></h2>
+<h2><a href="https://keiramarcos.com/2017/02/an-empty-coffin/">2. An Empty Coffin</a></h2>
+</div></body></html>"""
+        url = "https://keiramarcos.com/fan-fiction/x/holdmycoffee/"
+        self.assertEqual(km.chapter_index_items(series, url), [])
+
+
 if __name__ == "__main__":
     unittest.main()

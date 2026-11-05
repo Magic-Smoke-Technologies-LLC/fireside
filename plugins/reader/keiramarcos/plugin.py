@@ -73,6 +73,23 @@ _H1 = re.compile(r"(?is)<h1\b[^>]*>(.*?)</h1>")
 # bare "Chapter 1" is a chapter, so only a span counts as navigation.
 _NAV_HEAD = re.compile(r"(?i)^(?:chapters?|parts?|posts?)\s+\d+\s*(?:-|\u2013|\u2014|to)\s*\d+$"
                        r"|^(?:chapters?|parts?|posts?)\s+\d+\s+of\s+\d+$")
+# A story published as one post per chapter, listed on the work's own index
+# page: <a href="?p=2408">Chapter One</a>, <a href="?p=2437">Chapter Six</a>.
+# The list is laid out in two columns, so page order runs One, Six, Two, Seven:
+# reading order has to come from the ordinal in the label, never from where the
+# link sits. And a label that is only a chapter number is a chapter of THIS
+# page's work - not a work of a series, which is what a bare anchor list looks
+# like to series_items.
+_CHAP_LABEL = re.compile(
+    r"^(?:chapter|ch|part|episode|post)\.?\s*"
+    r"(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)$",
+    re.I)
+_ORDINAL_WORD = {w: i for i, w in enumerate(
+    ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+     "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+     "seventeen", "eighteen", "nineteen", "twenty"), 1)}
+
 # Wordpress reading-time badge and other post-wide junk
 _JUNK_P = re.compile(r'(?is)<p\b[^>]*class="[^"]*wpwc-reading-time[^"]*"[^>]*>.*?</p>')
 # the sharer and the Jetpack "Like this" widget sit after "The End" and would
@@ -404,6 +421,52 @@ def _items_from_headings(page: str, url: str):
     return out
 
 
+def chapter_ordinal(label: str):
+    """The chapter number a link label carries, or None.
+
+    "Chapter One" -> 1, "Ch. 7" -> 7, "Part 2" -> 2. A label with any other
+    words in it ("1. A Caged Tiger", "Heart's Desire") is a work, not a
+    chapter, and returns None.
+    """
+    text = " ".join((label or "").split()).strip().rstrip(".:—- ")
+    if not text or not _CHAP_LABEL.match(text):
+        return None
+    tail = text.rsplit(" ", 1)[-1].strip(".:—- ").lower()
+    if tail.isdigit():
+        n = int(tail)
+        return n if 1 <= n <= MAX_PARTS else None
+    return _ORDINAL_WORD.get(tail)
+
+
+def chapter_index_items(page: str, url: str) -> list:
+    """The chapters of this page's own work, in reading order, or [].
+
+    The page is a story index: it lists one post per chapter, labelled with the
+    chapter number and nothing else. Anything that does not match that shape
+    (a series listing, a bundle page, a set of tabs) returns [], so the caller
+    keeps its old behaviour.
+    """
+    seg = story_tab_html(page) or content_region(page)
+    if not seg:
+        return []
+    out, seen, ns = [], set(), set()
+    for m in _ANCHOR.finditer(seg):
+        clean = _clean_link(m.group(1), url)
+        if not clean or not is_work_link(clean) or clean in seen:
+            continue
+        label = " ".join(clean_fragment(m.group(2)).split())[:80]
+        n = chapter_ordinal(label)
+        if n is None or n in ns:
+            continue
+        seen.add(clean)
+        ns.add(n)
+        out.append({"url": clean, "label": label, "n": n, "parts": None})
+    if len(out) < 2:
+        return []
+    out.sort(key=lambda i: i["n"])
+    return out[:MAX_PARTS]
+
+
 def series_items(page: str, url: str) -> list:
     """The works a ~Series~ page lists, in reading order.
 
@@ -621,6 +684,13 @@ class Keiramarcos:
         # That is one book read in order, not a shelf: importing it as a series
         # would hand back a picker of 21 episodes and no text at all.
         episodes = season_tab_links(start_page, start_url)
+        if len(episodes) < 2:
+            chapter_items = chapter_index_items(start_page, start_url)
+            if len(chapter_items) >= 2:
+                # one post per chapter, listed on this page: one book, in
+                # chapter order, however the list is laid out
+                return self._chapter_book(chapter_items, start_page, start_url,
+                                          fetch, cred)
         works = series_items(start_page, start_url) if len(episodes) < 2 else []
         if len(works) == 1 and works[0]["url"] != start_url and series_marked(start_page):
             # a series page holding one work is one work, not a shelf
@@ -668,16 +738,44 @@ class Keiramarcos:
         """
         url = req["url"]
         page = fetch(url, cred=cred, credential_hosts=self.credential_hosts())
+        if len(chapter_index_items(page, url)) >= 2:
+            # chapters of one work, not a shelf of works
+            return None
         works = series_items(page, url)
         if len(works) < 2:
             return None
         return {"title": series_title(page) or "Series", "page": url, "works": works}
 
-    def _assemble(self, fetched: list, work_url: str, title_hint: str = "") -> dict:
+    def _chapter_book(self, items: list, page: str, url: str, fetch, cred) -> dict:
+        """One book from a story index page that lists a post per chapter.
+
+        The work's address comes from the page's own canonical link where the
+        site declares one, so the same story imported from its index page, its
+        shortlink, or its pretty address is one book.
+        """
+        canon = canonical_of(page)
+        work_url = canon if canon and is_keiramarcos(canon) else url
+        fetched, titles = [], {}
+        for it in items:
+            part = fetch(it["url"], cred=cred,
+                         credential_hosts=self.credential_hosts())
+            fetched.append((it["url"], part))
+            titles[it["url"]] = it["label"]
+        book = self._assemble(fetched, work_url, title_hint=post_title(page),
+                              titles_by_url=titles)
+        book["meta"]["parts"] = len(fetched)
+        book["meta"]["identity"] = identity_of(work_url)
+        return to_book(book)
+
+    def _assemble(self, fetched: list, work_url: str, title_hint: str = "",
+                  titles_by_url: dict = None) -> dict:
         chapters, meta, title = [], {}, title_hint
+        titles_by_url = titles_by_url or {}
         for i, (part_url, page) in enumerate(fetched):
             body = _JUNK_P.sub(" ", content_region(drop_widgets(strip_furniture(page))))
-            fallback = _PART_TITLE.sub("", post_title(page)) or ("Part %d" % (i + 1))
+            fallback = (titles_by_url.get(part_url)
+                        or _PART_TITLE.sub("", post_title(page))
+                        or ("Part %d" % (i + 1)))
             if i == 0:
                 # the metadata block sits above the first chapter heading, so
                 # it never lands in a chapter: read it here, once.
@@ -705,6 +803,12 @@ class Keiramarcos:
                         for k in ("Author", "Fandom", "Summary", "Word Count"):
                             if fields.get(k) and k.lower().replace(" ", "_") not in meta:
                                 meta[k.lower().replace(" ", "_")] = fields[k]
+                if len(text) < 2:
+                    continue
+                if j == 0:
+                    # a chapter post can open with the art credit and nothing
+                    # else: furniture, not the first line of the story
+                    text = _drop_lead_furniture(text)
                 if len(text) < 2:
                     continue
                 chapters.append({"title": ch["title"], "text": text})
