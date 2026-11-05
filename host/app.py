@@ -26,6 +26,7 @@ Endpoints (JSON unless noted):
 """
 
 import base64
+import sys
 import ipaddress
 import json
 import os
@@ -52,6 +53,28 @@ HOST_VERSION = "2.0"
 # itself. The page's placeholder is translated, so the typed phrase is too: the
 # check is on the user's intent, not on English spelling.
 DELETE_PHRASES = {"delete my account", "eliminar mi cuenta"}
+
+
+def _detail(e, fallback):
+    """What the reader is told when ours broke.
+
+    A raw exception was reaching the screen: "OperationalError: SAVEPOINT addbook
+    does not exist" arrived as user-facing copy, class name and SQL included. It
+    tells a reader nothing they can act on and tells anyone beside them plenty.
+    A deliberate refusal in this codebase is a ValueError with a written sentence
+    (see host/auth.py), so that passes; anything else is logged and replaced by a
+    sentence that says what to do next.
+    """
+    try:
+        print("fireside error: %s: %s" % (type(e).__name__, str(e)[:400]),
+              file=sys.stderr)
+    except Exception:                                  # noqa: BLE001
+        pass
+    if isinstance(e, ValueError) and not isinstance(e, (AttributeError, KeyError)):
+        text = str(e).strip()
+        if text and len(text) <= 200 and "\n" not in text:
+            return text
+    return fallback
 
 
 def _norm_confirm(value):
@@ -394,7 +417,8 @@ class App:
             questions = obj.scan(body.get("text") or body.get("sentences") or [],
                                  body.get("model") or "", cred)
         except Exception as e:
-            return 502, {"error": "scan failed", "detail": str(e)}
+            return 502, {"error": "scan failed",
+                        "detail": _detail(e, "the reader could not read that text")}
         return 200, {"questions": questions or []}
 
     def ui(self, q, body):
@@ -661,7 +685,7 @@ class App:
                     q, dict(body, kind="url", url=w["url"]))
             except Exception as e:                    # noqa: BLE001
                 row.update({"error": "could not read this work",
-                            "detail": str(e)[:300]})
+                            "detail": _detail(e, "that page would not open")})
                 failed.append(row)
                 continue
             if status == 200 and out.get("book_id"):
