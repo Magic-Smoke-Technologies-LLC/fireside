@@ -208,6 +208,28 @@ class Schema(unittest.TestCase):
         finally:
             c.close()
 
+    def test_a_blob_reference_is_indexed_on_every_table_that_names_one(self):
+        """Removing a book asks "does any row still name this blob?" once per
+        blob. Unindexed that is a full scan of the whole shelf per blob, which
+        is how a bulk remove used to spend minutes before answering."""
+        c = db.connect(":memory:")
+        try:
+            for table, col in (("chapters", "text_ref"), ("chapters", "audio_ref"),
+                               ("renditions", "audio_ref"), ("books", "cover_ref"),
+                               ("render_cache", "audio_ref")):
+                rows = c.execute("PRAGMA index_list(%s)" % table).fetchall()
+                indexed = set()
+                for r in rows:
+                    for info in c.execute("PRAGMA index_info(%s)" % r["name"]).fetchall():
+                        if info["name"] == col:
+                            indexed.add(col)
+                self.assertIn(col, indexed, "%s.%s must be indexed" % (table, col))
+            names = {r["name"] for r in
+                     c.execute("PRAGMA index_list(listens)").fetchall()}
+            self.assertIn("idx_listens_user_book", names)
+        finally:
+            c.close()
+
 
 if __name__ == "__main__":
     unittest.main()

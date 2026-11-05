@@ -993,6 +993,7 @@ class App:
             return 413, {"error": "too many books in one call",
                          "detail": "remove at most %d at a time" % self.BULK_DELETE_MAX}
         removed, kept = [], []
+        refs = []
         for book_id in ids:
             b, err = self._owned_book(uid, book_id)
             if err:
@@ -1003,12 +1004,16 @@ class App:
                 kept.append({"book": book_id, "title": b.get("title", ""),
                              "reason": "a conversion for this book is still running"})
                 continue
-            library.delete_book(self.conn, self.storage, book_id)
+            refs.extend(library.delete_book_rows(self.conn, book_id))
             playback.discard_book(self.conn, uid, book_id)
             stats.discard_book(self.conn, uid, book_id)
             removed.append({"book": book_id, "title": b.get("title", "")})
+        # one sweep for the whole set, after every row is gone: a blob only one
+        # of the picked books named is freed here, and a blob one of them still
+        # holds is kept. Doing it per book means the same lookups, twice.
+        freed = library.gc_blobs(self.conn, self.storage, refs)
         return 200, {"ok": True, "deleted": len(removed), "books": removed,
-                     "kept": kept,
+                     "kept": kept, "freed": freed,
                      "storage": quota.usage(self.conn, self.storage, uid)}
 
     # a cover URL is user input, so it only ever reaches the public internet:

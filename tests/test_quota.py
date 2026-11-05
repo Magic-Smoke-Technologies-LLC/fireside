@@ -37,11 +37,13 @@ class TestQuota(unittest.TestCase):
             "VALUES(?,?,?,?,?,?)", (bid, uid, bid, "{}", cover_ref, now()))
         self.conn.commit()
 
-    def _chapter(self, bid, idx, text_ref=None, audio_ref=None, audio_bytes=0):
+    def _chapter(self, bid, idx, text_ref=None, audio_ref=None, audio_bytes=0,
+                 text_bytes=None):
         self.conn.execute(
-            "INSERT INTO chapters(book_id,idx,title,chars,text_ref,audio_ref,audio_bytes) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (bid, idx, "c", 0, text_ref, audio_ref, audio_bytes))
+            "INSERT INTO chapters(book_id,idx,title,chars,text_ref,audio_ref,"
+            "audio_bytes,text_bytes) VALUES(?,?,?,?,?,?,?,?)",
+            (bid, idx, "c", 0, text_ref, audio_ref, audio_bytes,
+             text_bytes if text_bytes is not None else 0))
         self.conn.commit()
 
     def _rendition(self, bid, idx, audio_ref, audio_bytes=0):
@@ -78,6 +80,36 @@ class TestQuota(unittest.TestCase):
         self._chapter("b1", 0, text_ref=tref)
         u = quota.usage(self.conn, self.store, "alice")
         self.assertEqual(u["own_bytes"], 12 + 7)
+
+    def test_a_recorded_text_size_never_asks_the_backend(self):
+        """A recount must not HEAD a blob whose size the row already carries.
+        That round trip, once per chapter, is what made a 1,700-book shelf take
+        minutes to answer a delete."""
+        tref = self.store.put(b"x" * 12)
+        self._book("b1", "alice")
+        self._chapter("b1", 0, text_ref=tref, text_bytes=12)
+
+        class Counting:
+            def __init__(self, inner):
+                self.inner, self.asked = inner, []
+            def size(self, ref):
+                self.asked.append(ref)
+                return self.inner.size(ref)
+        counting = Counting(self.store)
+        u = quota.usage(self.conn, counting, "alice")
+        self.assertEqual(u["own_bytes"], 12)
+        self.assertEqual(counting.asked, [], "the row's own size was enough")
+
+    def test_an_old_row_learns_its_size_once(self):
+        """Rows written before the size was recorded still get counted, and the
+        answer is stored so the next recount reads the database."""
+        tref = self.store.put(b"x" * 12)
+        self._book("b1", "alice")
+        self._chapter("b1", 0, text_ref=tref)
+        self.assertEqual(quota.usage(self.conn, self.store, "alice")["own_bytes"], 12)
+        row = self.conn.execute("SELECT text_bytes FROM chapters WHERE text_ref=?",
+                                (tref,)).fetchone()
+        self.assertEqual(row["text_bytes"], 12)
 
     def test_renditions_are_billed_too(self):
         self._book("b1", "alice")

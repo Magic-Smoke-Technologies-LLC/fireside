@@ -3632,8 +3632,16 @@ $('#libseldel').addEventListener('click', async () => {
       const out = await jpost('/books/delete', { books: ids.slice(i, i + 200), user: USER });
       done += out.deleted || 0;
       (out.kept || []).forEach(k => kept.push(k));
+      if (i + 200 < ids.length) busy(T('Removing {n} books…', { n: n - done }));
     }
-  } catch (err) { fail(err); return; }
+  } catch (err) {
+    // A remove can die at the proxy after part of it has landed. The shelf on
+    // screen is a guess now, so reload it before saying what happened - a stale
+    // shelf is how "nothing was deleted" gets reported for a half-done job.
+    LIB_SEL = null;
+    try { await loadLibrary(); } catch (_) {}
+    fail(err); return;
+  }
   LIB_SEL = null;
   await loadLibrary();
   if (!kept.length) { idle(done === 1 ? T('Book removed.') : T('Removed {n} books.', { n: done })); return; }
