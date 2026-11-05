@@ -103,7 +103,14 @@
   nav.tabs{display:flex;gap:2px;margin-top:12px;overflow-x:auto}
   nav.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:9px 12px;color:var(--soft);font-size:14px;cursor:pointer;white-space:nowrap}
   nav.tabs button.on{color:var(--text);border-color:var(--flame)}
-  main{padding:30px 40px 80px;max-width:960px;margin:0 auto}
+  main{padding:30px 40px 80px;max-width:1180px;margin:0 auto}
+  /* A view is two areas: a stage that holds the work, and a panel that holds the
+     controls for it. The stage owns the width. One 960 column meant every screen
+     resized with whatever piled up inside it, so Settings and Plans sat in the
+     same box as a shelf of 1,800 books. */
+  .view{max-width:1180px}
+  .view.narrow{max-width:760px;margin-inline:auto}
+  .view.mid{max-width:900px;margin-inline:auto}
   .view{display:none}.view.on{display:block}
   .settabs{margin-top:16px;border-bottom:1px solid var(--line)}
   .setpanel{display:none}.setpanel.on{display:block}
@@ -210,8 +217,12 @@
   .libauth{grid-column:1/-1;font:600 14px/1.2 var(--serif);color:var(--soft);
     margin:18px 0 0;border-bottom:1px solid var(--line);padding-bottom:6px}
   /* playing */
-  .np{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:40px}
+  .np{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:44px;align-items:start}
   .np>*{min-width:0}
+  /* the panel is the set of controls for the stage beside it, so it holds its
+     place while the text scrolls past it: on a long chapter, scrolling to the
+     end of the page to reach Chapters is the whole cost of the old layout */
+  @media(min-width:761px){ .np aside{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto} }
   .story p{font:19px/1.75 var(--serif);color:var(--soft);margin-top:18px;max-width:62ch}
   .story p:first-child{margin-top:0}
   .story .lead{color:var(--text)}
@@ -463,6 +474,35 @@
   .smeta{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
   .smeta .row{margin:4px 0}
   .smeta .desc{white-space:pre-wrap;margin-top:8px}
+  /* --- add: a file stage and a link panel, side by side ------------------- */
+  .addgrid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:26px;align-items:start}
+  @media(max-width:760px){ .addgrid{grid-template-columns:minmax(0,1fr);gap:18px} }
+  /* --- phone: the tabs are the app's one floor, so they dock --------------
+     On a phone the navigation sat in the header and scrolled away, so getting
+     from a chapter back to the shelf was a scroll to the top. The tab bar is now
+     a fixed floor. That makes four things that can all want the bottom edge, so
+     they stack in a stated order instead of overlapping: tabs, then the
+     transport, then the ribbon, then toasts. --tab is the one number they share.
+     Without a transport the ribbon sits on the bar. */
+  @media(max-width:600px){
+    :root{--tab:52px}
+    body{--tab:52px}
+    header{padding-bottom:0}
+    nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:68;height:var(--tab);margin:0;
+      display:flex;flex-wrap:nowrap;overflow-x:auto;background:var(--surface);
+      border-top:1px solid var(--line);padding:0 2px env(safe-area-inset-bottom,0px)}
+    nav.tabs button{flex:1 0 auto;border-bottom:0;border-top:2px solid transparent;padding:0 10px;font-size:12px}
+    nav.tabs button.on{border-top-color:var(--flame);border-bottom-color:transparent}
+    main{padding-bottom:calc(var(--tab) + 40px)}
+    #transport{bottom:var(--tab)}
+    #ribbon{bottom:var(--tab)}
+    #toasts{bottom:calc(var(--tab) + 8px)}
+    body.hastransport #ribbon{bottom:calc(var(--tab) + 56px)}
+    body.hastransport #toasts{bottom:calc(var(--tab) + 64px)}
+    #queuedrawer{bottom:calc(var(--tab) + 60px)}
+    .libselbar{bottom:calc(var(--tab) + 12px)}
+    #selplay{bottom:calc(var(--tab) + 16px)}
+  }
 </style>
 <script>
 /* Theme, before first paint. A theme applied after the page renders is a flash of
@@ -594,31 +634,37 @@
     <div class="chips" id="libchips" role="group" aria-label="Filter the shelf" data-t-aria="Filter the shelf" hidden></div>
     <div style="margin-top:28px"><button class="btn" id="addbtn" type="button" data-t="＋ Add a book">＋ Add a book</button></div>
     <div class="addpanel" id="addpanel" hidden>
-      <p class="sub" data-t="Drop an EPUB or paste a story link. Fireside reads it, breaks it into chapters, and voices each one.">Drop an EPUB or paste a story link. Fireside reads it, breaks it into chapters, and voices each one.</p>
-      <div class="drop" id="drop" style="margin-top:14px">Drop an <b data-t=".epub">.epub</b> here<br><span class="small" data-t="or click to choose">or click to choose</span>
-        <input type="file" id="file" accept=".epub,application/epub+zip" hidden></div>
-      <label data-t="Or paste a story link">Or paste a story link</label>
-      <div style="display:flex;gap:8px"><input id="url" placeholder="https://…" data-t-ph="https://…" autocomplete="off"><button id="loadurl" class="btn" style="flex:0 0 96px" data-t="Load">Load</button></div>
-      <div class="addpanel" id="dupnote" hidden style="margin-top:12px;border-color:var(--flame);background:transparent">
-        <p class="sub" id="duptext"></p>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn" id="dupgo" type="button" data-t="Replace it">Replace it</button>
-          <button class="btn quiet" id="dupkeep" type="button" data-t="Keep both">Keep both</button>
-          <button class="btn quiet" id="dupcancel" type="button" data-t="Cancel">Cancel</button>
+      <div class="addgrid">
+        <div class="addstage">
+          <div class="drop" id="drop">Drop an <b data-t=".epub">.epub</b> here<br><span class="small" data-t="or click to choose">or click to choose</span>
+            <input type="file" id="file" accept=".epub,application/epub+zip" hidden></div>
+          <p class="hint" data-t="A locked AO3 work needs your cookie under Settings, or drop the work&#x27;s EPUB.">A locked AO3 work needs your cookie under Settings, or drop the work's EPUB.</p>
+          <p class="hint" style="margin-top:14px">New here? <button class="btn quiet" id="exbtn" type="button" data-t="Add the free example book">Add the free example book</button></p>
+        </div>
+        <div class="addside">
+          <p class="sub" data-t="Drop an EPUB or paste a story link. Fireside reads it, breaks it into chapters, and voices each one.">Drop an EPUB or paste a story link. Fireside reads it, breaks it into chapters, and voices each one.</p>
+          <label data-t="Or paste a story link">Or paste a story link</label>
+          <div style="display:flex;gap:8px"><input id="url" placeholder="https://…" data-t-ph="https://…" autocomplete="off"><button id="loadurl" class="btn" style="flex:0 0 96px" data-t="Load">Load</button></div>
+          <div class="addpanel" id="dupnote" hidden style="margin-top:12px;border-color:var(--flame);background:transparent">
+            <p class="sub" id="duptext"></p>
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+              <button class="btn" id="dupgo" type="button" data-t="Replace it">Replace it</button>
+              <button class="btn quiet" id="dupkeep" type="button" data-t="Keep both">Keep both</button>
+              <button class="btn quiet" id="dupcancel" type="button" data-t="Cancel">Cancel</button>
+            </div>
+          </div>
+          <div class="addpanel" id="serpick" hidden style="margin-top:12px">
+            <p class="sub" id="sertitle"></p>
+            <div class="serlist" id="serlist" role="group" aria-label="Works on this page" data-t-aria="Works on this page"></div>
+            <p class="small" id="serstatus" role="status" aria-live="polite" hidden></p>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <button class="btn quiet" id="serall" type="button" data-t="Select all">Select all</button>
+              <button class="btn" id="serpull" type="button" data-t="Pull selected">Pull selected</button>
+              <button class="btn quiet" id="sercancel" type="button" data-t="Cancel">Cancel</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="addpanel" id="serpick" hidden style="margin-top:12px">
-        <p class="sub" id="sertitle"></p>
-        <div class="serlist" id="serlist" role="group" aria-label="Works on this page" data-t-aria="Works on this page"></div>
-        <p class="small" id="serstatus" role="status" aria-live="polite" hidden></p>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <button class="btn quiet" id="serall" type="button" data-t="Select all">Select all</button>
-          <button class="btn" id="serpull" type="button" data-t="Pull selected">Pull selected</button>
-          <button class="btn quiet" id="sercancel" type="button" data-t="Cancel">Cancel</button>
-        </div>
-      </div>
-      <p class="hint" data-t="A locked AO3 work needs your cookie under Settings, or drop the work&#x27;s EPUB.">A locked AO3 work needs your cookie under Settings, or drop the work's EPUB.</p>
-      <p class="hint" style="margin-top:14px">New here? <button class="btn quiet" id="exbtn" type="button" data-t="Add the free example book">Add the free example book</button></p>
     </div>
     <p class="small" id="shelflabel" style="margin:34px 0 0;display:none" data-t="On your shelf">On your shelf</p>
     <div class="shelf" id="shelf"></div>
@@ -678,7 +724,7 @@
   </section>
 
   <!-- voice sandbox: hear any voice read a line before you commit a book to it -->
-  <section class="view" id="v-sand">
+  <section class="view narrow" id="v-sand">
     <h2 data-t="Try a voice">Try a voice</h2>
     <p class="sub" data-t="Type a line, pick a voice, hear it. Nothing is saved and nothing is metered.">Type a line, pick a voice, hear it. Nothing is saved and nothing is metered.</p>
     <label>Text <span class="small" id="sbcount">0 / 1000</span></label>
@@ -702,7 +748,7 @@
   </section>
 
   <!-- settings -->
-  <section class="view" id="v-set">
+  <section class="view narrow" id="v-set">
     <h2 data-t="Settings">Settings</h2>
     <p class="sub" data-t="Voice servers and source logins live on this server. Keys never reach your browser.">Voice servers and source logins live on this server. Keys never reach your browser.</p>
     <nav class="tabs settabs" id="settabs" aria-label="Settings sections" data-t-aria="Settings sections">
@@ -883,7 +929,7 @@
        Kept out of Settings on purpose: Settings is what an account does for
        itself, and the admin page is what the operator does for everybody else.
        Mixing them meant the same account appeared three times on one screen. -->
-  <section class="view" id="v-adm">
+  <section class="view narrow" id="v-adm">
     <h2 data-t="Admin">Admin</h2>
     <p class="sub" data-t="Every account on this server. Open one to change its plan, lift a limit, boot its devices, or delete it.">Every account on this server. Open one to change its plan, lift a limit, boot its devices, or delete it.</p>
     <div class="admtools">
@@ -900,7 +946,7 @@
   </section>
 
   <!-- plans: a page for buying the platform, said plainly -------------------- -->
-  <section class="view" id="v-plans">
+  <section class="view mid" id="v-plans">
     <h2 data-t="Get fireside">Get fireside</h2>
     <p class="sub" data-t="The reader is free to try. A plan buys the platform, and the platform is only half the story.">The reader is free to try. A plan buys the platform, and the platform is only half the story.</p>
     <p class="sub" id="pagesignupline" style="margin-top:10px"><span data-t="New here?">New here?</span> <button class="btn quiet" id="pagesignup" type="button" data-t="Create a free account">Create a free account</button> <span data-t="No card needed.">No card needed.</span></p>
