@@ -320,7 +320,40 @@ _ADDED_COLUMNS = [
     # to either name; this one arrives from the file, not from the reader.
     ("books", "series_name", "VARCHAR(255) DEFAULT ''"),
     ("books", "series_index", "VARCHAR(32) DEFAULT ''"),
+    # the byte size of a chapter's text blob, recorded when the text is written.
+    # Storage accounting asked the backend for it, one HEAD per chapter: a
+    # 1,700-book shelf is 56,000 round trips, and any request that recounts
+    # storage (an upload, a delete) waited for all of them.
+    ("chapters", "text_bytes", "INT DEFAULT 0"),
 ]
+
+
+# Indexes added after the first schema shipped. A blob reference is looked up
+# by content hash when a book is deleted ("does any row still name this?");
+# without an index that is a full scan of chapters per blob, and a shelf-wide
+# remove spends minutes scanning before it can finish. Measured on the live
+# shelf (56k chapters): 357 ms per lookup, 0.3 ms with the index.
+_ADDED_INDEXES = [
+    ("idx_chapters_text_ref", "chapters", "text_ref"),
+    ("idx_chapters_audio_ref", "chapters", "audio_ref"),
+    ("idx_renditions_audio_ref", "renditions", "audio_ref"),
+    ("idx_books_cover_ref", "books", "cover_ref"),
+    ("idx_render_cache_audio_ref", "render_cache", "audio_ref"),
+    # a book leaving the shelf clears this user's listen log for it
+    ("idx_listens_user_book", "listens", "user_id, book_id"),
+]
+
+
+def _index_names(conn, table):
+    """The index names on `table` for whichever engine is behind `conn`."""
+    try:
+        if db_type() == "mysql":
+            rows = conn.execute("SHOW INDEX FROM `%s`" % table).fetchall()
+            return {(r["Key_name"] if isinstance(r, dict) else r[1]) for r in rows}
+        rows = conn.execute("PRAGMA index_list(%s)" % table).fetchall()
+        return {(r["name"] if isinstance(r, dict) else r[1]) for r in rows}
+    except Exception:
+        return set()
 
 
 def migrate(conn):
@@ -330,6 +363,14 @@ def migrate(conn):
             continue
         try:
             conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, name, ddl))
+            conn.commit()
+        except Exception:               # a concurrent migration already did it
+            pass
+    for name, table, cols in _ADDED_INDEXES:
+        if name in _index_names(conn, table):
+            continue
+        try:
+            conn.execute("CREATE INDEX %s ON %s (%s)" % (name, table, cols))
             conn.commit()
         except Exception:               # a concurrent migration already did it
             pass

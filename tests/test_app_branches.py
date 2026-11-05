@@ -490,6 +490,33 @@ class TestBulkRemoval(Base):
         self.assertEqual(s, 200, out)
         self.assertEqual(out["deleted"], 1)
 
+    def test_delete_books_frees_the_set_in_one_sweep(self):
+        """Both picked books share one text blob. The set's sweep must free it
+        once the LAST of them is gone, not refuse because the first still named
+        it while the second was being read."""
+        a, b = self.import_book(), self.import_book()
+        # make them share one text blob, the way two shelves holding the same
+        # story do
+        ref = self.conn.execute("SELECT text_ref FROM chapters WHERE book_id=?",
+                                (a,)).fetchone()["text_ref"]
+        self.conn.execute("UPDATE chapters SET text_ref=? WHERE book_id=?", (ref, b))
+        self.conn.execute("DELETE FROM renditions WHERE book_id=?", (b,))
+        self.conn.commit()
+        s, out = self.app.delete_books({}, {"user": "u1", "books": [a, b]})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(out["deleted"], 2)
+        self.assertGreaterEqual(out["freed"], 1)
+        self.assertFalse(self.app.storage.has(ref))
+
+    def test_delete_books_keeps_a_blob_another_shelf_still_holds(self):
+        mine, theirs = self.import_book(), self.import_book(user="u2")
+        ref = self.conn.execute("SELECT text_ref FROM chapters WHERE book_id=?",
+                                (mine,)).fetchone()["text_ref"]
+        s, out = self.app.delete_books({}, {"user": "u1", "books": [mine]})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(out["freed"], 0)
+        self.assertTrue(self.app.storage.has(ref), "u2 still reads this text")
+
 
 class TestSpeak(Base):
     def test_speak_refusals(self):

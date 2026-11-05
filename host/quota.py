@@ -56,7 +56,7 @@ def _shelf_refs(conn, user_id):
         if ref not in refs or not refs[ref]:
             refs[ref] = nbytes
 
-    q = ("SELECT c.text_ref AS ref, NULL AS nbytes FROM chapters c "
+    q = ("SELECT c.text_ref AS ref, c.text_bytes AS nbytes FROM chapters c "
          "JOIN books b ON b.id = c.book_id WHERE b.user_id = ? "
          "AND c.text_ref IS NOT NULL AND c.text_ref <> ''")
     for r in conn.execute(q, (user_id,)):
@@ -96,10 +96,27 @@ def _blob_bytes(storage, ref):
         return 0
 
 
+def _remember(conn, ref, nbytes):
+    """Store a size the backend told us, so the next recount reads it from the
+    database. Chapter text is the blob type that used to lack one; a cover or an
+    audio blob still has no column of its own and keeps being asked."""
+    try:
+        conn.execute("UPDATE chapters SET text_bytes=? WHERE text_ref=?", (nbytes, ref))
+        conn.commit()
+    except Exception:
+        pass
+
+
 def usage(conn, storage, user_id):
     """This user's storage: the bytes their own shelf holds, counted once per
     distinct blob. `own_bytes` and `total_bytes` are the same number - nothing
-    is shared away - kept as two keys so the storage screen reads the same."""
+    is shared away - kept as two keys so the storage screen reads the same.
+
+    A size recorded with the row wins. Only a ref with no recorded size asks the
+    backend, and the answer is written back: a shelf of 1,700 books used to cost
+    56,000 HEAD requests on every recount, which is minutes, inside whatever
+    request asked for it.
+    """
     refs = _shelf_refs(conn, user_id)
     total = 0
     for ref, nbytes in refs.items():
@@ -110,6 +127,8 @@ def usage(conn, storage, user_id):
             n = 0
         if n <= 0:
             n = _blob_bytes(storage, ref)
+            if n > 0:
+                _remember(conn, ref, n)
         total += n
     return {"user_id": user_id, "own_bytes": total, "total_bytes": total,
             "blobs": len(refs)}

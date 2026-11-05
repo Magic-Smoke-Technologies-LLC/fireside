@@ -44,7 +44,10 @@ def add_book(conn, storage, user_id, book, tags_from=None):
     staged = []
     for i, ch in enumerate(chapters):
         text = ch.text if isinstance(ch.text, str) else str(ch.text)
-        staged.append((i, ch.title, len(text), storage.put(text.encode("utf-8"))))
+        blob = text.encode("utf-8")
+        # the size is recorded with the row: storage accounting would otherwise
+        # HEAD every chapter of every book it counts
+        staged.append((i, ch.title, len(text), len(blob), storage.put(blob)))
 
     book_id = book.id or uuid.uuid4().hex
     meta = dict(book.meta or {})
@@ -63,11 +66,11 @@ def add_book(conn, storage, user_id, book, tags_from=None):
         # nothing there rather than issuing a RELEASE that answers 1305 AFTER
         # the book is already committed. That 1305 was live: every add_book on
         # the hosted MySQL raised on a book it had successfully written.
-        for i, title, chars, ref in staged:
+        for i, title, chars, nbytes, ref in staged:
             conn.execute(
                 "INSERT OR REPLACE INTO chapters"
-                "(book_id,idx,title,chars,text_ref) VALUES(?,?,?,?,?)",
-                (book_id, i, title, chars, ref))
+                "(book_id,idx,title,chars,text_ref,text_bytes) VALUES(?,?,?,?,?,?)",
+                (book_id, i, title, chars, ref, nbytes))
         conn.execute(
             # The author is metadata the reader already extracted. Writing it to
             # the column is what makes the shelf able to show it without parsing
@@ -155,21 +158,23 @@ def replace_book(conn, storage, book_id, book):
     for i, ch in enumerate(book.chapters):
         new_idx.add(i)
         text = ch.text if isinstance(ch.text, str) else str(ch.text)
-        ref = storage.put(text.encode("utf-8"))
+        blob = text.encode("utf-8")
+        ref = storage.put(blob)
         o = old.get(i)
         if o is not None and o["text_ref"] == ref and o["audio_ref"]:
             conn.execute(
                 "INSERT OR REPLACE INTO chapters(book_id,idx,title,chars,text_ref,"
-                "audio_ref,audio_bytes,duration_s,provider,voice,model,speed)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (book_id, i, ch.title, len(text), ref, o["audio_ref"],
+                "text_bytes,audio_ref,audio_bytes,duration_s,provider,voice,model,speed)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (book_id, i, ch.title, len(text), ref, len(blob), o["audio_ref"],
                  o["audio_bytes"], o["duration_s"], o["provider"], o["voice"],
                  o["model"], o["speed"]))
             kept += 1
             continue
         conn.execute(
-            "INSERT OR REPLACE INTO chapters(book_id,idx,title,chars,text_ref)"
-            " VALUES(?,?,?,?,?)", (book_id, i, ch.title, len(text), ref))
+            "INSERT OR REPLACE INTO chapters(book_id,idx,title,chars,text_ref,"
+            "text_bytes) VALUES(?,?,?,?,?,?)",
+            (book_id, i, ch.title, len(text), ref, len(blob)))
         if o is not None:
             # The row is replaced wholesale above, so the text blob it named is
             # about to be unnamed; gc keeps it if any other shelf still reads it.
@@ -644,19 +649,38 @@ def ref_in_use(conn, ref):
     return False
 
 
-def gc_blobs(conn, storage, refs):
+def gc_blobs(conn, storage, refs, workers=8):
     """Delete from the backend every blob no row names any more. Returns how
     many left the disk. Housekeeping, not billing: the shelf is already freed by
-    the row delete, and a shared blob survives because a row still names it."""
+    the row delete, and a shared blob survives because a row still names it.
+
+    The database lookups run one at a time (one connection, one thread), then
+    the backend deletes run in parallel: they are independent HTTP calls, each
+    costing a round trip, and a shelf-wide remove has thousands of them. Eight
+    at a time turns a ten-second book into about a second."""
+    dead = [ref for ref in {r for r in refs if r} if not ref_in_use(conn, ref)]
+    if not dead:
+        return 0
     freed = 0
-    for ref in {r for r in refs if r}:
-        if ref_in_use(conn, ref):
-            continue
+    if workers <= 1 or len(dead) == 1:
+        for ref in dead:
+            try:
+                storage.delete(ref)
+                freed += 1
+            except Exception:
+                pass
+        return freed
+
+    def _drop(ref):
         try:
             storage.delete(ref)
-            freed += 1
+            return True
         except Exception:
-            pass
+            return False
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(workers, len(dead))) as pool:
+        freed = sum(1 for ok in pool.map(_drop, dead) if ok)
     return freed
 
 
@@ -730,11 +754,10 @@ def is_read(conn, book_id):
     return bool(r and (r["read_at"] or ""))
 
 
-def delete_book(conn, storage, book_id):
-    """Remove a book from its shelf entirely: its rows gone, then every blob
-    left unnamed by every shelf taken off disk. Positions, device stops and
-    listen rows belong to playback/stats and are the caller's to clear. Returns
-    {freed}."""
+def delete_book_rows(conn, book_id):
+    """Take a book's rows off the shelf and hand back the blobs that may now be
+    unreferenced. The caller decides when to sweep them, so a shelf-wide remove
+    can sweep once at the end instead of once per book."""
     refs = []
     for c in chapters(conn, book_id):
         if c["text_ref"]:
@@ -751,5 +774,13 @@ def delete_book(conn, storage, book_id):
     conn.execute("DELETE FROM chapters WHERE book_id=?", (book_id,))
     conn.execute("DELETE FROM books WHERE id=?", (book_id,))
     conn.commit()
-    freed = gc_blobs(conn, storage, refs)
-    return {"freed": freed}
+    return refs
+
+
+def delete_book(conn, storage, book_id):
+    """Remove a book from its shelf entirely: its rows gone, then every blob
+    left unnamed by every shelf taken off disk. Positions, device stops and
+    listen rows belong to playback/stats and are the caller's to clear. Returns
+    {freed}."""
+    refs = delete_book_rows(conn, book_id)
+    return {"freed": gc_blobs(conn, storage, refs)}
