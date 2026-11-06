@@ -373,7 +373,7 @@ def render_book(conn, storage, speech, user_id, book_id, voice="", model="",
         # the render is fine; say out loud that the model pass was skipped so a
         # silent box cannot look like a book with no two-reading words
         conn.execute("UPDATE jobs SET error=?,updated_at=? WHERE id=?",
-                     ("model pass skipped: " + disambig_error, now(), job_id))
+                     ("model pass: " + disambig_error, now(), job_id))
     done = len(already)
     conn.execute("UPDATE jobs SET current=?,done_chars=?,updated_at=? WHERE id=?",
                  (done, done_chars, now(), job_id))
