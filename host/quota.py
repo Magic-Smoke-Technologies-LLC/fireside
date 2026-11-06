@@ -34,6 +34,13 @@ STORAGE_ADDON = "storage"
 
 FREE_ALLOWANCE_BYTES = 500 * 1000 ** 2          # 500 MB free, the sign-up default
 PLATFORM_ALLOWANCE_BYTES = 2 * 1000 ** 3        # 2 GB included with the tier
+
+# The platform tier also hands over a monthly character allowance, so the first
+# thing a new subscriber sees is a book they can already listen to. It is
+# characters, not money: a render spends it exactly like bought credit, and a
+# month that is not used does not roll over (the grant is keyed to the paid
+# period, not to a balance that accumulates).
+PLATFORM_MONTH_CHARS = 50_000
 STORAGE_BLOCK_BYTES = 5 * 1000 ** 3             # bytes added per storage block
 PLAN_ALLOWANCE = {FREE_PLAN: FREE_ALLOWANCE_BYTES,
                   PLATFORM_PLAN: PLATFORM_ALLOWANCE_BYTES}
