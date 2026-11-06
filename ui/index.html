@@ -2330,16 +2330,25 @@ async function loadPlan() {
     ((cat && cat.tiers) || []).forEach(t => {
       const card = document.createElement('div');
       card.className = 'addpanel'; card.style.cssText = 'flex:1 1 200px;margin:0';
+      // Same rule as the plans page: print the provider's price when there is
+      // one, otherwise the published list price, since "price not set" told a
+      // reader nothing and the rung is still 'not for sale'.
+      const shown = t.amount_cents != null ? t.amount_cents : t.list_amount_cents;
       const h = document.createElement('div'); h.style.fontWeight = '600';
       h.textContent = t.label + ' \u00b7 ' + (t.id === plan ? 'current'
-        : (t.amount_cents ? usd(t.amount_cents) + '/' + (t.interval || 'mo') : 'free'));
+        : (shown ? usd(shown) + '/' + (t.interval || 'mo') : 'free'));
       const p = document.createElement('p'); p.className = 'small'; p.style.margin = '6px 0';
-      p.textContent = fmtBytes(t.included_bytes) + ' included. ' + (t.description || '');
+      p.textContent = [
+        fmtBytes(t.included_bytes) + ' included.',
+        t.included_chars ? nchar(t.included_chars) + ' characters a month.'
+                         : 'No characters included.',
+        (t.description || '')
+      ].join(' ');
       card.append(h, p);
       if (t.id !== plan && t.id !== 'free') {
         const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
         b.textContent = (cat && cat.payments_configured && t.amount_cents != null)
-          ? ('Upgrade to ' + t.label) : 'Price not set yet';
+          ? ('Upgrade to ' + t.label) : T('Not for sale yet');
         b.disabled = !(cat && cat.payments_configured && t.amount_cents != null);
         b.onclick = () => startCheckout({ plan: t.id });
         card.append(b);
@@ -2436,12 +2445,34 @@ async function confirmCheckout(ref) {
 // --- plans page: the offering, rendered for the buy page --------------------
 // Same catalog the settings tab reads, laid out as a sales page: what each tier
 // is, what it includes, and the one thing it does not (a voice).
+// What a rung includes, built from the catalog so the numbers on the card are
+// the numbers the server grants: characters per period and storage, then the
+// ladder (each rung is everything below it), and always the voice caveat. A tier
+// with no character allowance says so instead of printing "0 characters".
+function charsTime(n) {
+  // about 66,000 characters an hour of narration, the rate the public price
+  // page has used since 2026-11-06 (50k ~ 45 min, 1M ~ 15 h).
+  const mins = Math.round(n / 66000 * 60);
+  if (!mins) return '';
+  return mins < 90 ? 'about ' + mins + ' minutes' : 'about ' + (mins / 60).toFixed(1) + ' hours';
+}
+function planBullets(t, lower) {
+  const out = [];
+  if (t.included_chars) {
+    const span = charsTime(t.included_chars);
+    out.push(nchar(t.included_chars) + ' narration characters a month'
+      + (span ? ' (' + span + ')' : '') + ', renewed each paid month');
+  } else {
+    out.push('No narration included: buy characters, or bring your own Azure key');
+  }
+  if (lower) out.push('Everything in ' + lower);
+  out.push('Voices: none are included, you connect your own');
+  return out;
+}
 const PLAN_BULLETS = {
   free: ['The reader and this server', 'Add books by EPUB or link',
+         'No narration included: buy characters, or bring your own Azure key',
          'Voices: only the ones you connect yourself'],
-  platform: ['Everything in the free plan', 'The server, the app, and updates',
-             'More storage for your shelf',
-             'Voices: still not included, still yours to connect'],
 };
 // The cart. It survives sign-up: a logged-out visitor can pick a plan and
 // storage, hit purchase, make the account, and come back to a filled cart. The
@@ -2477,6 +2508,12 @@ function planCard(t, plan, cat) {
   const c = readCart();
   const on = t.id === plan;
   const inCart = c.tier === t.id;
+  const sellable = !!(cat && cat.payments_configured && t.amount_cents != null);
+  // The price a card prints: the provider's when one is registered (that is the
+  // number that charges a card), otherwise our published list price, with the
+  // "not for sale yet" line doing the honest work underneath it.
+  const shown = t.amount_cents != null ? t.amount_cents : t.list_amount_cents;
+  const annual = t.list_annual_cents;
   const card = document.createElement('div');
   card.className = 'addpanel';
   card.style.cssText = 'flex:1 1 240px;margin:0;text-align:left'
@@ -2484,40 +2521,63 @@ function planCard(t, plan, cat) {
   const h = document.createElement('div'); h.style.cssText = 'font-weight:600;font-size:17px';
   h.textContent = t.label || t.id; card.append(h);
   const price = document.createElement('div'); price.style.cssText = 'margin-top:6px;font-size:22px;font-weight:600';
-  price.textContent = t.amount_cents == null ? 'price not set'
-    : (t.amount_cents ? usd(t.amount_cents) + '/' + (t.interval || 'mo') : 'free');
+  price.textContent = shown == null ? 'price not set'
+    : (shown ? usd(shown) + '/' + (t.interval || 'mo') : 'free');
   card.append(price);
+  const per = document.createElement('p'); per.className = 'sub'; per.style.margin = '2px 0 0';
+  per.textContent = (shown && annual) ? usd(annual) + ' a year (ten months)'
+    : (t.description || '');
+  card.append(per);
   const sub = document.createElement('p'); sub.className = 'sub'; sub.style.margin = '8px 0 0';
   sub.textContent = fmtBytes(t.included_bytes) + ' of storage included.';
   card.append(sub);
   const ul = document.createElement('ul');
   ul.style.cssText = 'margin:12px 0 0;padding-left:20px;line-height:1.8';
-  (PLAN_BULLETS[t.id] || []).forEach(x => { const li = document.createElement('li'); li.textContent = x; ul.append(li); });
+  const bullets = PLAN_BULLETS[t.id] || planBullets(t, lowerTierLabel(t));
+  bullets.forEach(x => { const li = document.createElement('li'); li.textContent = x; ul.append(li); });
   card.append(ul);
   if (on) {
     const tag = document.createElement('p'); tag.className = 'sub'; tag.style.margin = '12px 0 0';
     tag.textContent = T('This is your current plan.'); card.append(tag);
-  } else if (t.amount_cents == null) {
-    const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
-    b.style.marginTop = '12px'; b.textContent = T('Not for sale yet'); b.disabled = true;
-    card.append(b);
+  }
+  // Every paid rung carries a button, on the current plan too: a card with no
+  // button reads as a broken card, and right now nothing is purchasable, so the
+  // only truthful label is "not for sale yet".
+  const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
+  b.style.marginTop = '12px';
+  if (t.amount_cents === 0) {
+    const freeSignup = !AUTH.user;
+    b.textContent = freeSignup ? T('Create a free account') : T('Use the free plan');
+    if (on) {
+      // Already on it: nothing to buy, and the tag above already says so.
+      b.textContent = T('Your current plan'); b.disabled = true;
+    } else {
+      b.onclick = () => {
+        // The free tier costs nothing and needs no cart: a visitor just makes an
+        // account, and the server starts every new account on free.
+        if (freeSignup) { openDoor('create'); return; }
+        const cc = readCart(); cc.tier = t.id; writeCart(cc);
+        loadPlansPage();
+      };
+    }
+  } else if (!sellable) {
+    b.textContent = T('Not for sale yet'); b.disabled = true;
   } else {
-    const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
-    b.style.marginTop = '12px';
-    const freeSignup = t.amount_cents === 0 && !AUTH.user;
-    b.textContent = freeSignup ? 'Create a free account'
-      : inCart ? 'In the cart ✓'
-      : (t.amount_cents ? ('Add ' + (t.label || t.id)) : 'Use the free plan');
+    b.textContent = inCart ? 'In the cart ✓' : ('Add ' + (t.label || t.id));
     b.onclick = () => {
-      // The free tier costs nothing and needs no cart: a visitor just makes an
-      // account, and the server starts every new account on free.
-      if (freeSignup) { openDoor('create'); return; }
       const cc = readCart(); cc.tier = t.id; writeCart(cc);
       loadPlansPage();
     };
-    card.append(b);
   }
+  card.append(b);
   return card;
+}
+function lowerTierLabel(t) {
+  const ids = ((PLAN_CAT && PLAN_CAT.tiers) || []).map(x => x.id);
+  const i = ids.indexOf(t.id);
+  if (i <= 0) return '';
+  const lower = (PLAN_CAT.tiers || [])[i - 1];
+  return (lower && (lower.label || lower.id)) || '';
 }
 function renderCart() {
   const c = readCart(), cat = PLAN_CAT || {}, t = tierById(c.tier);
