@@ -62,12 +62,16 @@ def available(conn, user_id):
     return balance(conn, user_id) - reserved_total(conn, user_id)
 
 
-def topup(conn, user_id, amount, currency="USD", note=""):
+def topup(conn, user_id, amount, currency="USD", note="", entry_id=""):
+    """Add credit. `entry_id` makes the credit idempotent: the ledger row's id is
+    the primary key, so a second call with the same id raises IntegrityError
+    instead of paying twice (a retried webhook, a re-read of the same period)."""
     conn.execute("INSERT OR IGNORE INTO balances(user_id,currency,amount) VALUES(?,?,0)",
                  (user_id, currency))
     conn.execute("UPDATE balances SET amount=amount+?,currency=? WHERE user_id=?",
                  (float(amount), currency, user_id))
-    _entry(conn, user_id, "topup", float(amount), currency, None, None, note)
+    _entry(conn, user_id, "topup", float(amount), currency, None, None, note,
+           entry_id=entry_id)
     conn.commit()
     return balance(conn, user_id)
 
@@ -175,9 +179,10 @@ def _debit(conn, user_id, cost, currency, res):
            "reservation %s" % res["id"])
 
 
-def _entry(conn, user_id, kind, delta, currency, book_id, job_id, note):
+def _entry(conn, user_id, kind, delta, currency, book_id, job_id, note,
+           entry_id=""):
     conn.execute(
         "INSERT INTO ledger(id,user_id,kind,delta,currency,book_id,job_id,note,created_at)"
         " VALUES(?,?,?,?,?,?,?,?,?)",
-        (uuid.uuid4().hex, user_id, kind, delta, currency, book_id or "",
+        (entry_id or uuid.uuid4().hex, user_id, kind, delta, currency, book_id or "",
          job_id or "", note or "", now()))
