@@ -173,3 +173,32 @@ Cost lever: because storage is a pluggable backend, Azure Blob lifecycle rules
 move rarely-read books down through hot -> cool -> cold -> archive. Blob storage
 at the hot tier is ~$0.018/GB/mo (LRS, US), cool ~$0.01, archive ~$0.002, so the
 bytes are rounding error next to the server; the tier's real cost is the box.
+
+## The tier includes characters now (2026-11-06)
+
+Chris's call: a tier that buys nothing to listen to reads as a paywall on an
+empty room, so **the platform tier carries `quota.PLATFORM_MONTH_CHARS` =
+50,000 characters per paid period**, spent exactly like bought credit. The unit
+is characters, not money, so a BYO-key account spends its allowance at raw
+provider cost and a normal account spends it at the sale rate; nothing has to be
+converted or re-derived.
+
+- It is granted lazily, on the reads that care (`GET /credits`, and just before a
+  render reserves): `host/allowance.py:due`.
+- It is idempotent by construction. The ledger row's id is
+  `allowance:<user>:<current_period_end>`, so a reload, a retry or two tabs at
+  once cannot stack a second 50k: the primary key refuses it.
+- It is granted only while `billing.active` is true, which checks the paid period
+  against the lapse grace window, not just the status word. A lapsed row carries
+  no allowance and unused characters do not roll forward to the next period.
+
+At 50k characters a month, the giveaway costs us about $0.98 of Azure speech
+(Azure neural, per-character) and substitutes for about 45 minutes of audio a
+listener would otherwise have bought. On the **$3/mo** tier ($2.61 net after the
+30c and 2.9% fees) that still leaves roughly $1.60 before per-user egress.
+
+The price is Chris's call as of 2026-11-06: **$3/mo, $36/yr**, on the reasoning
+that $6 for a platform that still makes you buy credits is the part that reads as
+greedy. My own note at the time: $3 survives 50 subscribers (~$84/mo net) and it
+caps the slope at about half of what $6 would earn at the same headcount, so the
+tier's job is retention and the character line keeps the margin.

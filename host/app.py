@@ -41,7 +41,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from host.host import Host
 import inspect
 
-from host import accounting, auth, billing, connections, contracts, credentials, db, draft as drafts, erase, example, grants, i18n, jobs, library, mailer, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
+from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, draft as drafts, erase, example, grants, i18n, jobs, library, mailer, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
 from host.egress import fetch as _fetch
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1454,6 +1454,7 @@ class App:
                              "reason": getattr(quote, "refusal_reason", "")}
             price = float(getattr(quote, "price", 0.0) or 0.0)
             if price > 0:
+                allowance.due(self.conn, user)
                 try:
                     res_id = accounting.reserve(self.conn, user, price,
                                                 getattr(quote, "currency", "USD"))
@@ -1528,6 +1529,7 @@ class App:
         """The signed-in user's character balance, plus what a sale connection
         would charge. Read-only: buying happens at /credits/purchase."""
         uid = self._uid(q, body)
+        allowance.due(self.conn, uid)
         out = {
             "balance": accounting.balance(self.conn, uid),
             "reserved": accounting.reserved_total(self.conn, uid),
