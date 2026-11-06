@@ -447,7 +447,7 @@ class App:
         page = (page
                 .replace("__COMPANY__", os.environ.get("FIRESIDE_COMPANY", "Fireside"))
                 .replace("__CONTACT__", os.environ.get("FIRESIDE_CONTACT_EMAIL",
-                                                      "fireside@readfireside.com")))
+                                                      "support@readfireside.com")))
         return 200, {"_html": page}
 
     def pricing(self, q, body):

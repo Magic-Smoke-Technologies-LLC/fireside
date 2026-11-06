@@ -90,7 +90,7 @@ correction, not a second Play account.
 
 Chris's decision: hire a registered agent and take the home address off every public
 business surface. This repo and the hosted site carry no street address today (privacy,
-terms and delete-account name only the LLC and fireside@readfireside.com); the address
+terms and delete-account name only the LLC and support@readfireside.com); the address
 lives on the SCC filing, the DUNS record, and the Play developer listing.
 
 Order is fixed by the DUNS long pole. Google Play org verification matches the DUNS legal
@@ -117,7 +117,7 @@ Constraints that bite:
 
 App name: `Fireside`
 Category: Books & Reference
-Contact email: `fireside@readfireside.com`
+Contact email: `support@readfireside.com`
 Privacy: `https://readfireside.com/privacy`
 Icon: `assets/icon-512.png` (flame as-is, confirmed by Chris 10-23). Keep
 `icon-maskable-512.png` for adaptive.
