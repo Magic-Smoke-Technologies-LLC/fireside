@@ -19,10 +19,13 @@ def _entry_id(user_id, period_end):
 def due(conn, user_id):
     """Grant this period's allowance if it is owed. Returns chars added (0 when
     nothing was owed). Safe to call as often as you like."""
-    if not user_id or quota.PLATFORM_MONTH_CHARS <= 0:
+    if not user_id:
         return 0
     sub = billing.get(conn, user_id)
-    if not sub or sub.get("plan") != quota.PLATFORM_PLAN:
+    if not sub:
+        return 0
+    chars = int(quota.PLAN_CHARS.get(sub.get("plan") or "", 0))
+    if chars <= 0:                      # free tier, or a plan that includes none
         return 0
     if not billing.active(conn, user_id):
         return 0
@@ -31,11 +34,11 @@ def due(conn, user_id):
     if conn.execute("SELECT id FROM ledger WHERE id=?", (eid,)).fetchone():
         return 0
     try:
-        accounting.topup(conn, user_id, quota.PLATFORM_MONTH_CHARS,
+        accounting.topup(conn, user_id, chars,
                          currency="chars", entry_id=eid,
                          note="platform allowance for period ending %s" % period_end)
     except Exception:
         # A concurrent request won the same primary key; the ledger already has
         # this period's row, so this caller owes nothing.
         return 0
-    return quota.PLATFORM_MONTH_CHARS
+    return chars

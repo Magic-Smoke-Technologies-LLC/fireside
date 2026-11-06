@@ -30,20 +30,42 @@ book does, and that is handled by the library, not by a background pass.
 # block costs; this module only knows what it includes.
 FREE_PLAN = "free"
 PLATFORM_PLAN = "platform"
+LISTENER_PLAN = "listener"
+STUDIO_PLAN = "studio"
 STORAGE_ADDON = "storage"
+
+# The paid ladder (2026-11-06). Storage is capped at 10 GB on purpose: once a
+# book is voiced its bytes stop growing, so what a heavy user really spends is
+# characters. Each rung's allowance costs about a third of its price, and the
+# top rung is deliberately at parity with buying the same characters outright -
+# subscribing is the better deal, which is the point of a ladder.
+PAID_TIERS = (PLATFORM_PLAN, LISTENER_PLAN, STUDIO_PLAN)
+TIERS = (FREE_PLAN,) + PAID_TIERS
 
 FREE_ALLOWANCE_BYTES = 500 * 1000 ** 2          # 500 MB free, the sign-up default
 PLATFORM_ALLOWANCE_BYTES = 2 * 1000 ** 3        # 2 GB included with the tier
+LISTENER_ALLOWANCE_BYTES = 5 * 1000 ** 3        # 5 GB
+STUDIO_ALLOWANCE_BYTES = 10 * 1000 ** 3         # 10 GB
 
 # The platform tier also hands over a monthly character allowance, so the first
 # thing a new subscriber sees is a book they can already listen to. It is
 # characters, not money: a render spends it exactly like bought credit, and a
 # month that is not used does not roll over (the grant is keyed to the paid
 # period, not to a balance that accumulates).
-PLATFORM_MONTH_CHARS = 50_000
+
+# Included narration characters per paid period, by tier. The grant itself lives
+# in host/allowance.py and is keyed to the paid period, so these are ceilings for
+# the period, not a balance that accumulates.
+PLAN_CHARS = {FREE_PLAN: 0,
+              PLATFORM_PLAN: 50_000,
+              LISTENER_PLAN: 250_000,
+              STUDIO_PLAN: 1_000_000}
+PLATFORM_MONTH_CHARS = PLAN_CHARS[PLATFORM_PLAN]
 STORAGE_BLOCK_BYTES = 5 * 1000 ** 3             # bytes added per storage block
 PLAN_ALLOWANCE = {FREE_PLAN: FREE_ALLOWANCE_BYTES,
-                  PLATFORM_PLAN: PLATFORM_ALLOWANCE_BYTES}
+                  PLATFORM_PLAN: PLATFORM_ALLOWANCE_BYTES,
+                  LISTENER_PLAN: LISTENER_ALLOWANCE_BYTES,
+                  STUDIO_PLAN: STUDIO_ALLOWANCE_BYTES}
 DEFAULT_PLAN = PLATFORM_PLAN                    # an unknown plan fails open to this
 
 

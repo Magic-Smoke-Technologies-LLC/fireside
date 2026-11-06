@@ -2489,7 +2489,7 @@ class App:
                 "storage_blocks": billing.blocks(self.conn, uid_row),
             })
         return 200, {"users": rows,
-                     "tiers": [quota.FREE_PLAN, quota.PLATFORM_PLAN]}
+                     "tiers": list(quota.TIERS)}
 
     def plans_admin_set(self, q, body):
         """Admin: set one account's tier (free or platform). Records it like a
@@ -2501,7 +2501,7 @@ class App:
         body = body or {}
         target = (body.get("user") or "").strip()
         plan = (body.get("plan") or "").strip().lower()
-        tiers = (quota.FREE_PLAN, quota.PLATFORM_PLAN)
+        tiers = list(quota.TIERS)
         if not target:
             return 400, {"error": "user required"}
         if plan not in tiers:
@@ -2576,7 +2576,7 @@ class App:
             })
         rows.sort(key=lambda r: (not r["admin"], r["username"].lower()))
         return 200, {"accounts": rows, "you": uid,
-                     "tiers": [quota.FREE_PLAN, quota.PLATFORM_PLAN],
+                     "tiers": list(quota.TIERS),
                      "registration_open": auth.registration_open(self.conn)}
 
     def set_registration(self, q, body):
