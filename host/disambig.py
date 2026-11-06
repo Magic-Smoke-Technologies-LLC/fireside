@@ -16,6 +16,7 @@ any other account does not even look at it: no call, no latency, no charge.
 """
 import os
 import re
+import time
 
 from host import pluginhost, pron
 
@@ -77,6 +78,55 @@ def existing(conn, uid, book_id):
     return None
 
 
+# One call per this many characters of candidate text. A hosted model meters
+# tokens per minute, not just per token: a 2.6M-char book is ~650k tokens and no
+# deployment will take that in one request (ours allows 50k/min), so the pass is
+# batched and paced the same way a human would read it.
+BATCH_CHARS = 24000
+BATCH_PAUSE = 1.0        # seconds between requests (tests set this to 0)
+RETRY_BACKOFF = 5.0      # seconds before retrying a rate limit
+_TRANSIENT = ("(429)", "did not answer")
+
+def _batches(texts, limit=BATCH_CHARS):
+    """Chapter texts gathered into requests that fit a rate limit."""
+    buf, size = [], 0
+    for t in texts:
+        if buf and size + len(t) > limit:
+            yield "\n".join(buf)
+            buf, size = [], 0
+        buf.append(t)
+        size += len(t)
+    if buf:
+        yield "\n".join(buf)
+
+
+def _call_batched(call, texts, tries=3):
+    """Every batch, with a short backoff on a rate limit.
+
+    Returns (fixes, failed, total, last_error).
+    """
+    fixes, failed, last = [], 0, ""
+    batches = list(_batches(texts))
+    for n, batch in enumerate(batches):
+        if n:
+            # the meter is per minute; a steady drip stays under it
+            time.sleep(BATCH_PAUSE)
+        for attempt in range(tries):
+            try:
+                fixes.extend(call(batch, model(),
+                                  {"base_url": base_url(), "key": key()}) or [])
+                break
+            except Exception as e:
+                transient = any(s in str(e) for s in _TRANSIENT)
+                if transient and attempt < tries - 1:
+                    time.sleep(RETRY_BACKOFF * (attempt + 1))
+                    continue
+                last = "%s: %s" % (type(e).__name__, e)
+                failed += 1
+                break
+    return fixes, failed, len(batches), last
+
+
 def _rules(book_id, fixes):
     """Model answers as pronunciation rules, scoped to this one book."""
     out, seen = [], set()
@@ -121,11 +171,14 @@ def ensure(conn, storage, uid, book_id, idxs, plugins_root=None, run=None):
     if plugin is None:
         return [], "no disambiguator plugin is installed"
     call = run or plugin.decide
-    try:
-        fixes = call("\n".join(text), model(),
-                     {"base_url": base_url(), "key": key()})
-    except Exception as e:
-        return [], "%s: %s" % (type(e).__name__, e)
+    fixes, failed, total, last = _call_batched(call, text)
     rules = _rules(book_id, fixes)
+    if failed and not rules:
+        # Nothing at all came back: say so and leave no dictionary behind, so the
+        # next render tries again instead of finding an empty one and giving up.
+        return [], "%d of %d part(s) failed (%s)" % (failed, total, last)
     pron.save_dict(conn, uid, DICT_NAME, _SCOPE, book_id, rules)
+    if failed:
+        return rules, ("%d of %d part(s) failed (%s); saved what came back"
+                       % (failed, total, last))
     return rules, ""

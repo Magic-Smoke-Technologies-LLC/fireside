@@ -15,6 +15,8 @@ from host.db import connect
 from storage.local import LocalBackend
 
 jobs.SYNTH_BACKOFF = 0.0
+disambig.BATCH_PAUSE = 0.0
+disambig.RETRY_BACKOFF = 0.0
 
 UID = "u_cat"
 BID_KEY = "book-1"
@@ -184,6 +186,77 @@ class TestThePass(Base):
             rules, err = self.run_pass()
         self.assertEqual(err, "")
         self.assertEqual([r["from"] for r in rules], ["live"])
+
+
+class TestTheBatch(Base):
+    """A real book does not fit in one request, so it is read in pieces."""
+
+    def _book(self, chapters):
+        return library.add_book(self.conn, self.storage, UID,
+                                Book(title="Big", chapters=[
+                                    Chapter("c%d" % i, t) for i, t in enumerate(chapters)]))
+
+    def test_a_long_book_is_split_into_several_requests(self):
+        big = "We live here. " * 900           # ~12.6k chars per chapter
+        bid = self._book([big, big, big, big])
+        seen = []
+
+        def run(text, model, cred):
+            seen.append(len(text))
+            return [{"word": "live", "say": "liv"}]
+
+        idxs = [r["idx"] for r in library.chapters(self.conn, bid)]
+        with Env():
+            rules, err = disambig.ensure(self.conn, self.storage, UID, bid, idxs, run=run)
+        self.assertEqual(err, "")
+        self.assertGreater(len(seen), 1)
+        self.assertTrue(all(n <= disambig.BATCH_CHARS + 2 * len(big) for n in seen))
+        self.assertEqual([r["from"] for r in rules], ["live"])
+
+    def test_a_rate_limit_is_retried_not_saved_as_empty(self):
+        attempts = []
+
+        def run(text, model, cred):
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise RuntimeError("the model server refused the request (429)")
+            return [{"word": "live", "say": "liv"}]
+
+        with Env():
+            rules, err = self.run_pass(run=run)
+        self.assertEqual(err, "")
+        self.assertEqual([r["from"] for r in rules], ["live"])
+
+    def test_a_partial_pass_keeps_what_came_back_and_says_so(self):
+        big = "We live here. " * 900
+        bid = self._book([big, big, big])
+        calls = []
+
+        def run(text, model, cred):
+            calls.append(1)
+            if len(calls) == 2:
+                raise RuntimeError("the model server refused the request (400)")
+            return [{"word": "live", "say": "liv"}]
+
+        idxs = [r["idx"] for r in library.chapters(self.conn, bid)]
+        with Env():
+            rules, err = disambig.ensure(self.conn, self.storage, UID, bid, idxs, run=run)
+        self.assertEqual([r["from"] for r in rules], ["live"])
+        self.assertIn("part(s) failed", err)
+        self.assertIsNotNone(disambig.existing(self.conn, UID, bid))
+
+    def test_a_book_with_nothing_to_ask_is_remembered(self):
+        calls = []
+
+        def run(text, model, cred):
+            calls.append(text)
+            return []
+
+        with Env():
+            self.run_pass(run=run)
+            rules, err = self.run_pass(run=run)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual((rules, err), ([], ""))
 
 
 class TestWhatIsRefused(unittest.TestCase):
