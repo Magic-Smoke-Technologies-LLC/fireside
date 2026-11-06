@@ -53,10 +53,17 @@ class TestPolicy(unittest.TestCase):
     def test_catalog_without_a_provider_states_no_price(self):
         cat = plans.catalog(None)
         self.assertFalse(cat["payments_configured"])
-        self.assertEqual([t["id"] for t in cat["tiers"]], ["free", "platform"])
+        # the ladder is free plus three paid rungs (2026-11-06)
+        self.assertEqual([t["id"] for t in cat["tiers"]], list(quota.TIERS))
         self.assertEqual(cat["tiers"][0]["included_bytes"], quota.FREE_ALLOWANCE_BYTES)
-        self.assertEqual(cat["tiers"][1]["included_bytes"], quota.PLATFORM_ALLOWANCE_BYTES)
-        self.assertIsNone(cat["tiers"][1]["amount_cents"])
+        self.assertEqual([t["included_bytes"] for t in cat["tiers"][1:]],
+                         [quota.PLATFORM_ALLOWANCE_BYTES,
+                          quota.LISTENER_ALLOWANCE_BYTES,
+                          quota.STUDIO_ALLOWANCE_BYTES])
+        self.assertEqual([t["included_chars"] for t in cat["tiers"]],
+                         [0, 50_000, 250_000, 1_000_000])
+        for t in cat["tiers"][1:]:
+            self.assertIsNone(t["amount_cents"])
         self.assertEqual(cat["storage"]["block_bytes"], quota.STORAGE_BLOCK_BYTES)
         self.assertIsNone(cat["storage"]["amount_cents"])
 

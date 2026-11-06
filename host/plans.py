@@ -34,28 +34,40 @@ def _price_of(provider, plan_id):
     return None, "usd", None
 
 
+# What each rung is called on the screen, and one line on who it is for. Prices
+# stay with the provider (see _price_of): this module only knows shape.
+TIER_META = {
+    quota.FREE_PLAN: ("Free", "A few books, no card, no expiry."),
+    quota.PLATFORM_PLAN: ("Reader", "Enough to listen to a novel a month."),
+    quota.LISTENER_PLAN: ("Listener", "Series, long fics, and a shelf that grows."),
+    quota.STUDIO_PLAN: ("Studio", "The same characters bought outright, plus the platform."),
+}
+
+
 def catalog(provider=None):
     """The offering, ready to render.
 
     `tiers` are exclusive choices (you are on exactly one); `storage` is an
     add-on you buy N blocks of, on top of any tier.
     """
-    plat_cents, plat_cur, plat_int = _price_of(provider, quota.PLATFORM_PLAN)
     blk_cents, blk_cur, blk_int = _price_of(provider, STORAGE_ADDON)
     configured = provider is not None
+    tiers = []
+    for pid in quota.TIERS:
+        label, description = TIER_META.get(pid, (pid, ""))
+        if pid == quota.FREE_PLAN:
+            cents, cur, interval = 0, "usd", None
+        else:
+            cents, cur, interval = _price_of(provider, pid)
+        tiers.append({"id": pid, "label": label,
+                      "amount_cents": cents, "currency": cur,
+                      "interval": interval or (None if pid == quota.FREE_PLAN else "month"),
+                      "included_bytes": quota.PLAN_ALLOWANCE.get(pid, 0),
+                      "included_chars": quota.PLAN_CHARS.get(pid, 0),
+                      "description": description})
     return {
         "payments_configured": configured,
-        "tiers": [
-            {"id": quota.FREE_PLAN, "label": "Free", "amount_cents": 0,
-             "currency": "usd", "interval": None,
-             "included_bytes": quota.FREE_ALLOWANCE_BYTES,
-             "description": "Enough for a few books. Storage is shown, not billed."},
-            {"id": quota.PLATFORM_PLAN, "label": "fireside platform",
-             "amount_cents": plat_cents, "currency": plat_cur,
-             "interval": plat_int or "month",
-             "included_bytes": quota.PLATFORM_ALLOWANCE_BYTES,
-             "description": "The server, updates, and 2 GB of storage."},
-        ],
+        "tiers": tiers,
         "storage": {
             "addon": STORAGE_ADDON,
             "block_bytes": quota.STORAGE_BLOCK_BYTES,

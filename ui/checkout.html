@@ -54,9 +54,10 @@
 
   <h2>What you are buying</h2>
   <ul id="orderWhat">
-    <li>Platform plan, billed monthly, renews until cancelled.</li>
-    <li>50,000 narration characters included every paid period; unused characters do not carry over.</li>
-    <li>2 GB of storage for your shelf, chapters, audio and covers.</li>
+    <li>Billed monthly or yearly, renews until cancelled.</li>
+    <li>The plan's narration characters are included every paid period; unused characters do not carry over.</li>
+    <li>Storage for your shelf, chapters, audio and covers.</li>
+    <li>A chapter you have already voiced never costs characters again.</li>
     <li>Cancel any time; access runs to the end of the paid period.</li>
   </ul>
 
@@ -87,6 +88,15 @@
   var interval = q.get('interval') === 'year' ? 'year' : 'month';
   var t = document.getElementById('orderTitle'), l = document.getElementById('orderLine');
   var w = document.getElementById('orderWhat');
+  var TIER = {
+    platform: ['Reader', '$3.00 a month, or $30.00 a year', '50,000 characters a month (about 45 minutes) and 2 GB of storage.'],
+    listener: ['Listener', '$8.00 a month, or $80.00 a year', '250,000 characters a month (about 3.5 hours) and 5 GB of storage.'],
+    studio: ['Studio', '$20.00 a month, or $200.00 a year', '1,000,000 characters a month (about 15 hours) and 10 GB of storage.']
+  };
+  if (TIER[plan]) {
+    t.textContent = TIER[plan][0] + ' plan';
+    l.textContent = TIER[plan][1] + '. ' + TIER[plan][2];
+  }
   if (plan === 'credits') {
     t.textContent = 'Extra narration';
     l.textContent = 'Characters are bought in any amount at $19.63 per million, prepaid and never expiring.';
