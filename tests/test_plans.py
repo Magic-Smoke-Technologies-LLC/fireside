@@ -64,6 +64,13 @@ class TestPolicy(unittest.TestCase):
                          [0, 50_000, 250_000, 1_000_000])
         for t in cat["tiers"][1:]:
             self.assertIsNone(t["amount_cents"])
+        # our published list price rides along even with no provider, so a card
+        # can print what the rung costs instead of "price not set"; the charged
+        # amount stays None until a provider supplies it.
+        self.assertEqual([t["list_amount_cents"] for t in cat["tiers"]],
+                         [None, 300, 800, 2000])
+        self.assertEqual([t["list_annual_cents"] for t in cat["tiers"]],
+                         [None, 3000, 8000, 20000])
         self.assertEqual(cat["storage"]["block_bytes"], quota.STORAGE_BLOCK_BYTES)
         self.assertIsNone(cat["storage"]["amount_cents"])
 
@@ -76,6 +83,9 @@ class TestPolicy(unittest.TestCase):
         self.assertTrue(cat["payments_configured"])
         plat = [t for t in cat["tiers"] if t["id"] == "platform"][0]
         self.assertEqual(plat["amount_cents"], 300)
+        # a provider price wins over the list; the list is still reported, so a
+        # screen that shows "our price" cannot silently drift from the charge
+        self.assertEqual(plat["list_amount_cents"], 300)
         self.assertEqual(cat["storage"]["amount_cents"], 100)
 
 

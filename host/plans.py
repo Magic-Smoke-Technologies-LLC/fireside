@@ -34,6 +34,16 @@ def _price_of(provider, plan_id):
     return None, "usd", None
 
 
+# The published list price, monthly and annual, in cents. This is our own price
+# (docs/PRICING.md, ui/pricing.html), not a provider's. It exists so a screen can
+# print the real numbers while payments are still switched off, labelling them
+# "not for sale yet" instead of printing "price not set", which told a reader
+# nothing about what the tier costs. When a provider IS registered, its price
+# wins; a disagreement is the provider's number that charges the card.
+LIST_PRICE_CENTS = {quota.PLATFORM_PLAN: (300, 3000),
+                    quota.LISTENER_PLAN: (800, 8000),
+                    quota.STUDIO_PLAN: (2000, 20000)}
+
 # What each rung is called on the screen, and one line on who it is for. Prices
 # stay with the provider (see _price_of): this module only knows shape.
 TIER_META = {
@@ -59,11 +69,13 @@ def catalog(provider=None):
             cents, cur, interval = 0, "usd", None
         else:
             cents, cur, interval = _price_of(provider, pid)
+        list_m, list_y = LIST_PRICE_CENTS.get(pid, (None, None))
         tiers.append({"id": pid, "label": label,
                       "amount_cents": cents, "currency": cur,
+                      "list_amount_cents": list_m, "list_annual_cents": list_y,
+                      "included_chars": quota.PLAN_CHARS.get(pid, 0),
                       "interval": interval or (None if pid == quota.FREE_PLAN else "month"),
                       "included_bytes": quota.PLAN_ALLOWANCE.get(pid, 0),
-                      "included_chars": quota.PLAN_CHARS.get(pid, 0),
                       "description": description})
     return {
         "payments_configured": configured,
