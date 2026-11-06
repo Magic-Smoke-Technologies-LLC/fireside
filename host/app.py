@@ -450,6 +450,22 @@ class App:
                                                       "fireside@readfireside.com")))
         return 200, {"_html": page}
 
+    def pricing(self, q, body):
+        """The public price list. A payment processor asks for pricing that is
+        visible before an account exists, so this page cannot sit behind the
+        sign-in screen the way /plans does."""
+        return self._legal("pricing.html")
+
+    def checkout(self, q, body):
+        """The checkout page a payment processor's reviewer needs to see.
+
+        Payment is off, so the page exists, names what would be bought, links
+        the legal pages, and its pay button is inert. Enabling payments swaps
+        the button for the provider's hosted session; the page itself does not
+        collect card data and never has.
+        """
+        return self._legal("checkout.html")
+
     def privacy(self, q, body):
         """The privacy policy. Public, static, and store-listing mineable."""
         return self._legal("privacy.html")
@@ -2939,6 +2955,7 @@ GET_ROUTES = {
     "/icon-192.png": "icon192", "/icon-512.png": "icon512",
     "/icon-maskable-512.png": "icon_maskable",
     "/privacy": "privacy", "/terms": "terms", "/delete-account": "delete_account",
+    "/pricing": "pricing", "/checkout": "checkout",
     "/health": "health", "/plugins": "plugins", "/library": "library_list",
     "/series": "series_list", "/tags": "tags_get",
     "/job": "job", "/jobs": "jobs_list", "/progress": "progress", "/chapter": "chapter",
@@ -3002,7 +3019,7 @@ POST_ROUTES = {
 # the sign-in surface, and the browser's cache of who it is.
 PUBLIC_ROUTES = {"/", "/index.html", "/i18n.js", "/favicon.ico", "/health", "/auth/providers",
                  "/auth/policy", "/auth/forgot", "/auth/reset", "/me", "/plans",
-                 "/privacy", "/terms", "/delete-account",
+                 "/privacy", "/terms", "/delete-account", "/pricing", "/checkout",
                  "/manifest.webmanifest", "/sw.js",
                  # The page asks /2fa on every load, before it can know whether
                  # a session exists. Answering 401 there put a console error on

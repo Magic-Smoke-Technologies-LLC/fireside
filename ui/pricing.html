@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing — fireside</title>
+<meta name="color-scheme" content="dark">
+<style>
+  :root{
+    --bg:#14110f; --surface:#1d1916; --raise:#241f1b; --line:#332c26;
+    --text:#efe7dd; --faint:#9a8f83; --flame:#e3a857; --on-flame:#241808;
+    --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 var(--ui);
+       -webkit-font-smoothing:antialiased}
+  main{max-width:720px;margin:0 auto;padding:56px 22px 96px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  header img{width:40px;height:40px;border-radius:10px}
+  h1{font-size:26px;margin:18px 0 4px;letter-spacing:-.01em}
+  h2{font-size:17px;margin:34px 0 8px;color:var(--flame);letter-spacing:.01em}
+  p,li{color:var(--text)}
+  .lead{color:var(--faint)}
+  ul{padding-left:20px}
+  li{margin:5px 0}
+  a{color:var(--flame)}
+  .meta{color:var(--faint);font-size:13px;margin-top:6px}
+  .back{display:inline-block;margin-top:40px;color:var(--faint);text-decoration:none;
+        border:1px solid var(--line);border-radius:999px;padding:9px 18px}
+  .back:hover{color:var(--text);border-color:var(--flame)}
+  code{background:var(--surface);padding:1px 5px;border-radius:5px;font-size:14px}
+  .cards{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin:18px 0 8px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .card h3{margin:0 0 2px;font-size:17px}
+  .card .price{font-size:30px;letter-spacing:-.02em;margin:8px 0 0}
+  .card .per{color:var(--faint);font-size:13px}
+  .card ul{padding-left:18px;margin:12px 0 16px;font-size:15px}
+  .card .pick{display:block;text-align:center;border-radius:999px;padding:11px 16px;font-weight:600;
+    background:var(--raise);color:var(--faint);border:1px solid var(--line);text-decoration:none}
+  .card.feature{border-color:var(--flame)}
+  .note{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:18px 0}
+</style>
+</head>
+<body>
+<main>
+  <header><img src="/icon-192.png" alt=""><strong>fireside</strong></header>
+  <h1>Pricing</h1>
+  <p class="meta">Current as of 6 November 2026</p>
+
+  <p class="lead">fireside turns the books and web stories you already have into audio you can
+  listen to, in the browser or in the app. You bring the book; we render it and stream it back.</p>
+
+  <div class="cards">
+    <div class="card">
+      <h3>Free</h3>
+      <p class="price">$0</p>
+      <p class="per">no card, no expiry</p>
+      <ul>
+        <li>500 MB of storage</li>
+        <li>Full library and playback</li>
+        <li>Narration bought separately, or with your own key</li>
+      </ul>
+      <a class="pick" href="/#create">Create an account</a>
+    </div>
+    <div class="card feature">
+      <h3>Platform</h3>
+      <p class="price">$3<span class="per"> / month</span></p>
+      <p class="per">or $36 a year</p>
+      <ul>
+        <li><strong>50,000 narration characters a month</strong> (about 45 minutes)</li>
+        <li>2 GB of storage</li>
+        <li>Every hosted feature, cancel any time</li>
+      </ul>
+      <a class="pick" href="/checkout?plan=platform&amp;interval=month">Choose Platform</a>
+    </div>
+    <div class="card">
+      <h3>Extra narration</h3>
+      <p class="price">$19.63<span class="per"> / million characters</span></p>
+      <p class="per">prepaid, never expires</p>
+      <ul>
+        <li>About 15 hours of listening per million characters</li>
+        <li>Charge is the speech provider's rate plus about $0.10 per million</li>
+        <li>Bring your own Azure Speech key and pay us nothing for narration</li>
+      </ul>
+      <a class="pick" href="/checkout?plan=credits">Choose narration</a>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Checkout is not open yet.</strong> The buy buttons lead to the checkout page so the
+    process is visible, but nothing can be charged: payments are being enabled with our payment
+    provider (Creem). Accounts already work without paying.
+  </div>
+
+  <h2>Run it yourself — free</h2>
+  <p>fireside is open-source software. Run the server on your own machine, point it at your own
+  speech provider key, and you pay nobody for the software.</p>
+
+  <h2>Questions, refunds, cancellations</h2>
+  <p>Write to <a href="mailto:__CONTACT__">__CONTACT__</a>. Refund and cancellation terms are in
+  the <a href="/terms">terms of service</a>; what we collect is in the
+  <a href="/privacy">privacy policy</a>.</p>
+  <p class="meta">fireside is operated by __COMPANY__.</p>
+
+  <a class="back" href="/">← Back to fireside</a>
+</main>
+</body>
+</html>

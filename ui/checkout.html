@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout — fireside</title>
+<meta name="color-scheme" content="dark">
+<style>
+  :root{
+    --bg:#14110f; --surface:#1d1916; --raise:#241f1b; --line:#332c26;
+    --text:#efe7dd; --faint:#9a8f83; --flame:#e3a857; --on-flame:#241808;
+    --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 var(--ui);
+       -webkit-font-smoothing:antialiased}
+  main{max-width:720px;margin:0 auto;padding:56px 22px 96px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  header img{width:40px;height:40px;border-radius:10px}
+  h1{font-size:26px;margin:18px 0 4px;letter-spacing:-.01em}
+  h2{font-size:17px;margin:34px 0 8px;color:var(--flame);letter-spacing:.01em}
+  p,li{color:var(--text)}
+  .lead{color:var(--faint)}
+  ul{padding-left:20px}
+  li{margin:5px 0}
+  a{color:var(--flame)}
+  .meta{color:var(--faint);font-size:13px;margin-top:6px}
+  .back{display:inline-block;margin-top:40px;color:var(--faint);text-decoration:none;
+        border:1px solid var(--line);border-radius:999px;padding:9px 18px}
+  .back:hover{color:var(--text);border-color:var(--flame)}
+  code{background:var(--surface);padding:1px 5px;border-radius:5px;font-size:14px}
+  .cards{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin:18px 0 8px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .card h3{margin:0 0 2px;font-size:17px}
+  .card .price{font-size:30px;letter-spacing:-.02em;margin:8px 0 0}
+  .card .per{color:var(--faint);font-size:13px}
+  .card ul{padding-left:18px;margin:12px 0 16px;font-size:15px}
+  .card .pick{display:block;text-align:center;border-radius:999px;padding:11px 16px;font-weight:600;
+    background:var(--raise);color:var(--faint);border:1px solid var(--line);text-decoration:none}
+  .card.feature{border-color:var(--flame)}
+  .note{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:18px 0}
+</style>
+</head>
+<body>
+<main>
+  <header><img src="/icon-192.png" alt=""><strong>fireside</strong></header>
+  <h1>Checkout</h1>
+  <p class="meta">Payment is not open yet</p>
+
+  <div class="note" id="order">
+    <strong id="orderTitle">Platform plan</strong>
+    <p id="orderLine" class="lead">$3.00 a month, including 50,000 narration characters and 2 GB of storage.</p>
+  </div>
+
+  <h2>What you are buying</h2>
+  <ul id="orderWhat">
+    <li>Platform plan, billed monthly, renews until cancelled.</li>
+    <li>50,000 narration characters included every paid period; unused characters do not carry over.</li>
+    <li>2 GB of storage for your shelf, chapters, audio and covers.</li>
+    <li>Cancel any time; access runs to the end of the paid period.</li>
+  </ul>
+
+  <h2>Payment</h2>
+  <p>Card payment is handled by Creem, which acts as merchant of record. Your card details never
+  reach our servers.</p>
+  <p><strong>This store is not accepting payments yet.</strong> Payments are being enabled; when
+  they are, this page becomes the live checkout. Nothing you do here charges you, and no card
+  details are collected.</p>
+
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px">
+    <a class="back" href="#" id="pay" aria-disabled="true"
+       style="opacity:.5;cursor:not-allowed;border-color:var(--line)" onclick="return false">Pay (disabled)</a>
+    <a class="back" href="/pricing">← Back to pricing</a>
+  </div>
+
+  <h2>Before you pay</h2>
+  <ul>
+    <li><a href="/terms">Terms of service</a>, including refunds and cancellation.</li>
+    <li><a href="/privacy">Privacy policy</a>.</li>
+    <li>Questions: <a href="mailto:__CONTACT__">__CONTACT__</a>.</li>
+  </ul>
+  <p class="meta">fireside is operated by __COMPANY__.</p>
+</main>
+<script>
+(function(){
+  var q = new URLSearchParams(location.search), plan = q.get('plan') || 'platform';
+  var interval = q.get('interval') === 'year' ? 'year' : 'month';
+  var t = document.getElementById('orderTitle'), l = document.getElementById('orderLine');
+  var w = document.getElementById('orderWhat');
+  if (plan === 'credits') {
+    t.textContent = 'Extra narration';
+    l.textContent = 'Characters are bought in any amount at $19.63 per million, prepaid and never expiring.';
+    w.innerHTML = '<li>Narration characters added to your balance.</li>' +
+      '<li>Spent only on chapters you render; never expires.</li>' +
+      '<li>Each million is about 15 hours of listening.</li>';
+  } else if (interval === 'year') {
+    t.textContent = 'Platform plan, yearly';
+    l.textContent = 'There is no yearly checkout yet. The monthly plan is $3.00 a month.';
+  }
+})();
+</script>
+</body>
+</html>

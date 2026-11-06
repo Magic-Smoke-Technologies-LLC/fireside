@@ -526,7 +526,7 @@
     <p class="err" id="autherr" role="alert" aria-live="polite"></p>
     <button class="toggle" id="lockforgot" type="button" hidden data-t="Forgot password?">Forgot password?</button>
     <button class="toggle" id="locktoggle" type="button" aria-label="Switch between signing in and creating an account" data-t-aria="Switch between signing in and creating an account" hidden></button>
-    <button class="toggle" id="lockplans" type="button" data-t="See plans &amp; pricing →">See plans &amp; pricing →</button>
+    <a class="toggle" id="lockplans" href="/pricing" target="_blank" rel="noopener" style="text-decoration:none" data-t="See plans &amp; pricing →">See plans &amp; pricing →</a>
     <a class="toggle" href="/privacy" target="_blank" rel="noopener" style="text-decoration:none" data-t="Privacy">Privacy</a>
     <a class="toggle" href="/terms" target="_blank" rel="noopener" style="text-decoration:none" data-t="Terms">Terms</a>
     <div id="lockproviders" class="sso"></div>
@@ -2615,7 +2615,7 @@ if ($('#pageclearcart')) $('#pageclearcart').onclick = () => { clearCart(); load
 if ($('#pagesignin')) $('#pagesignin').onclick = () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
 if ($('#pagesignup')) $('#pagesignup').onclick = () => openDoor('create');
 if ($('#gotoplans')) $('#gotoplans').onclick = () => show('plans');
-if ($('#lockplans')) $('#lockplans').onclick = () => {
+if ($('#lockplans') && $('#lockplans').tagName === 'BUTTON') $('#lockplans').onclick = () => {
   document.body.classList.remove('locked');
   $('#lock').hidden = true;
   show('plans');
@@ -3011,7 +3011,7 @@ async function renderClaim() {
   $('#lockpass').setAttribute('autocomplete', 'current-password');
   $('#lockgo').textContent = T('Confirm and link');
   $('#locktoggle').hidden = true;
-  $('#lockplans').hidden = true;
+  if ($('#lockplans')) $('#lockplans').hidden = true;
   authMsg('');
   const provs = $('#lockproviders'); provs.innerHTML = '';
   try {
