@@ -1435,6 +1435,15 @@ class App:
             provider = c["provider"]
         if provider not in self.host.speech:
             return 400, {"error": "unknown provider"}
+        if not (voice or "").strip():
+            # An empty voice is not "the default one": every speech provider has
+            # its own idea of a default, so a render that arrives without a voice
+            # produces audio nobody chose. The dialog can send this while its
+            # voice list is still loading, and the result looks like a bug in the
+            # book rather than a missing choice, so it is refused here where any
+            # client hears it.
+            return 400, {"error": "no voice chosen",
+                         "detail": "pick a voice first; the list may still be loading"}
         if cred is None:
             cred = client_cred or credentials.get_credential(self.conn, user, provider)
         if self.rate_limiter is not None and not self.rate_limiter.allow(user):

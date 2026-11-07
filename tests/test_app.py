@@ -152,6 +152,23 @@ class TestApp(unittest.TestCase):
         s, audio = self._get("/chapter?book=%s&idx=0" % bid)
         self.assertEqual(audio, b"A:v:hello world")
 
+    def test_a_render_without_a_voice_is_refused_not_defaulted(self):
+        # The convert dialog can send voice:"" for the second before its voice
+        # list arrives. Every provider has its own idea of a default, so the
+        # audio came out in a voice nobody chose and looked like a bug in the
+        # book. The server refuses the request instead.
+        s, imp = self._post("/import", {"user": "u1", "kind": "upload",
+                                        "filename": "x.epub"})
+        self.assertEqual(s, 200, imp)
+        import urllib.error
+        for extra in ({}, {"voice": ""}, {"voice": "   "}):
+            body = {"user": "u1", "book": imp["book_id"], "provider": "fake"}
+            body.update(extra)
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self._post("/render", body)
+            self.assertEqual(cm.exception.code, 400, extra)
+            self.assertEqual(json.loads(cm.exception.read())["error"], "no voice chosen")
+
     def test_multi_voice_renditions(self):
         # the same chapter voiced twice: both are kept, and the player can ask
         # for either by name. No voice named = the newest.
