@@ -547,6 +547,41 @@ class TestPublicConfig(unittest.TestCase):
         self.assertNotIn("week", paddle.known_plan_prices()["platform"])
 
 
+class TestPricingPageWiring(unittest.TestCase):
+    """The served pricing page must actually hand off to Paddle's overlay.
+
+    Found by loading the live page in a headless browser instead of reading the
+    deploy receipt: /billing/config returned ok=true with a client token, and
+    every button still said "Not for sale yet". Paddle.Initialize was given an
+    "environment" option it does not accept, the call threw inside the promise
+    callback, and the enable loop and the test-mode note after it never ran. A
+    source check can only prove the page as shipped; the live proof is a
+    headless load that sees the buttons enabled.
+    """
+
+    def setUp(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "..", "ui", "pricing.html"), encoding="utf-8") as fh:
+            self.page = fh.read()
+        self.init = self.page.split("Paddle.Initialize", 1)[-1].split("})", 1)[0]
+
+    def test_initialize_is_not_given_an_environment(self):
+        self.assertNotIn("environment:", self.init,
+                         "Paddle.js rejects this option and the page goes dead")
+
+    def test_initialize_carries_the_client_token(self):
+        self.assertIn("conf.client_token", self.init)
+
+    def test_a_failed_initialize_still_tells_the_visitor(self):
+        # A dead button with no reason is the failure this page must not have.
+        self.assertIn("try {", self.page)
+        self.assertIn("did not start", self.page)
+
+    def test_buttons_start_disabled_and_are_enabled_from_config(self):
+        self.assertIn("b.disabled = false", self.page)
+        self.assertIn("Try checkout (test)", self.page)
+
+
 class TestSignatureHeader(unittest.TestCase):
     """The webhook reads the header the provider actually sends.
 
