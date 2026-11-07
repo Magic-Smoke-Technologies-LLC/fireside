@@ -292,3 +292,29 @@ class MySQLTls(unittest.TestCase):
         ctx = db.mysql_ssl_kwargs()["ssl"]
         self.assertEqual(ctx.verify_mode, ssl.CERT_NONE)
         self.assertFalse(ctx.check_hostname)
+
+
+class StatementsTest(unittest.TestCase):
+    """The schema must split the same way on both engines (2026-11-07)."""
+
+    def test_a_semicolon_in_a_comment_does_not_cut_a_statement(self):
+        script = ("-- mirror tables; this semicolon is prose\n"
+                  "CREATE TABLE IF NOT EXISTS a (x INT);\n"
+                  "CREATE TABLE IF NOT EXISTS b (y INT);")
+        got = db.statements(script)
+        self.assertEqual(len(got), 2)
+        self.assertTrue(got[0].startswith("CREATE TABLE IF NOT EXISTS a"))
+        self.assertTrue(got[1].startswith("CREATE TABLE IF NOT EXISTS b"))
+
+    def test_every_schema_statement_starts_with_a_keyword(self):
+        # The failure this guards: MySQL got a fragment beginning with prose
+        # ("paddle_events is the idempotency") and refused to boot.
+        for stmt in db.statements(db.SCHEMA):
+            head = stmt.split(None, 1)[0].upper()
+            self.assertIn(head, {"CREATE", "ALTER", "INSERT", "PRAGMA", "DROP",
+                                 "BEGIN", "UPDATE", "DELETE"}, stmt[:80])
+
+    def test_schema_creates_the_paddle_tables(self):
+        joined = " ".join(db.statements(db.SCHEMA))
+        for table in ("paddle_customers", "paddle_subscriptions", "paddle_events"):
+            self.assertIn("CREATE TABLE IF NOT EXISTS " + table, joined)

@@ -585,6 +585,24 @@ _RELEASE_SAVEPOINT = re.compile(
 # ROLLBACK TO name is valid on both engines; leave it alone.
 # SQLite's upsert clause: ON CONFLICT(cols) DO UPDATE SET a=excluded.a, ...
 # MySQL has no ON CONFLICT; the equivalent is ON DUPLICATE KEY UPDATE a=VALUES(a).
+_LINE_COMMENT = re.compile(r"--[^\n]*")
+
+
+def statements(script):
+    """Split a multi-statement script into individual statements.
+
+    A `--` comment is stripped before the split, because SQLite's
+    executescript understands comments and a naive split on ";" does not: a
+    semicolon inside a comment (common in prose) would cut the comment in half
+    and leave the tail as a statement. Measured 2026-11-07: the paddle mirror
+    comment "...the mirror; paddle_events is the idempotency..." booted fine on
+    SQLite and killed every MySQL replica with 1064. Comments are prose here,
+    never string literals, so stripping them line-wise is safe.
+    """
+    text = _LINE_COMMENT.sub("", script)
+    return [s.strip() for s in text.split(";") if s.strip()]
+
+
 _ON_CONFLICT = re.compile(
     r"\bON\s+CONFLICT\s*\(([^)]*)\)\s+DO\s+UPDATE\s+SET\s+(.+)$",
     re.I | re.S)
@@ -687,10 +705,8 @@ class MySQLConnection:
     def executescript(self, script):
         with self._lock:
             cur = self._raw.cursor()
-            for stmt in script.split(";"):
-                s = stmt.strip()
-                if s:
-                    cur.execute(s)
+            for stmt in statements(script):
+                cur.execute(stmt)
             self._raw.commit()
             self._in_txn = False
 
