@@ -38,6 +38,12 @@
   .card .pick{display:block;text-align:center;border-radius:999px;padding:11px 16px;font-weight:600;
     background:var(--raise);color:var(--faint);border:1px solid var(--line);text-decoration:none}
   .card .pick.off{background:transparent;color:var(--faint);border-style:dashed;cursor:default}
+  .card .pick.buy{background:var(--flame);color:var(--on-flame);border-color:var(--flame);cursor:pointer;
+    width:100%;font:inherit;font-weight:600}
+  .card .pick.buy:disabled{background:var(--raise);color:var(--faint);border-color:var(--line);cursor:default}
+  .card .pick.alt{display:block;text-align:center;margin-top:8px;font-size:13px;color:var(--faint);
+    background:none;border:0;cursor:pointer;text-decoration:underline;font:inherit}
+  .card .pick.alt:disabled{cursor:default;text-decoration:none}
   .card.feature{border-color:var(--flame)}
   .note{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:18px 0}
 </style>
@@ -72,7 +78,8 @@
         <li>2 GB of storage</li>
         <li>Enough for a novel a month</li>
       </ul>
-      <span class="pick off">Not for sale yet</span>
+      <button class="pick buy" data-plan="platform" data-cycle="month" disabled>Not for sale yet</button>
+      <button class="pick alt" data-plan="platform" data-cycle="year" disabled>$36 a year</button>
     </div>
     <div class="card">
       <h3>Listener</h3>
@@ -83,7 +90,8 @@
         <li>5 GB of storage</li>
         <li>Series, long fics, and a shelf that grows</li>
       </ul>
-      <span class="pick off">Not for sale yet</span>
+      <button class="pick buy" data-plan="listener" data-cycle="month" disabled>Not for sale yet</button>
+      <button class="pick alt" data-plan="listener" data-cycle="year" disabled>$96 a year</button>
     </div>
     <div class="card">
       <h3>Studio</h3>
@@ -94,7 +102,8 @@
         <li>10 GB of storage</li>
         <li>The same million characters bought outright is $19.63, and that does not include the platform</li>
       </ul>
-      <span class="pick off">Not for sale yet</span>
+      <button class="pick buy" data-plan="studio" data-cycle="month" disabled>Not for sale yet</button>
+      <button class="pick alt" data-plan="studio" data-cycle="year" disabled>$240 a year</button>
     </div>
   </div>
 
@@ -122,10 +131,9 @@
     <li><strong>Open source.</strong> Run the server yourself and pay nobody for the software.</li>
   </ul>
 
-  <div class="note">
-    <strong>Checkout is not open yet.</strong> The buy buttons lead to the checkout page so the
-    process is visible, but nothing can be charged: payments are being enabled with our payment
-    provider (Creem). Accounts already work without paying.
+  <div class="note" id="paynote">
+    <strong>Checkout is not open yet.</strong> Accounts already work without paying; cards are
+    being turned on.
   </div>
 
   <h2>Run it yourself — free</h2>
@@ -140,5 +148,86 @@
 
   <a class="back" href="/">← Back to fireside</a>
 </main>
+
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+<script>
+(function () {
+  var note = document.getElementById("paynote");
+  var buttons = [].slice.call(document.querySelectorAll("[data-plan]"));
+  var cfg = null;
+  var uid = "";
+
+  function said(text) {
+    // One line in the note, so a signed-out visitor and a blocked buyer each
+    // get the reason instead of a dead button with no explanation.
+    if (note) note.innerHTML = "<strong>Checkout is not open yet.</strong> " + text;
+  }
+
+  function ask(url, opts) {
+    return fetch(url, Object.assign({credentials: "same-origin"}, opts || {}))
+      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, body: j}; }); })
+      .catch(function () { return {ok: false, body: {}}; });
+  }
+
+  function open(plan, cycle) {
+    var id = (cfg.prices[plan] || {})[cycle];
+    if (!id) { said("That cycle is not configured yet."); return; }
+    if (!uid) { window.location.href = "/#create"; return; }
+    Paddle.Checkout.open({
+      items: [{priceId: id, quantity: 1}],
+      // Our own key: the webhook finds the account from this, not from the
+      // email the buyer typed, which may be a different one.
+      customData: {fireside_user: uid},
+      settings: {
+        displayMode: "overlay",
+        theme: "dark",
+        locale: (navigator.language || "en").slice(0, 2),
+        successUrl: window.location.origin + "/?purchased=1"
+      }
+    });
+  }
+
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (b.disabled) return;
+      open(b.getAttribute("data-plan"), b.getAttribute("data-cycle"));
+    });
+  });
+
+  Promise.all([ask("/billing/config"), ask("/me")]).then(function (res) {
+    var conf = res[0].body || {}, me = res[1].body || {};
+    uid = me.user || "";
+    if (!conf.ok || !conf.client_token) {
+      said("Cards are not wired on this deployment yet." +
+           (conf.detail ? " " + conf.detail : ""));
+      return;
+    }
+    cfg = conf;
+    Paddle.Initialize({token: conf.client_token,
+                       environment: conf.env === "production" ? "production" : "sandbox",
+                       checkout: {settings: {displayMode: "overlay", theme: "dark"}}});
+    buttons.forEach(function (b) {
+      var plan = b.getAttribute("data-plan"), cycle = b.getAttribute("data-cycle");
+      var id = (conf.prices[plan] || {})[cycle];
+      if (!id) return;
+      b.disabled = false;
+      b.textContent = cycle === "year" ? (b.textContent.trim())
+                   : (conf.env === "production" ? "Subscribe" : "Try checkout (test)");
+    });
+    var test = conf.env !== "production";
+    if (test) {
+      // Sandbox money is not money. Saying so on the page is the difference
+      // between a test and a customer who thinks they bought something.
+      note.innerHTML = "<strong>Test mode.</strong> Cards are handled by Paddle " +
+        "in its sandbox, so nothing is charged and no plan is granted yet. " +
+        "The real checkout is the same button once live keys land.";
+    } else {
+      note.innerHTML = "<strong>Payments are open.</strong> Cards are handled by Paddle, " +
+        "we never see the number. Cancel any time; the plan runs to the end of the " +
+        "period you paid for.";
+    }
+  });
+})();
+</script>
 </body>
 </html>

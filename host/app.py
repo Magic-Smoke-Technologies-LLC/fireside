@@ -1696,6 +1696,23 @@ class App:
         with whatever prices a payment provider reports (None until one is set)."""
         return 200, plans.catalog(payments.get())
 
+    def billing_config(self, q, body):
+        """The browser's half of checkout: a client token and the price ids.
+
+        Public on purpose and deliberately narrow. A provider whose card form is
+        a page overlay (Paddle) needs the browser to know which price to open;
+        everything that can move money stays server-side. With no provider
+        registered the honest answer is ok=false, and the page keeps its
+        "not for sale" state instead of opening an overlay that cannot charge.
+        """
+        pp = payments.get()
+        fn = getattr(pp, "public_config", None)
+        data = fn() if callable(fn) else {
+            "ok": False, "provider": "", "env": "", "prices": {},
+            "currency": "USD", "detail": "no payment provider configured"}
+        data["payments_configured"] = payments.configured()
+        return 200, data
+
     def storage_get(self, q, body):
         """The signed-in user's storage: the bytes their own shelf holds and how
         much their plan plus any storage blocks include. A held book bills its
@@ -2998,6 +3015,8 @@ GET_ROUTES = {
     "/admin/plans": "plans_admin",
     "/admin/accounts": "admin_accounts",
     "/billing": "billing_get",
+    # A GET: the page asks for its price ids on load, before anyone clicks.
+    "/billing/config": "billing_config",
     "/plans": "plans_get",
     "/storage": "storage_get",
     "/disambig/models": "disambig_models",
@@ -3039,11 +3058,33 @@ POST_ROUTES = {
     "/sessions/revoke_all": "sessions_revoke_all",
 }
 
+def signature_header(headers, provider_id="stripe"):
+    """The signature header a provider actually sends.
+
+    Stripe sends Stripe-Signature and Paddle sends Paddle-Signature, so reading
+    one literal name meant every Paddle delivery arrived "unsigned" and was
+    rejected with a 400 on the first real sale. The name is derived from the
+    provider id in the path and both spellings are accepted, because a proxied
+    or renamed provider must not be able to silently drop the signature.
+    """
+    headers = headers or {}
+    pid = (provider_id or "stripe").strip().lower()
+    for name in ("%s-Signature" % pid.capitalize(), "Paddle-Signature",
+                 "Stripe-Signature"):
+        value = headers.get(name, "")
+        if value:
+            return value
+    return ""
+
+
 # reachable without a session even when auth is required: the page, its health,
 # the sign-in surface, and the browser's cache of who it is.
 PUBLIC_ROUTES = {"/", "/index.html", "/i18n.js", "/favicon.ico", "/health", "/auth/providers",
                  "/auth/policy", "/auth/forgot", "/auth/reset", "/me", "/plans",
                  "/privacy", "/terms", "/delete-account", "/pricing", "/checkout",
+                 # A signed-out visitor sees prices before signing in, so the
+                 # overlay's price ids have to be readable without a session.
+                 "/billing/config",
                  "/manifest.webmanifest", "/sw.js",
                  # The page asks /2fa on every load, before it can know whether
                  # a session exists. Answering 401 there put a console error on
@@ -3422,8 +3463,8 @@ def make_handler(app):
             if path.startswith("/webhook/") and self.command == "POST":
                 n = int(self.headers.get("Content-Length") or 0)
                 payload = self.rfile.read(n) if n else b""
-                sig = self.headers.get("Stripe-Signature", "")
                 pid = parts[1] if len(parts) > 1 else "stripe"
+                sig = signature_header(self.headers, pid)
                 status, body = app.payment_webhook(payload, sig, pid)
                 return self._json(status, body)
             name = routes.get(path)
