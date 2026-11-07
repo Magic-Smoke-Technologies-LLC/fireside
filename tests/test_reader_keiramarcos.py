@@ -496,5 +496,113 @@ class TestStoryIndex(unittest.TestCase):
         self.assertEqual(km.chapter_index_items(series, url), [])
 
 
+
+# ---- a work published under spelled parts, linked by hand ----------------------
+# Live shape (When You Kiss Me, 2008): four posts with no work page and no tab,
+# /2008/09/when-you-kiss-me-part-one/ .. -part-four/. The last part links only
+# its previous neighbour, and its body ends with links to the two stories that
+# follow it in the series. Both facts used to break the import: the reader read
+# the body links as a series and offered February Song and the Iris March
+# interview instead of this book, and a paste of part four came back as one
+# chapter because nothing said part three was part of the same work.
+
+SPELLED = "https://keiramarcos.com/fan-fiction/when-you-kiss-me/"
+SP = ["https://keiramarcos.com/2008/09/when-you-kiss-me-part-%s/" % w
+      for w in ("one", "two", "three", "four")]
+SISTER = ["https://keiramarcos.com/2008/09/05/february-song/",
+          "https://keiramarcos.com/2009/11/04/an-interview/"]
+
+
+def spelled_part(title, canon, prev_url="", next_url="", sisters=()):
+    """One part page: the part link sits in the post navigation outside the body,
+    which is where WordPress puts it, and the body ends with sister links."""
+    def nav(href, label):
+        return ('<div class="nav-previous"><a href="%s" rel="prev">%s</a></div>'
+                % (href, label)) if href else ""
+    tail = "".join('<p>Read <a href="%s">%s</a> next.</p>' % (u, u.rsplit("/", 2)[-2])
+                   for u in sisters)
+    return """<html><head><link rel="canonical" href="%s" /></head><body>
+<article><h1 class="entry-title">%s</h1>
+<div class="entry-content"><p>Reading Time: 43 Minutes</p><p>* * * *</p>
+<p>%s body text, long enough to be read aloud on the bench, which is the only
+thing this paragraph has to do: clear the floor below which a page counts as
+empty and nothing was read.</p>%s</div>
+%s%s</article></body></html>""" % (canon, title, title, tail,
+                                   nav(prev_url, "Previous"),
+                                   nav(next_url, "Next"))
+
+
+SPELLED_PAGES = {
+    SP[0]: spelled_part("When You Kiss Me \u2013 Part One", SP[0], next_url=SP[1]),
+    SP[1]: spelled_part("When You Kiss Me \u2013 Part Two", SP[1], prev_url=SP[0], next_url=SP[2]),
+    SP[2]: spelled_part("When You Kiss Me- Part Three", SP[2], prev_url=SP[1], next_url=SP[3]),
+    SP[3]: spelled_part("When You Kiss Me- Part Four", SP[3], prev_url=SP[2], sisters=SISTER),
+}
+# the site answers a wrong /fan-fiction/ guess with a real post rather than a
+# 404, which is how a paste of part four used to be replaced by the guess
+SPELLED_PAGES[SPELLED] = SPELLED_PAGES[SP[3]]
+
+
+class TestSpelledParts(unittest.TestCase):
+    def test_a_spelled_part_is_a_part_of_one_work(self):
+        self.assertEqual(km.split_part("when-you-kiss-me-part-four"),
+                         ("when-you-kiss-me", 4, None))
+        self.assertEqual(km.identity_of(SP[3]), km.identity_of(SP[0]))
+        self.assertNotEqual(km.identity_of(SP[0]),
+                            km.identity_of("https://keiramarcos.com/2008/09/february-song/"))
+
+    def test_pasting_the_last_part_gets_the_whole_work(self):
+        book = km.Keiramarcos().read({"kind": "url", "url": SP[3]},
+                                     FakeFetch(dict(SPELLED_PAGES)))
+        self.assertEqual(book.meta["parts"], 4)
+        self.assertEqual([c.title for c in book.chapters],
+                         ["When You Kiss Me \u2013 Part One", "When You Kiss Me \u2013 Part Two",
+                          "When You Kiss Me- Part Three", "When You Kiss Me- Part Four"])
+        self.assertEqual(book.meta["identity"], km.identity_of(SP[0]))
+
+    def test_the_two_stories_linked_from_the_body_are_not_the_work(self):
+        from host.contracts import Refused
+        try:
+            km.Keiramarcos().read({"kind": "url", "url": SP[3]},
+                                  FakeFetch(dict(SPELLED_PAGES)))
+        except Refused as e:                       # the old behaviour: a shelf of two
+            self.fail("a post that links sister stories was read as a series: %s" % e)
+
+    def test_every_part_is_the_same_book_however_it_is_pasted(self):
+        k = km.Keiramarcos()
+        for url in SP:
+            book = k.read({"kind": "url", "url": url}, FakeFetch(dict(SPELLED_PAGES)))
+            self.assertEqual(book.meta["parts"], 4, url)
+            self.assertEqual(book.meta["identity"], km.identity_of(SP[0]), url)
+
+    def test_a_multi_part_work_with_no_total_counts_its_own_words(self):
+        book = km.Keiramarcos().read({"kind": "url", "url": SP[0]},
+                                     FakeFetch(dict(SPELLED_PAGES)))
+        total = sum(len(c.text.split()) for c in book.chapters)
+        self.assertEqual(book.meta["word_count"], "{:,}".format(total))
+
+    def test_a_wrong_landing_guess_that_lands_on_a_post_is_ignored(self):
+        """/fan-fiction/when-you-kiss-me/ serves part four, not a work page.
+
+        The site answers a wrong /fan-fiction/ guess with a real post instead of
+        a 404, so the guess has to be checked: a work page is a WordPress page,
+        and a canonical that is a dated post means this was never one.
+        """
+        self.assertEqual(km.canonical_of(SPELLED_PAGES[SPELLED]), SP[3])
+        book = km.Keiramarcos().read({"kind": "url", "url": SP[0]},
+                                     FakeFetch(dict(SPELLED_PAGES)))
+        self.assertEqual(book.meta["url"], SP[0])
+
+
+class TestOrderedParts(unittest.TestCase):
+    def test_a_spelled_run_is_ordered_and_must_be_whole(self):
+        found = {(4, None): "d", (3, None): "c", (2, None): "b"}
+        self.assertEqual(km.ordered_parts(found, "x"), ["b", "c", "d"])
+
+    def test_a_numbered_run_still_wins_on_the_most_complete_group(self):
+        found = {(1, 3): "a", (2, 3): "b", (3, 3): "c", (1, 2): "a2"}
+        self.assertEqual(km.ordered_parts(found, "x"), ["a", "b", "c"])
+
+
 if __name__ == "__main__":
     unittest.main()
