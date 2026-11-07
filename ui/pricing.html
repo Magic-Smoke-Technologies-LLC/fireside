@@ -203,12 +203,14 @@
       return;
     }
     cfg = conf;
-    // Paddle.js picks sandbox or live from the token's own prefix (test_/live_).
-    // It has no "environment" option: passing one throws inside this callback,
-    // which killed the enable loop and the note below, so every button stayed
-    // "Not for sale yet" on a deployment that was ready to charge. The server's
-    // env still decides the wording, never the mode.
+    // Paddle.js reads sandbox or live from the ENVIRONMENT, not from the token,
+    // and defaults to production. A test_ token sent to the live API comes back
+    // invalid_client_token, which is what the card form did here: the page
+    // looked ready, the overlay opened, and every checkout was refused. The
+    // switch is Paddle.Environment.set; an "environment" option inside
+    // Initialize throws, which is what made the first attempt look impossible.
     try {
+      if (/^test_/.test(conf.client_token)) Paddle.Environment.set("sandbox");
       Paddle.Initialize({token: conf.client_token,
                          checkout: {settings: {displayMode: "overlay", theme: "dark"}}});
     } catch (e) {
