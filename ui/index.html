@@ -4349,6 +4349,7 @@ function openConvert() {
   $('#convertdlg').hidden = false;
   cvSync();
   loadCvVoices();
+  cvGate();
 }
 async function loadCvVoices() {
   const vs = $('#cvvoice'), cid = $('#cvconn').value;
@@ -4367,12 +4368,27 @@ async function loadCvVoices() {
   } catch (e) { vs.innerHTML = '<option value="" data-t="could not load voices">could not load voices</option>'; }
   cvMarkVoices();
   updateEstimate();
+  cvGate();
 }
 
 // What the chosen voice already covers on this book, chapter by chapter. A
 // second copy of a book is a normal thing to want, so the dialog says which
 // chapters are already done in this voice instead of quietly re-buying them.
 function cvVoiceId() { return $('#cvvoice') ? $('#cvvoice').value : ''; }
+// The voice list arrives after the dialog opens, so for a second the select holds
+// one blank option. A convert clicked in that second used to send voice:"", and
+// the server picked its own default: the book came out in a voice nobody chose.
+// The buttons wait for a real voice instead, and the dialog says what it is doing.
+function cvVoiceReady() { return !!cvVoiceId(); }
+function cvGate() {
+  const ok = cvVoiceReady();
+  ['#cvsel', '#cvall'].forEach(sel => { const b = $(sel); if (b) b.disabled = !ok; });
+  const info = $('#cvvoiceinfo');
+  if (!ok && info && !info.textContent) {
+    info.textContent = T('Pick a voice before converting.');
+  }
+  return ok;
+}
 function cvHasVoice(c, vid) {
   return !!(c && vid && (c.renditions || []).some(r => r.voice === vid && r.audio_ref));
 }
@@ -4398,11 +4414,13 @@ function cvMarkVoices() {
     : done + ' of ' + book.chapters.length + ' chapters are already in ' + name + '. Tick the rest, or convert all to redo it.';
 }
 $('#cvconn').onchange = loadCvVoices;
-if ($('#cvvoice')) $('#cvvoice').onchange = () => { cvMarkVoices(); updateEstimate(); };
-$('#cvfilter').oninput = () => filterSel($('#cvvoice'), $('#cvfilter').value);
+if ($('#cvvoice')) $('#cvvoice').onchange = () => { cvMarkVoices(); updateEstimate(); cvGate(); };
+$('#cvfilter').oninput = () => { filterSel($('#cvvoice'), $('#cvfilter').value); cvGate(); };
 $('#cvcancel').onclick = () => { $('#convertdlg').hidden = true; };
-$('#cvall').onclick = () => { $('#convertdlg').hidden = true; runConvert(null, 'all ' + book.chapters.length); };
-$('#cvsel').onclick = () => { const list = cvTicked(); $('#convertdlg').hidden = true;
+$('#cvall').onclick = () => { if (!cvGate()) return;
+  $('#convertdlg').hidden = true; runConvert(null, 'all ' + book.chapters.length); };
+$('#cvsel').onclick = () => { if (!cvGate()) return;
+  const list = cvTicked(); $('#convertdlg').hidden = true;
   runConvert(list, list.length + ' chapter' + (list.length === 1 ? '' : 's')); };
 async function runConvert(list, label) {
   $('#err').textContent = '';
