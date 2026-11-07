@@ -70,7 +70,21 @@ class Translate(unittest.TestCase):
         self.assertEqual(
             db.translate(sql),
             "INSERT INTO t(a,b) VALUES(%s,%s) "
-            "ON DUPLICATE KEY UPDATE b=b+1,c=VALUES(c)")
+            "ON DUPLICATE KEY UPDATE b=b+1, c=VALUES(c)")
+
+    def test_on_conflict_keeps_a_function_wrapped_excluded_column(self):
+        """COALESCE(NULLIF(excluded.x, ''), tbl.x) is how an empty value is
+        refused. Splitting the body on commas used to shred that into invalid
+        SQL on every sign-up, because billing.upsert stores ids that way."""
+        sql = ("INSERT INTO subscriptions(user_id,reference) VALUES(?,?) "
+               "ON CONFLICT(user_id) DO UPDATE SET "
+               "reference=COALESCE(NULLIF(excluded.reference, ''), "
+               "subscriptions.reference)")
+        out = db.translate(sql)
+        self.assertNotIn("excluded.", out)
+        self.assertNotIn("subscriptions.reference", out)
+        self.assertIn("COALESCE(NULLIF(VALUES(reference), ''), reference)", out)
+
 
 
 class Savepoints(unittest.TestCase):

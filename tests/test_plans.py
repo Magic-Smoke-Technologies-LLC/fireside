@@ -70,7 +70,7 @@ class TestPolicy(unittest.TestCase):
         self.assertEqual([t["list_amount_cents"] for t in cat["tiers"]],
                          [None, 300, 800, 2000])
         self.assertEqual([t["list_annual_cents"] for t in cat["tiers"]],
-                         [None, 3000, 8000, 20000])
+                         [None, 3600, 9600, 24000])
         self.assertEqual(cat["storage"]["block_bytes"], quota.STORAGE_BLOCK_BYTES)
         self.assertIsNone(cat["storage"]["amount_cents"])
 

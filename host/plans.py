@@ -40,9 +40,9 @@ def _price_of(provider, plan_id):
 # "not for sale yet" instead of printing "price not set", which told a reader
 # nothing about what the tier costs. When a provider IS registered, its price
 # wins; a disagreement is the provider's number that charges the card.
-LIST_PRICE_CENTS = {quota.PLATFORM_PLAN: (300, 3000),
-                    quota.LISTENER_PLAN: (800, 8000),
-                    quota.STUDIO_PLAN: (2000, 20000)}
+LIST_PRICE_CENTS = {quota.PLATFORM_PLAN: (300, 3600),
+                    quota.LISTENER_PLAN: (800, 9600),
+                    quota.STUDIO_PLAN: (2000, 24000)}
 
 # What each rung is called on the screen, and one line on who it is for. Prices
 # stay with the provider (see _price_of): this module only knows shape.
