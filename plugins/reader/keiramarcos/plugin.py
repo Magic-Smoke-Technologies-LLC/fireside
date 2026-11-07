@@ -46,6 +46,16 @@ _HREF = re.compile(r"""(?is)<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["']""")
 # <=N-M> anywhere in a part slug: part N of M. Bounded so a year or an id
 # cannot pass for a part number.
 _PART = re.compile(r"-(?P<n>\d{1,2})-(?P<m>\d{1,2})(?=$|[/?#])")
+# Older multi-part works spell the number instead of counting it: the site
+# publishes /2008/09/when-you-kiss-me-part-one/ .. -part-four/, one post each,
+# and the parts link each other by name, so no single page says how many there
+# are. That is still one book: four posts, not four works to paste in one at a
+# time. `of` stays None for these; the count comes from walking the parts.
+_WORD_PART = re.compile(
+    r"-(?P<kind>parts?|chapters?|ch|episodes?|ep)-"
+    r"(?P<w>\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
+    r"twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
+    r"twenty)(?=$|[/?#])", re.I)
 # a tab title that means "the story lives here": Story, Story Posts, The Story,
 # Story Chapters, a series of Episodes or Books. Casting / Author Notes /
 # Playlist are tabs too and must not win.
@@ -170,12 +180,23 @@ def canonical_of(page: str) -> str:
 
 
 def split_part(slug: str):
-    """(family, n, of) for a part slug; (slug, None, None) for a landing page."""
+    """(family, n, of) for a part slug; (slug, None, None) for a landing page.
+
+    `of` is None for a spelled part ("-part-four"): the page carrying the number
+    says nothing about the total, so the family is the slug with the marker cut
+    and the count comes from walking the parts it links.
+    """
     for m in _PART.finditer(slug):
         n, total = int(m.group("n")), int(m.group("m"))
         if not (1 <= n <= total <= MAX_PARTS):
             continue
         return (slug[:m.start()] + slug[m.end():]).strip("-"), n, total
+    for m in _WORD_PART.finditer(slug):
+        w = m.group("w").lower()
+        n = int(w) if w.isdigit() else _ORDINAL_WORD.get(w)
+        if n is None or not (1 <= n <= MAX_PARTS):
+            continue
+        return (slug[:m.start()] + slug[m.end():]).strip("-"), n, None
     return slug, None, None
 
 
@@ -294,6 +315,33 @@ def season_tab_links(page: str, url: str) -> list:
     return out
 
 
+def part_web(start_url: str, start_page: str, fetch, cred, hosts, pages: dict) -> dict:
+    """Every part of this work reachable from any of its part pages.
+
+    A work published as -N-M bundles lists all of them in its tab, but a spelled
+    part links only its neighbours (part four links part three and nothing
+    else), so the set has to be walked page by page until it stops growing.
+    Bounded by MAX_PARTS and same-family only, so a stray link out of the story
+    can never join the book.
+    """
+    found = part_links(start_page, start_url)
+    read = {start_url}
+    while found and len(found) < MAX_PARTS:
+        nxt = [u for u in found.values() if u not in read]
+        if not nxt:
+            break
+        for u in nxt[:MAX_PARTS]:
+            read.add(u)
+            try:
+                page = fetch(u, cred=cred, credential_hosts=hosts)
+            except Exception:
+                continue
+            pages.setdefault(u, page)
+            for k, v in part_links(page, u).items():
+                found.setdefault(k, v)
+    return found
+
+
 def part_links(page: str, url: str) -> dict:
     """{(n, of): url} for every bundle page of this family this page points at."""
     family = family_of(url)
@@ -301,7 +349,11 @@ def part_links(page: str, url: str) -> dict:
     fam, n, of = split_part(last_segment(url))
     if n is not None and is_post_url(url):
         found[(n, of)] = url
-    for link in story_tab_links(page, url) + links_in(content_region(page), url):
+    # the whole page, not just the body: a post's link to the next part sits in
+    # the post navigation outside .entry-content, and a part that links only its
+    # previous neighbour is still part of the same book. The family check below
+    # is what keeps this from wandering.
+    for link in story_tab_links(page, url) + links_in(page, url):
         if not is_post_url(link):
             continue
         f, pn, pm = split_part(last_segment(link))
@@ -531,14 +583,25 @@ def series_marked(page: str) -> bool:
 
 def ordered_parts(found: dict, url: str) -> list:
     """Parts 1..of in order, for the most complete consistent run. Falls back to
-    whatever was linked, in part order, when the run is not whole."""
+    whatever was linked, in part order, when the run is not whole.
+
+    A spelled part carries no total, so its run is 1..the highest part found, and
+    it only counts when every number between is there.
+    """
+    def order_of(k):
+        n, of = k
+        return (n if n is not None else 0, of if of is not None else 0)
+
     by_total = {}
     for (n, of) in found:
+        if n is None:
+            continue
         by_total.setdefault(of, set()).add(n)
-    for of, ns in sorted(by_total.items(), key=lambda kv: (-len(kv[1]), kv[0])):
-        if all(i in ns for i in range(1, of + 1)):
-            return [found[(i, of)] for i in range(1, of + 1)]
-    return [found[k] for k in sorted(found)]
+    for of, ns in sorted(by_total.items(), key=lambda kv: (-len(kv[1]), order_of((0, kv[0]))[1])):
+        top = of if of is not None else max(ns)
+        if all(i in ns for i in range(1, top + 1)):
+            return [found[(i, of)] for i in range(1, top + 1)]
+    return [found[k] for k in sorted(found, key=order_of)]
 
 
 # ---- one page -> chapters -----------------------------------------------------
@@ -667,17 +730,23 @@ class Keiramarcos:
                 landing = fetch(guess, cred=cred, credential_hosts=self.credential_hosts())
             except Exception:
                 landing = ""
-            if landing and family_of(guess) and content_region(landing):
+            # The site answers a wrong guess with a real post instead of a 404:
+            # /fan-fiction/when-you-kiss-me/ serves part four. A work page is a
+            # WordPress PAGE, so a canonical that is a dated post means this was
+            # never the work page and the pasted URL stands.
+            if landing and family_of(guess) and content_region(landing) \
+                    and not is_post_url(canonical_of(landing)):
                 first = (guess, landing)
         if first is None:
             first = (url, fetch(url, cred=cred, credential_hosts=self.credential_hosts()))
         start_url, start_page = first
-        if is_shortlink(start_url):
-            # the page knows its own address; use it so identity is the work,
-            # not the way in
-            canon = canonical_of(start_page)
-            if canon and is_post_url(canon):
-                start_url = canon
+        # The page knows its own address, so identity is the work and not the way
+        # in. A shortlink needs this, and so does a guessed landing page that
+        # redirects: without it the part slug becomes the family and the other
+        # parts stop being the same book.
+        canon = canonical_of(start_page)
+        if canon and is_post_url(canon) and canon != start_url:
+            start_url = canon
         pages[start_url] = start_page
 
         # An episodic work (Season 1, Season 2) lists one dated post per episode.
@@ -691,7 +760,13 @@ class Keiramarcos:
                 # chapter order, however the list is laid out
                 return self._chapter_book(chapter_items, start_page, start_url,
                                           fetch, cred)
-        works = series_items(start_page, start_url) if len(episodes) < 2 else []
+        # A series page says so: a Stories/Episodes tab, or "(Series)" in its
+        # title. Without either, a story that happens to link another work in its
+        # body is not a shelf. "When You Kiss Me" ends with links to the two
+        # stories that follow it, and reading those as a series used to offer
+        # February Song and the Iris March interview instead of this book.
+        listed = bool(story_tab_html(start_page)) or series_marked(start_page)
+        works = series_items(start_page, start_url) if (len(episodes) < 2 and listed) else []
         if len(works) == 1 and works[0]["url"] != start_url and series_marked(start_page):
             # a series page holding one work is one work, not a shelf
             return self.read({"kind": "url", "url": works[0]["url"]}, fetch, cred)
@@ -711,7 +786,8 @@ class Keiramarcos:
             ordered = episodes
             title_hint = series_title(start_page)
         else:
-            found = part_links(start_page, start_url)
+            found = part_web(start_url, start_page, fetch, cred,
+                             self.credential_hosts(), pages)
             ordered = ordered_parts(found, start_url) if found else [start_url]
             if is_post_url(start_url) and start_url not in ordered:
                 ordered = [start_url] + ordered
@@ -740,6 +816,9 @@ class Keiramarcos:
         page = fetch(url, cred=cred, credential_hosts=self.credential_hosts())
         if len(chapter_index_items(page, url)) >= 2:
             # chapters of one work, not a shelf of works
+            return None
+        if not (story_tab_html(page) or series_marked(page)):
+            # a story that links a sister work in its body is not a series
             return None
         works = series_items(page, url)
         if len(works) < 2:
@@ -817,9 +896,10 @@ class Keiramarcos:
                              "(site markup may have changed)")
         if not title:
             title = _PART_TITLE.sub("", post_title(fetched[0][1])) or "Untitled"
-        if title_hint:
+        if title_hint or (not meta.get("word_count") and len(chapters) > 1):
             # the per-episode Word Count in a header is that episode's, not the
-            # book's. One book of episodes gets its own count.
+            # book's. One book of episodes (or one multi-part work whose pages
+            # carry no total) gets its own count.
             meta["word_count"] = "{:,}".format(sum(len(c["text"].split()) for c in chapters))
         meta.update({"source": self.id, "url": work_url})
         return {"title": title[:200], "chapters": chapters, "meta": meta}
