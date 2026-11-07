@@ -170,6 +170,24 @@ CREATE TABLE IF NOT EXISTS user_grants (
     user_id VARCHAR(128) PRIMARY KEY,
     storage_unlimited INT DEFAULT 0, credits_unlimited INT DEFAULT 0,
     updated_at VARCHAR(32));
+
+-- Paddle mirror (2026-11-07): the provider's own ids, kept as delivered.
+-- customers/subscriptions are the mirror; paddle_events is the idempotency
+-- ledger, so a redelivered or out-of-order event is acknowledged, not replayed.
+CREATE TABLE IF NOT EXISTS paddle_customers (
+    customer_id VARCHAR(64) PRIMARY KEY, user_id VARCHAR(128) DEFAULT '',
+    email VARCHAR(255) DEFAULT '', updated_at VARCHAR(32));
+CREATE TABLE IF NOT EXISTS paddle_subscriptions (
+    subscription_id VARCHAR(64) PRIMARY KEY, customer_id VARCHAR(64) DEFAULT '',
+    user_id VARCHAR(128) DEFAULT '', status VARCHAR(32) DEFAULT '',
+    price_id VARCHAR(64) DEFAULT '', product_id VARCHAR(64) DEFAULT '',
+    plan VARCHAR(64) DEFAULT '', scheduled_change_action VARCHAR(32) DEFAULT '',
+    scheduled_change_at BIGINT DEFAULT 0, current_period_end BIGINT DEFAULT 0,
+    occurred_at VARCHAR(32) DEFAULT '', created_at VARCHAR(32), updated_at VARCHAR(32));
+CREATE TABLE IF NOT EXISTS paddle_events (
+    event_id VARCHAR(64) PRIMARY KEY, event_type VARCHAR(64) DEFAULT '',
+    occurred_at VARCHAR(32) DEFAULT '', kind VARCHAR(32) DEFAULT '',
+    received_at VARCHAR(32));
 """
 
 
@@ -572,22 +590,28 @@ _ON_CONFLICT = re.compile(
     re.I | re.S)
 
 
+# Tables whose own rows an upsert body may refer to. MySQL's
+# ON DUPLICATE KEY UPDATE has no `excluded` pseudo-table and no support for
+# qualifying the existing row with its table name, so both spellings are
+# rewritten. Kept explicit rather than "strip any qualifier", which would eat
+# a schema prefix or a column that happens to contain a dot.
+_SELF_TABLES = ("subscriptions", "addons", "paddle_subscriptions",
+                "paddle_customers", "users")
+
+
 def _on_duplicate_key(m):
     """Rewrite one ON CONFLICT body to MySQL's ON DUPLICATE KEY UPDATE.
 
-    Each `col=excluded.col` becomes `col=VALUES(col)`. A right-hand side that
-    is not `excluded.<col>` is left untouched, so an expression the two engines
-    share still passes through.
+    `excluded.<col>` becomes `VALUES(<col>)` anywhere in the body, including
+    inside COALESCE/NULLIF, and a self-qualified `subscriptions.col` becomes a
+    bare `col`. Substituting token by token rather than splitting on commas is
+    what keeps function calls intact - the earlier version assumed every clause
+    was a plain `col=excluded.col` assignment and mangled COALESCE.
     """
-    parts = []
-    for clause in m.group(2).split(","):
-        col, sep, val = clause.partition("=")
-        val = val.strip()
-        if sep and val.lower().startswith("excluded."):
-            parts.append("%s=VALUES(%s)" % (col.strip(), val[len("excluded."):]))
-        else:
-            parts.append(clause.strip())
-    return "ON DUPLICATE KEY UPDATE " + ",".join(parts)
+    body = re.sub(r"\bexcluded\.(\w+)", r"VALUES(\1)", m.group(2))
+    for table in _SELF_TABLES:
+        body = re.sub(r"\b%s\." % re.escape(table), "", body)
+    return "ON DUPLICATE KEY UPDATE " + body
 
 
 def translate(sql):

@@ -1672,9 +1672,15 @@ class App:
         fn = getattr(pp, "plans", None)
         if callable(fn):
             plans_list = [p.dict() if hasattr(p, "dict") else dict(p) for p in fn()]
-        return 200, {"subscription": billing.get(self.conn, uid) if uid else None,
+        sub = billing.get(self.conn, uid) if uid else None
+        return 200, {"subscription": sub,
                      "plans": plans_list,
-                     "payments_configured": payments.configured()}
+                     "payments_configured": payments.configured(),
+                     # Access is a decision, not a status word: it includes the
+                     # lapsed-period check. The screen shows "manage billing"
+                     # only when there is a provider customer to open.
+                     "access": billing.active(self.conn, uid) if uid else False,
+                     "billing_account": bool((sub or {}).get("customer"))}
 
     def plans_get(self, q, body):
         """The offering, for the plan screen: the tiers and the storage add-on,
@@ -1934,6 +1940,13 @@ class App:
         event, err = verify(raw, sig_header)
         if event is None:
             return 400, {"error": "bad webhook", "detail": err}
+        norm = getattr(pp, "normalize_event", None)
+        if callable(norm):
+            # A provider whose events ARE the state (Paddle) hands the core one
+            # normalized shape and the core mirrors it. There is no session to
+            # re-read and no price is computed here, only what Paddle said.
+            # Idempotency is the event id, so a retry or a replay is a no-op.
+            return 200, billing.apply_event(self.conn, norm(event) or {})
         ref = ""
         rfn = getattr(pp, "webhook_reference", None)
         if callable(rfn):
