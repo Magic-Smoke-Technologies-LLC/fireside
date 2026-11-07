@@ -3015,6 +3015,8 @@ GET_ROUTES = {
     "/admin/plans": "plans_admin",
     "/admin/accounts": "admin_accounts",
     "/billing": "billing_get",
+    # A GET: the page asks for its price ids on load, before anyone clicks.
+    "/billing/config": "billing_config",
     "/plans": "plans_get",
     "/storage": "storage_get",
     "/disambig/models": "disambig_models",
@@ -3048,7 +3050,6 @@ POST_ROUTES = {
     "/admin/account/delete": "admin_account_delete",
     "/billing/checkout": "billing_checkout", "/billing/confirm": "billing_confirm",
     "/billing/cancel": "billing_cancel", "/billing/portal": "billing_portal",
-    "/billing/config": "billing_config",
     "/credits/confirm": "credits_confirm",
     "/2fa/enroll": "twofa_enroll", "/2fa/confirm": "twofa_confirm",
     "/2fa/verify": "twofa_verify", "/2fa/recovery": "twofa_recovery",

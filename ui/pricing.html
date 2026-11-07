@@ -212,11 +212,20 @@
       if (!id) return;
       b.disabled = false;
       b.textContent = cycle === "year" ? (b.textContent.trim())
-                   : "Subscribe";
+                   : (conf.env === "production" ? "Subscribe" : "Try checkout (test)");
     });
-    note.innerHTML = "<strong>Payments are open.</strong> Cards are handled by Paddle, " +
-      "we never see the number. Cancel any time; the plan runs to the end of the " +
-      "period you paid for.";
+    var test = conf.env !== "production";
+    if (test) {
+      // Sandbox money is not money. Saying so on the page is the difference
+      // between a test and a customer who thinks they bought something.
+      note.innerHTML = "<strong>Test mode.</strong> Cards are handled by Paddle " +
+        "in its sandbox, so nothing is charged and no plan is granted yet. " +
+        "The real checkout is the same button once live keys land.";
+    } else {
+      note.innerHTML = "<strong>Payments are open.</strong> Cards are handled by Paddle, " +
+        "we never see the number. Cancel any time; the plan runs to the end of the " +
+        "period you paid for.";
+    }
   });
 })();
 </script>

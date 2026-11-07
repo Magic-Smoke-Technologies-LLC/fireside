@@ -395,6 +395,96 @@ class TestWebhookRoute(unittest.TestCase):
         self.assertEqual(status, 404)
 
 
+class TestWebhookOverHTTP(unittest.TestCase):
+    """The delivery as Paddle actually sends it: a POST with Paddle-Signature.
+
+    The route-level tests above call the handler with a header string in hand.
+    This one goes through the HTTP server, because the bug that would have cost
+    the first sale lived there: the server read "Stripe-Signature" literally,
+    so a genuine Paddle delivery arrived with no signature it recognised.
+    """
+
+    def setUp(self):
+        import threading
+        from http.server import ThreadingHTTPServer
+        from host.app import App, make_handler
+        self.tmp = tempfile.mkdtemp()
+        self.app = App(plugins_root=self.tmp,
+                       db_path=os.path.join(self.tmp, "t.db"))
+        payments.REGISTRY.clear()
+        payments.register(Paddle("", SECRET, "sandbox"))
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0),
+                                         make_handler(self.app))
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        payments.REGISTRY.clear()
+        self.app.conn.close()
+
+    def post(self, body, header):
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/webhook/paddle" % self.port, data=body,
+            headers={"Content-Type": "application/json",
+                     "Paddle-Signature": header})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+    def test_genuine_paddle_delivery_grants_access(self):
+        body = json.dumps(sub_event("subscription.created"),
+                          separators=(",", ":")).encode("utf-8")
+        status, payload = self.post(body, sign(body))
+        self.assertEqual(status, 200, payload)
+        self.assertTrue(payload["applied"])
+        self.assertTrue(billing.active(self.app.conn, "user_1"))
+
+    def _get(self, path):
+        import urllib.request
+        with urllib.request.urlopen("http://127.0.0.1:%d%s" % (self.port, path),
+                                    timeout=20) as r:
+            return r.status, json.loads(r.read())
+
+    def test_config_route_is_readable_signed_out_and_says_no_without_a_token(self):
+        os.environ.pop("FIRESIDE_PADDLE_CLIENT_TOKEN", None)
+        status, conf = self._get("/billing/config")
+        self.assertEqual(status, 200)
+        self.assertFalse(conf["ok"])
+        self.assertTrue(conf["payments_configured"])
+        self.assertNotIn("client_token", conf)
+
+    def test_config_route_hands_the_page_its_prices(self):
+        os.environ["FIRESIDE_PADDLE_CLIENT_TOKEN"] = "test_abc123"
+        try:
+            status, conf = self._get("/billing/config")
+        finally:
+            os.environ.pop("FIRESIDE_PADDLE_CLIENT_TOKEN", None)
+        self.assertEqual(status, 200)
+        self.assertTrue(conf["ok"])
+        self.assertEqual(conf["prices"]["platform"]["month"], READER_MONTH)
+
+    def test_a_paddle_body_signed_against_a_different_secret_is_refused(self):
+        body = json.dumps(sub_event("subscription.created"),
+                          separators=(",", ":")).encode("utf-8")
+        status, payload = self.post(body, sign(body, secret="pdl_ntfset_wrong"))
+        self.assertEqual(status, 400, payload)
+
+    def test_body_and_signature_must_match_byte_for_byte(self):
+        body = json.dumps(sub_event("subscription.created"),
+                          separators=(",", ":")).encode("utf-8")
+        header = sign(body)
+        tampered = body.replace(b"sub_1", b"sub_2")
+        status, _ = self.post(tampered, header)
+        self.assertEqual(status, 400)
+        self.assertIsNone(billing.get(self.app.conn, "user_1"))
+
+
 class TestPublicConfig(unittest.TestCase):
     """What the browser is allowed to know, and what it never is."""
 

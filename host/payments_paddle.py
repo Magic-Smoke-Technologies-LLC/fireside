@@ -293,9 +293,10 @@ class Paddle:
     id = ID
 
     def __init__(self, api_key="", webhook_secret="", env="sandbox",
-                 tolerance=None, base_url=None):
+                 tolerance=None, base_url=None, client_token=""):
         self.api_key = api_key or ""
         self.webhook_secret = webhook_secret or ""
+        self.client_token = client_token or ""
         self.env = (env or "sandbox").strip().lower()
         self.tolerance = DEFAULT_TOLERANCE if tolerance is None else int(tolerance)
         self.base_url = base_url or (LIVE_API if self.env == "production"
@@ -330,6 +331,20 @@ class Paddle:
         keeps the charged amount the one Paddle holds."""
         return Checkout(ok=True, url="/pricing", reference="",
                         detail="Paddle checkout opens on the pricing page")
+
+    def public_config(self):
+        """What the pricing page may know (see the module-level function).
+
+        A method on the provider, not a bare module call off the route, so the
+        host asks every provider the same question. An instance whose token was
+        handed to it at construction answers with that token, not the env's.
+        """
+        conf = public_config()
+        if self.client_token:
+            conf["ok"] = True
+            conf["client_token"] = self.client_token
+            conf["detail"] = ""
+        return conf
 
     # -- portal and cancel ---------------------------------------------------
     def portal(self, customer_id, return_url=""):
@@ -432,4 +447,5 @@ def from_env():
         tolerance = DEFAULT_TOLERANCE if not tol else int(tol)
     except ValueError:
         tolerance = DEFAULT_TOLERANCE
-    return Paddle(key, secret, env, tolerance)
+    return Paddle(key, secret, env, tolerance,
+                  client_token=_env(CLIENT_TOKEN_ENV))
