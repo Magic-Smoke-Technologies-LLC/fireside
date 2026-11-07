@@ -261,18 +261,40 @@ class TestTheBatch(Base):
 
 class TestWhatIsRefused(unittest.TestCase):
     def test_a_respelling_must_be_a_word_not_a_sentence(self):
-        out = disambig._rules(BID_KEY, [
+        out, clash = disambig._rules(BID_KEY, [
             {"word": "live", "say": "liv"},
-            {"word": "live", "say": "lyve"},           # first answer wins
             {"word": "read", "say": "read"},           # not a fix
             {"word": "the whole phrase", "say": "x"},  # not a word
             {"word": "wound", "say": ""},
             {"word": "bow", "say": "a very long explanation that is prose, not a spelling"},
+            {"word": "sow", "say": "so"},
+        ])
+        self.assertEqual([(r["from"], r["to"]) for r in out],
+                         [("live", "liv"), ("sow", "so")])
+        self.assertEqual(clash, [])
+
+    def test_one_word_with_two_readings_is_left_plain_not_guessed(self):
+        # Not invented: this is the shape a live gpt-4.1-mini answer took for two
+        # sentences of one book, both readings of "record" in one fixes list.
+        # A per-word dictionary can only hold one of them, so neither is written.
+        out, clash = disambig._rules(BID_KEY, [
+            {"word": "record", "say": "re-cord", "why": "verb, to capture sound"},
+            {"word": "record", "say": "rek-ord", "why": "noun, a vinyl disc"},
+            {"word": "live", "say": "liv", "why": "adjective"},
         ])
         self.assertEqual([(r["from"], r["to"]) for r in out], [("live", "liv")])
+        self.assertEqual(clash, ["record"])
+
+    def test_the_same_reading_twice_is_still_one_rule(self):
+        out, clash = disambig._rules(BID_KEY, [
+            {"word": "live", "say": "liv"},
+            {"word": "live", "say": "liv"},
+        ])
+        self.assertEqual([(r["from"], r["to"]) for r in out], [("live", "liv")])
+        self.assertEqual(clash, [])
 
     def test_rules_land_on_the_book_and_nowhere_else(self):
-        out = disambig._rules(BID_KEY, [{"word": "live", "say": "liv"}])
+        out, _ = disambig._rules(BID_KEY, [{"word": "live", "say": "liv"}])
         self.assertEqual(out[0]["book"], BID_KEY)
         self.assertEqual(out[0]["author"], "")
         self.assertEqual(out[0]["series"], "")
@@ -295,3 +317,24 @@ class TestRenderHook(Base):
         self.assertEqual(jobs.job(self.conn, jid)["status"], "done")
         rules = pron.for_book(pron.load(self.conn, UID), self.bid)
         self.assertEqual(pron.spoken("We live here.", rules), "We liv here.")
+
+    def test_a_word_the_book_uses_both_ways_says_so_on_the_job(self):
+        # the note has to reach the place a human reads it: the job's error line,
+        # not just the return value of a function nobody watches
+        speech = FakeSpeech()
+        with Env():
+            old = disambig._plugin
+            disambig._plugin = lambda root=None: type("P", (), {
+                "decide": staticmethod(lambda text, model, cred: [
+                    {"word": "record", "say": "re-cord"},
+                    {"word": "record", "say": "rek-ord"}])})
+            try:
+                jid = jobs.render_book(self.conn, self.storage, speech, UID, self.bid,
+                                       voice="v1", model="m1")
+            finally:
+                disambig._plugin = old
+        job = jobs.job(self.conn, jid)
+        self.assertEqual(job["status"], "done")
+        self.assertIn("left plain: record", job["error"])
+        rules = pron.for_book(pron.load(self.conn, UID), self.bid)
+        self.assertEqual([r for r in rules if r["from"] == "record"], [])
