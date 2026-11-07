@@ -128,11 +128,24 @@ def _call_batched(call, texts, tries=3):
 
 
 def _rules(book_id, fixes):
-    """Model answers as pronunciation rules, scoped to this one book."""
-    out, seen = [], set()
+    """Model answers as pronunciation rules, scoped to this one book.
+
+    A dictionary is keyed by word, so a book that uses one two-reading word both
+    ways ("record" as a verb and as a noun) cannot be fixed by a rule per word:
+    the rule would be right in half the places and wrong in the other half. A
+    live answer for two sentences came back with both readings of "record", and
+    keeping the first one is a silent wrong answer, not a partial fix. So when
+    the answers disagree, neither is written and the word is left plain for the
+    engine, which says something defensible instead of something confident and
+    wrong.
+
+    Returns (rules, conflicting words).
+    """
+    by_word = {}
+    order = []
     for f in fixes or []:
         word, say = (f.get("word") or "").strip(), (f.get("say") or "").strip()
-        if not word or not say or word.lower() in seen:
+        if not word or not say:
             continue
         # a respelling is a spelling, not a sentence: refuse anything that would
         # turn one word into prose the engine has to guess at
@@ -140,9 +153,20 @@ def _rules(book_id, fixes):
             continue
         if say.lower() == word.lower():
             continue
-        seen.add(word.lower())
-        out.append(pron._rule(word, say, book=book_id))
-    return out
+        k = word.lower()
+        if k not in by_word:
+            by_word[k] = (word, [])
+            order.append(k)
+        if say not in [s for s in by_word[k][1]]:
+            by_word[k][1].append(say)
+    out, clash = [], []
+    for k in order:
+        word, says = by_word[k]
+        if len(says) > 1:
+            clash.append(word)
+            continue
+        out.append(pron._rule(word, says[0], book=book_id))
+    return out, clash
 
 
 def ensure(conn, storage, uid, book_id, idxs, plugins_root=None, run=None):
@@ -172,13 +196,19 @@ def ensure(conn, storage, uid, book_id, idxs, plugins_root=None, run=None):
         return [], "no disambiguator plugin is installed"
     call = run or plugin.decide
     fixes, failed, total, last = _call_batched(call, text)
-    rules = _rules(book_id, fixes)
+    rules, clash = _rules(book_id, fixes)
     if failed and not rules:
         # Nothing at all came back: say so and leave no dictionary behind, so the
         # next render tries again instead of finding an empty one and giving up.
         return [], "%d of %d part(s) failed (%s)" % (failed, total, last)
     pron.save_dict(conn, uid, DICT_NAME, _SCOPE, book_id, rules)
+    notes = []
     if failed:
-        return rules, ("%d of %d part(s) failed (%s); saved what came back"
-                       % (failed, total, last))
-    return rules, ""
+        notes.append("%d of %d part(s) failed (%s); saved what came back"
+                     % (failed, total, last))
+    if clash:
+        # A silent drop here looks exactly like a book with nothing to decide, so
+        # the reader is told which words were too ambiguous to fix.
+        notes.append("%d two-reading word(s) differ inside this book and were "
+                     "left plain: %s" % (len(clash), ", ".join(sorted(clash)[:8])))
+    return rules, "; ".join(notes)
