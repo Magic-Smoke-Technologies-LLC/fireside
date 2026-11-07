@@ -203,9 +203,18 @@
       return;
     }
     cfg = conf;
-    Paddle.Initialize({token: conf.client_token,
-                       environment: conf.env === "production" ? "production" : "sandbox",
-                       checkout: {settings: {displayMode: "overlay", theme: "dark"}}});
+    // Paddle.js picks sandbox or live from the token's own prefix (test_/live_).
+    // It has no "environment" option: passing one throws inside this callback,
+    // which killed the enable loop and the note below, so every button stayed
+    // "Not for sale yet" on a deployment that was ready to charge. The server's
+    // env still decides the wording, never the mode.
+    try {
+      Paddle.Initialize({token: conf.client_token,
+                         checkout: {settings: {displayMode: "overlay", theme: "dark"}}});
+    } catch (e) {
+      said("The card form did not start: " + ((e && e.message) || "unknown error") + ".");
+      return;
+    }
     buttons.forEach(function (b) {
       var plan = b.getAttribute("data-plan"), cycle = b.getAttribute("data-cycle");
       var id = (conf.prices[plan] || {})[cycle];
