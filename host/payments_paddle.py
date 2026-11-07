@@ -68,6 +68,24 @@ DEFAULT_PRICES = {
 
 _SIG_FIELD = re.compile(r"([A-Za-z0-9_]+)=([^;]+)")
 
+# The same catalog read the other way: tier -> {"month"/"year": price id}. The
+# overlay needs both cycles per rung, because the page sells a cycle and the
+# webhook only reports one. Two tables that describe one catalog can drift, so
+# tests/test_paddle.py asserts every id here appears in DEFAULT_PRICES.
+DEFAULT_PLAN_PRICES = {
+    "platform": {"month": "pri_01m6szmwtw6dt4fgk5e24cdmaf",
+                 "year": "pri_01m6szmwx3174hsp6qe85yest5"},
+    "listener": {"month": "pri_01m6szmx2w5wrq44bmt28vth6g",
+                 "year": "pri_01m6szmx4a3cpnx4x8nt9g0gbr"},
+    "studio": {"month": "pri_01m6szmx8beq24b3v32rnm999q",
+               "year": "pri_01m6szmx9pv1wvncna1twjxaj7"},
+}
+
+# Paddle.js authenticates with its own browser-scoped token, which is NOT the
+# API key: the API key must never reach a page.
+CLIENT_TOKEN_ENV = "FIRESIDE_PADDLE_CLIENT_TOKEN"
+_PLAN_PRICES_ENV = "FIRESIDE_PADDLE_PLAN_PRICES"
+
 
 def _env(name):
     return (os.environ.get(name) or "").strip()
@@ -350,6 +368,49 @@ class Paddle:
             return {"ok": False, "detail": err}
         change = ((data or {}).get("data") or {}).get("scheduled_change") or {}
         return {"ok": True, "detail": change.get("action", "")}
+
+
+def known_plan_prices():
+    """tier -> {"month": id, "year": id} for the page. $FIRESIDE_PADDLE_PLAN_PRICES
+    replaces the sandbox table wholesale, same rule as $FIRESIDE_PADDLE_PRICES."""
+    default = {t: dict(c) for t, c in DEFAULT_PLAN_PRICES.items()}
+    raw = _env(_PLAN_PRICES_ENV)
+    if not raw:
+        return default
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return default
+    if not isinstance(data, dict):
+        return default
+    out = {}
+    for tier, cycles in data.items():
+        if isinstance(cycles, dict):
+            clean = {str(k): str(v) for k, v in cycles.items() if k and v}
+            if clean:
+                out[str(tier)] = clean
+    return out or default
+
+
+def public_config():
+    """What the pricing page needs to open the overlay, and nothing else.
+
+    A client token is Paddle's own browser key (read the catalog, open a
+    checkout) and a price id is already printed on the page, so this route can
+    be public. The API key and the webhook secret never leave the server: a
+    leaked API key can move money, a leaked client token cannot.
+    """
+    token = _env(CLIENT_TOKEN_ENV)
+    env = _env("FIRESIDE_PADDLE_ENV").lower()
+    if not env:
+        env = "production" if "live" in token else "sandbox"
+    out = {"ok": bool(token), "provider": ID, "env": env,
+           "prices": known_plan_prices(),
+           "currency": "USD",
+           "detail": "" if token else "no client token configured"}
+    if token:
+        out["client_token"] = token
+    return out
 
 
 def from_env():

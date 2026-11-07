@@ -395,5 +395,94 @@ class TestWebhookRoute(unittest.TestCase):
         self.assertEqual(status, 404)
 
 
+class TestPublicConfig(unittest.TestCase):
+    """What the browser is allowed to know, and what it never is."""
+
+    def setUp(self):
+        self.saved = {k: os.environ.get(k) for k in
+                      ("FIRESIDE_PADDLE_CLIENT_TOKEN", "FIRESIDE_PADDLE_ENV",
+                       "FIRESIDE_PADDLE_API_KEY")}
+        for k in self.saved:
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_no_token_is_not_ok_and_carries_no_token(self):
+        conf = paddle.public_config()
+        self.assertFalse(conf["ok"])
+        self.assertNotIn("client_token", conf)
+        self.assertIn("client token", conf["detail"])
+
+    def test_token_is_exposed_with_its_prices(self):
+        os.environ["FIRESIDE_PADDLE_CLIENT_TOKEN"] = "test_abc123"
+        os.environ["FIRESIDE_PADDLE_API_KEY"] = "pdl_sdbx_apikey_secret"
+        conf = paddle.public_config()
+        self.assertTrue(conf["ok"])
+        self.assertEqual(conf["client_token"], "test_abc123")
+        self.assertEqual(conf["prices"]["platform"]["month"], READER_MONTH)
+        self.assertEqual(conf["prices"]["platform"]["year"], READER_YEAR)
+        # The API key can move money; it must never ride along.
+        self.assertNotIn("pdl_sdbx_apikey_secret", json.dumps(conf))
+
+    def test_token_decides_the_environment_when_unset(self):
+        os.environ["FIRESIDE_PADDLE_CLIENT_TOKEN"] = "live_abc123"
+        self.assertEqual(paddle.public_config()["env"], "production")
+        os.environ["FIRESIDE_PADDLE_CLIENT_TOKEN"] = "test_abc123"
+        self.assertEqual(paddle.public_config()["env"], "sandbox")
+
+    def test_plan_table_cannot_drift_from_the_price_map(self):
+        for tier, cycles in paddle.DEFAULT_PLAN_PRICES.items():
+            for cycle, price in cycles.items():
+                self.assertIn(price, paddle.DEFAULT_PRICES,
+                              "%s/%s points at a price no tier claims" % (tier, cycle))
+                self.assertEqual(paddle.DEFAULT_PRICES[price], tier)
+                self.assertIn(cycle, ("month", "year"))
+
+    def test_plan_prices_env_replaces_wholesale(self):
+        os.environ["FIRESIDE_PADDLE_PLAN_PRICES"] = json.dumps(
+            {"platform": {"month": "pri_live_m", "year": "pri_live_y"}})
+        try:
+            prices = paddle.known_plan_prices()
+            self.assertEqual(prices, {"platform": {"month": "pri_live_m",
+                                                   "year": "pri_live_y"}})
+        finally:
+            os.environ.pop("FIRESIDE_PADDLE_PLAN_PRICES", None)
+
+    def test_unknown_cycle_is_not_a_price(self):
+        self.assertNotIn("week", paddle.known_plan_prices()["platform"])
+
+
+class TestSignatureHeader(unittest.TestCase):
+    """The webhook reads the header the provider actually sends.
+
+    Reading one literal name (Stripe-Signature) meant every Paddle delivery
+    arrived unsigned and was refused with a 400 on the first real sale.
+    """
+
+    def setUp(self):
+        from host.app import signature_header
+        self.header = signature_header
+
+    def test_paddle_header(self):
+        h = {"Paddle-Signature": "ts=1;h1=aa"}
+        self.assertEqual(self.header(h, "paddle"), "ts=1;h1=aa")
+
+    def test_stripe_header(self):
+        h = {"Stripe-Signature": "t=1,v1=bb"}
+        self.assertEqual(self.header(h, "stripe"), "t=1,v1=bb")
+
+    def test_provider_id_capitalises_to_the_documented_name(self):
+        self.assertEqual(self.header({"Paddle-Signature": "x"}, "PADDLE"), "x")
+
+    def test_empty_is_empty_not_a_crash(self):
+        self.assertEqual(self.header({}, "paddle"), "")
+        self.assertEqual(self.header(None, "paddle"), "")
+
+
 if __name__ == "__main__":
     unittest.main()
