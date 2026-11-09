@@ -292,6 +292,17 @@
     nav.tabs button{padding:9px 9px;font-size:13px}
     header p{display:none}
   }
+  /* The boot mark: the page paints with something moving on it instead of a
+     blank frame, then gets out of the way. It also stands in for a view that
+     has to fetch before it can draw. The mark is an <img>, not inline SVG, so
+     its own <style> cannot leak into the page's CSS (it uses bare class names
+     like .s and .icon) and prefers-reduced-motion still applies inside it. */
+  .bootload{position:fixed;inset:0;z-index:90;display:grid;place-items:center;gap:10px;
+    grid-auto-flow:row;background:var(--bg);transition:opacity .25s ease}
+  .bootload img{display:block}
+  .bootload .boottext{color:var(--faint);font:13px var(--ui);letter-spacing:.04em}
+  .bootload:not(.on){opacity:0;pointer-events:none}
+  .bootload[hidden]{display:none}
   /* --- the door: the whole app sits behind a session ---------------------- */
   body.locked > header, body.locked > main { display:none }
   .lock{position:fixed;inset:0;z-index:60;overflow:auto;overflow-x:hidden;display:grid;place-items:center;
@@ -917,6 +928,10 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
 </script>
 </head>
 <body class="locked">
+<div class="bootload" id="bootload" aria-hidden="true">
+  <img src="/loader.svg" alt="" width="104" height="104">
+  <span class="boottext" data-t="loading…">loading…</span>
+</div>
 <a class="skip" href="#main" data-t="Skip to content">Skip to content</a>
 <div class="lock" id="lock" hidden>
  <div class="thememount door" id="thememountdoor"></div>
@@ -4905,6 +4920,7 @@ async function syncBookAudio(id, prev, chapters) {
 // rather than left pointing at audio the fix already replaced.
 async function openBook(id, jumpPlay) {
   if (!id) return; $('#err').textContent = '';
+  bootWait(T('Opening the book…'));
   try {
     const prev = (book && book.id === id) ? book
       : (player && player.id === id ? { chapters: player.chapters } : null);
@@ -4927,6 +4943,7 @@ async function openBook(id, jumpPlay) {
     syncRoute('replace');   // the URL now names the book that actually opened
     idle('Opened ' + book.title + '.');
   } catch (e) { fail(e); }
+  finally { bootDone(); }
 }
 
 // Load a book into the player: bind it and resume its saved spot. This is the
@@ -6439,8 +6456,27 @@ if ('mediaSession' in navigator) {
 
 // --- boot ------------------------------------------------------------------
 
+// A re-render that waits on the network gets the same mark as the first paint,
+// but only after 250 ms: a transition that resolves quickly must not flash a
+// screen of its own in between.
+let _bootTimer = null;
+function bootDone() {
+  clearTimeout(_bootTimer); _bootTimer = null;
+  const el = $('#bootload'); if (!el) return;
+  el.classList.remove('on');
+  setTimeout(() => { el.hidden = true; }, 300);
+}
+function bootWait(label) {
+  const el = $('#bootload'); if (!el) return;
+  el.hidden = false;
+  el.querySelector('.boottext').textContent = label || T('loading…');
+  clearTimeout(_bootTimer);
+  _bootTimer = setTimeout(() => el.classList.add('on'), 250);
+}
+
 window.addEventListener('load', async () => {
   const ok = await requireSession();
+  bootDone();
   if (!ok) return;
   if (ok === 'public') {
     // The price list is the whole page: show it and stop. Nothing here needs
