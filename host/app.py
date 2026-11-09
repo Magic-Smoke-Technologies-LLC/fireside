@@ -1559,7 +1559,11 @@ class App:
             "balance": accounting.balance(self.conn, uid),
             "reserved": accounting.reserved_total(self.conn, uid),
             "available": accounting.available(self.conn, uid),
-            "unit": "chars",
+            # Read the unit, do not assume it: during the switch to dollars an
+            # old account still holds characters, and printing "chars" over a
+            # dollar balance (or the reverse) is the one lie a wallet cannot
+            # afford.
+            "unit": accounting.currency(self.conn, uid) or "USD",
             "payments_configured": payments.configured(),
             "sale": None,
         }
