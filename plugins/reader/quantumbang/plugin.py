@@ -31,7 +31,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from host.contracts import to_book
-from host.textutil import best_fragment
+from host.textutil import best_fragment, split_meta_header
 
 HOSTS = ("quantumbang.org",)
 MAX_PARTS = 60                     # a real story, not a crawl
@@ -40,9 +40,6 @@ _HREF = re.compile(r"""(?is)<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["']""")
 # -12-15- anywhere in a slug: part 12 of 15. Bounded so a year or an id cannot
 # pass for a part number.
 _PART = re.compile(r"-(?P<n>\d{1,2})-(?P<m>\d{1,2})-")
-# A metadata line: "Title: ...", "Content Rating: PG-13", "Relationship(s): Gen"
-_FIELD = re.compile(r"^[A-Z][A-Za-z0-9 ()/.'-]{1,40}:\s*\S")
-MAX_HEADER_PARAGRAPHS = 16
 
 
 def _host(url: str) -> str:
@@ -95,15 +92,45 @@ def _links(page: str, base_url: str) -> list:
     return out
 
 
+def _words(slug: str) -> set:
+    """The words of a slug. Punctuation between them is not meaning."""
+    return {w for w in re.split(r"[-_/+.]+", (slug or "").lower()) if w}
+
+
+def same_family(here: str, family: str) -> bool:
+    """Is `family` this page's own story, spelled slightly differently?
+
+    The landing page and its parts usually share one slug, but the site lets
+    the author type the landing page's slug by hand. The Holmes Factor lands on
+    `the-holmes-factor-by-proffrankly` while its parts are
+    `the-holmes-factor-1-2-proffrankly`: one extra connector word and the exact
+    key says these are different stories. A landing page may add words and a
+    part's family may add a subtitle, so one word set must contain the other,
+    with at least two words in common. That is still tight enough that a blog
+    post linking a neighbour's story never joins it.
+    """
+    if here == family:
+        return True
+    a, b = _words(here), _words(family)
+    if not a or not b:
+        return False
+    if not (a <= b or b <= a):
+        return False
+    return len(a & b) >= 2
+
+
 def parts_in_page(page: str, url: str) -> dict:
     """{(n, of): url} for every page of this story's family linked from `page`."""
     family, n, of = split_slug(slug_of(url))
+    landing = n is None          # a landing page names its story, not its place in it
     found = {}
     if n is not None:
         found[(n, of)] = url
     for link in _links(page, url):
         fam, pn, pm = split_slug(slug_of(link))
-        if fam != family or pn is None:
+        if pn is None:
+            continue
+        if fam != family and not (landing and same_family(family, fam)):
             continue
         found.setdefault((pn, pm), link)
     return found
@@ -131,26 +158,9 @@ def _best_run(found: dict):
 def split_header(text: str):
     """(fields, body). The repeated metadata block at the top of a part, peeled off.
 
-    Only a run of at least three `Key: value` paragraphs counts as a header, so
-    a story paragraph that happens to contain a colon is never eaten."""
-    paras = text.split("\n\n")
-    fields = {}
-    end = 0
-    for i, p in enumerate(paras):
-        if i >= MAX_HEADER_PARAGRAPHS:
-            break
-        line = p.strip()
-        if not line:
-            end = i + 1
-            continue
-        if not _FIELD.match(line):
-            break
-        key, _, val = line.partition(":")
-        fields[key.strip()] = val.strip()
-        end = i + 1
-    if len(fields) < 3:
-        return {}, text
-    return fields, "\n\n".join(paras[end:]).strip()
+    Shared with the web reader: a hand-built author site prints the same block
+    above every part, and nobody wants warnings read aloud between parts."""
+    return split_meta_header(text)
 
 
 def parse_parts(pages: list):
@@ -236,7 +246,12 @@ class Quantumbang:
             return bool(ia and ia == ib)
         if not is_quantumbang(a):
             return False
-        return identity_of(a) == identity_of(b)
+        ia, ib = identity_of(a), identity_of(b)
+        if ia == ib:
+            return True
+        # The landing page's slug is hand-typed and can carry a connector word
+        # the part slugs do not, so the same story reaches the shelf two ways.
+        return same_family(ia.split(":", 1)[1], ib.split(":", 1)[1])
 
     def settings(self):
         return []

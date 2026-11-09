@@ -142,3 +142,35 @@ def first_heading(page: str) -> str:
     """The first <h1> as readable text, or ""."""
     m = re.search(r"(?is)<h1[^>]*>(.*?)</h1>", page)
     return clean_fragment(m.group(1))[:200] if m else ""
+
+
+# ---- page -> the metadata block printed at the top of a story page ----------
+
+# "Title: X", "Author: Y", "Content Rating: T" ... the shape a hand-built
+# author site repeats above every part of a story.
+META_FIELD = re.compile(r"^[A-Z][A-Za-z0-9 ()/.'-]{1,40}:\s*\S")
+MAX_META_PARAGRAPHS = 16
+
+
+def split_meta_header(text: str):
+    """(fields, body): the `Key: value` block at the top, peeled off.
+
+    Only a run of at least three such paragraphs counts as a header, so a story
+    paragraph that happens to contain a colon is never eaten."""
+    paras = (text or "").split("\n\n")
+    fields, end = {}, 0
+    for i, p in enumerate(paras):
+        if i >= MAX_META_PARAGRAPHS:
+            break
+        line = p.strip()
+        if not line:
+            end = i + 1
+            continue
+        if not META_FIELD.match(line):
+            break
+        key, _, val = line.partition(":")
+        fields[key.strip()] = val.strip()
+        end = i + 1
+    if len(fields) < 3:
+        return {}, text
+    return fields, "\n\n".join(paras[end:]).strip()
