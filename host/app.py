@@ -77,6 +77,39 @@ def _detail(e, fallback):
     return fallback
 
 
+def _byte_range(header, size):
+    """The one slice a Range request asks for, or None to send the whole file.
+
+    A browser decides whether it can seek a video by whether the server answers
+    a Range with 206: Chrome plays a small clip without it but loops it badly,
+    and Safari will not start one at all. Only a single range is honoured. A
+    multi-range request answered with one slice would be a lie about the body,
+    so it falls back to the whole file instead.
+    """
+    if not header or size <= 0:
+        return None
+    spec = header.strip()
+    if not spec.lower().startswith("bytes="):
+        return None
+    spec = spec[6:].strip()
+    if "," in spec:
+        return None
+    first, _, last = spec.partition("-")
+    try:
+        if not first:                        # bytes=-500: the tail
+            n = int(last)
+            if n <= 0:
+                return None
+            return (max(0, size - n), size - 1)
+        start = int(first)
+        end = int(last) if last else size - 1
+    except ValueError:
+        return None
+    if start < 0 or start >= size or end < start:
+        return None
+    return (start, min(end, size - 1))
+
+
 def _norm_confirm(value):
     """Lowercase, trim, and fold accents so 'Eliminar mi Cuenta' counts."""
     text = (value or "").strip().lower()
@@ -433,6 +466,16 @@ class App:
                     .replace("__COMPANY__", os.environ.get("FIRESIDE_COMPANY", "Fireside"))
                     .replace("__CONTACT__", os.environ.get(
                         "FIRESIDE_CONTACT_EMAIL", "support@readfireside.com")))
+        # The door's fire is licensed media that may not be in this build yet,
+        # so the render says once whether it exists. The alternative is a
+        # request on every door load that ends in 404 on a stock checkout.
+        hearth = ""
+        poster = ""
+        if os.path.exists(os.path.join(ASSETS_DIR, "hearth.mp4")):
+            hearth = "1"
+            if os.path.exists(os.path.join(ASSETS_DIR, "hearth-poster.jpg")):
+                poster = ' poster="/hearth-poster.jpg"'
+        page = page.replace("__HEARTH_POSTER__", poster).replace("__HEARTH__", hearth)
         # localisable: the handler picks the language and splices the catalog in,
         # because only the request knows the cookie and Accept-Language.
         # The theme rides the same render: applied after paint it is a flash of
@@ -522,6 +565,27 @@ class App:
     def _asset(self, name, mime):
         with open(os.path.join(ASSETS_DIR, name), "rb") as f:
             return 200, {"_raw": f.read(), "_mime": mime}
+
+    def _media(self, name, mime):
+        """An optional file: absent is an ordinary state, not a 500."""
+        try:
+            with open(os.path.join(ASSETS_DIR, name), "rb") as f:
+                data = f.read()
+        except FileNotFoundError:
+            return 404, {"error": "no %s in this build" % name}
+        return 200, {"_raw": data, "_mime": mime, "_cache": "public, max-age=86400"}
+
+    def hearth(self, q, body):
+        """The fireplace loop behind the door's welcome pane.
+
+        Licensed media the owner drops in, so "not there yet" is a normal
+        state: 404, and the door keeps its own glow rather than showing a
+        broken player. Swapping the licensed cut in is replacing this one file.
+        """
+        return self._media("hearth.mp4", "video/mp4")
+
+    def hearth_poster(self, q, body):
+        return self._media("hearth-poster.jpg", "image/jpeg")
 
     def manifest(self, q, body):
         with open(os.path.join(UI_DIR, "manifest.webmanifest"), "rb") as f:
@@ -3049,6 +3113,7 @@ class App:
 
 GET_ROUTES = {
     "/": "ui", "/index.html": "ui", "/favicon.ico": "favicon", "/i18n.js": "i18n_js",
+    "/hearth.mp4": "hearth", "/hearth-poster.jpg": "hearth_poster",
     "/manifest.webmanifest": "manifest", "/sw.js": "service_worker",
     "/icon-192.png": "icon192", "/icon-512.png": "icon512",
     "/icon-maskable-512.png": "icon_maskable",
@@ -3142,6 +3207,9 @@ PUBLIC_ROUTES = {"/", "/index.html", "/i18n.js", "/favicon.ico", "/health", "/au
                  "/auth/policy", "/auth/forgot", "/auth/reset", "/me", "/plans",
                  "/privacy", "/terms", "/delete-account", "/pricing", "/checkout",
                  "/about", "/contact",
+                 # The door's fire sits behind a signed-out visitor's first
+                 # screen, so it has to load before there is a session.
+                 "/hearth.mp4", "/hearth-poster.jpg",
                  # A signed-out visitor sees prices before signing in, so the
                  # overlay's price ids have to be readable without a session.
                  "/billing/config",
@@ -3600,14 +3668,26 @@ def make_handler(app):
                 self.wfile.write(raw)
             elif isinstance(payload, dict) and "_raw" in payload:
                 raw = payload["_raw"]
-                self.send_response(status)
+                # Media asks for a slice; a body shorter than the file it asked
+                # for is watched as a broken clip, not as a fast stream.
+                span = _byte_range(self.headers.get("Range"), len(raw))
+                if span:
+                    start, end = span
+                    self.send_response(206)
+                    self.send_header("Content-Range",
+                                     "bytes %d-%d/%d" % (start, end, len(raw)))
+                    body = raw[start:end + 1]
+                else:
+                    self.send_response(status)
+                    body = raw
                 self.send_header("Content-Type", payload.get("_mime", "application/octet-stream"))
-                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Content-Length", str(len(body)))
                 if payload.get("_cache"):
                     self.send_header("Cache-Control", payload["_cache"])
                 self.send_header("X-Checksum", payload.get("checksum", ""))
                 self.end_headers()
-                self.wfile.write(raw)
+                self.wfile.write(body)
             else:
                 self._json(status, payload)
 

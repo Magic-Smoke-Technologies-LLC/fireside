@@ -294,14 +294,31 @@
   }
   /* --- the door: the whole app sits behind a session ---------------------- */
   body.locked > header, body.locked > main { display:none }
-  .lock{position:fixed;inset:0;z-index:60;overflow:auto;display:grid;place-items:center;
+  .lock{position:fixed;inset:0;z-index:60;overflow:auto;overflow-x:hidden;display:grid;place-items:center;
     background:radial-gradient(120% 90% at 50% 0,#241c13 0,var(--bg) 62%);padding:24px}
   .lock[hidden]{display:none}
   /* Two panes: what this is, then the way in. A door that shows a blank form
      tells a stranger nothing and reads like a wall. */
   .lockwrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:56px;
     align-items:center;width:100%;max-width:1020px}
-  .lockwel{max-width:520px;min-width:0}
+  .lockwel{max-width:520px;min-width:0;position:relative;isolation:isolate}
+  /* The hearth: a fire behind the welcome pane and nowhere else. It is the
+     one part of the door that is decoration, so it is hidden from assistive
+     tech, refused save-data and reduced-motion visitors, and only loads when
+     it is actually on screen. Never behind the form: a moving picture under a
+     password field is the thing that makes people mistype it. */
+  .hearth{position:absolute;inset:0;z-index:-1;overflow:hidden;border-radius:24px;
+    pointer-events:none;opacity:0;transition:opacity 1.2s ease;
+    -webkit-mask-image:radial-gradient(115% 95% at 32% 72%,#000 45%,transparent 100%);
+    mask-image:radial-gradient(115% 95% at 32% 72%,#000 45%,transparent 100%)}
+  .hearth.on{opacity:.55}
+  .hearthvid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+    filter:saturate(.85) contrast(1.05)}
+  /* The scrim is the reason the copy stays readable: the pane's own panel, not
+     a tint over the video. Contrast has to hold for the weakest theme. */
+  .hearth::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(100deg,var(--bg) 0,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 62%,var(--bg) 100%),
+               linear-gradient(180deg,var(--bg) 0,rgba(0,0,0,0) 26%,rgba(0,0,0,0) 70%,var(--bg) 100%)}
   .lockwel .mark{margin:0}
   .lockwel .welh{font:600 34px/1.2 var(--serif);margin:14px 0 12px;color:var(--text)}
   .lockwel .welp{color:var(--soft);font-size:16px;line-height:1.6;margin:0}
@@ -366,6 +383,7 @@
   body.locked .thememount.door{position:fixed;top:10px;left:12px;z-index:80}
   @media(max-width:880px){
     .lockwrap{grid-template-columns:minmax(0,1fr);gap:26px;max-width:400px}
+    .hearth{display:none}
     .lockwel .welh{font-size:26px;margin:10px 0 8px}
     .welsteps{display:none}
     .lockwel .welp{font-size:15px}
@@ -887,6 +905,9 @@
  <div class="thememount door" id="thememountdoor"></div>
  <div class="lockwrap">
   <section class="lockwel" id="lockwel" aria-label="About fireside" data-t-aria="About fireside">
+    <div class="hearth" id="hearth" data-has="__HEARTH__" aria-hidden="true">
+      <video id="hearthvid" class="hearthvid" muted playsinline loop preload="none"__HEARTH_POSTER__ tabindex="-1" disablepictureinpicture></video>
+    </div>
     <p class="mark" data-t="fireside">fireside</p>
     <p class="tag" data-t="Books and web stories, voiced.">Books and web stories, voiced.</p>
     <h2 class="welh" data-t="Your shelf, out loud.">Your shelf, out loud.</h2>
@@ -6182,6 +6203,41 @@ async function sbScanStep() {
   const sp = $('#sbspeed'); sp.oninput = () => { $('#sbspeedv').textContent = parseFloat(sp.value).toFixed(2) + '×'; };
   const tx = $('#sbtext'); const count = () => { $('#sbcount').textContent = tx.value.length + ' / 1000'; };
   tx.oninput = count; count();
+})();
+
+// --- the hearth: a fire behind the door, and only while it is on screen -----
+// Licensed media, so the render already says whether the file is in this
+// build; no visitor pays for a request that ends in 404. Decorative, so it is
+// refused by save-data, by slow links, and by anyone who asked for less
+// motion, and it pauses the moment it scrolls away instead of spinning a
+// decode loop in a background tab.
+(function wireHearth() {
+  const wrap = $('#hearth'), vid = $('#hearthvid');
+  if (!wrap || !vid || wrap.getAttribute('data-has') !== '1') { if (wrap) wrap.hidden = true; return; }
+  let allowed = true;
+  try {
+    allowed = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const c = navigator.connection || {};
+    if (c.saveData || /(^|-)2g$/.test(c.effectiveType || '')) allowed = false;
+  } catch (_) { allowed = false; }
+  if (!allowed) { wrap.remove(); return; }
+  const play = () => { const p = vid.play(); if (p && p.catch) p.catch(() => {}); };
+  const load = () => {
+    if (vid.getAttribute('src')) return;
+    vid.src = '/hearth.mp4';
+    play();
+  };
+  // The first frame is the poster, and the pane fades to the loop only once
+  // there is motion to show: a half-loaded clip is worse than no clip.
+  vid.addEventListener('canplay', () => wrap.classList.add('on'), { once: true });
+  vid.addEventListener('error', () => { wrap.remove(); });
+  if (!('IntersectionObserver' in window)) { load(); return; }
+  new IntersectionObserver(es => {
+    es.forEach(e => {
+      if (e.isIntersecting) load();
+      else if (vid.getAttribute('src')) vid.pause();
+    });
+  }, { threshold: 0.15 }).observe(wrap);
 })();
 
 // --- a script error must never leave a silent blank page --------------------
