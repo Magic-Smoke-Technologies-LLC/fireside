@@ -390,6 +390,22 @@ class TestAppShell(unittest.TestCase):
         self.assertIn("await api('/credits/history')", html)
         self.assertIn("function loadWallet(", html)
 
+    def test_the_wallet_states_what_five_dollars_buys(self):
+        # "Add money" with no idea how much reading that is is a price with no
+        # unit. The table is drawn from the sale rate the purchase route pins,
+        # so it cannot drift from what a top-up actually credits.
+        html = self._html()
+        self.assertIn('id="wratetbl"', html)
+        self.assertIn("function drawRate(", html)
+        self.assertIn("d.sale && d.sale.rate_per_1m_chars", html)
+        self.assertIn("drawRate(d)", html)
+        # Two claims a reader is entitled to hear before paying: it does not
+        # expire, and it is not refundable except where the law says otherwise.
+        self.assertIn('id="wnoexpire"', html)
+        self.assertIn('id="wrefund"', html)
+        self.assertIn('Credit does not expire.', html)
+        self.assertIn('is not refundable, except where the law requires it', html)
+
     def test_the_player_bar_opens_now_playing(self):
         # A bar that shows a book you cannot open is a status line.
         html = self._html()

@@ -115,6 +115,15 @@
   .walletbal.neg{color:var(--warn)}
   .walletrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
   .walletrow .btn{padding:9px 18px}
+  .wratetbl{margin-top:20px;width:100%;border-collapse:collapse;font-size:13px;
+    font-variant-numeric:tabular-nums;color:var(--soft)}
+  .wratetbl caption{text-align:left;font-size:13px;color:var(--faint);
+    padding-bottom:6px;caption-side:top}
+  .wratetbl th,.wratetbl td{padding:7px 0;border-bottom:1px solid var(--line);text-align:left}
+  .wratetbl th{font-weight:400;font-size:12px;color:var(--faint);border-bottom:1px solid var(--line)}
+  .wratetbl td.pay{color:var(--text);font-weight:600}
+  .wratetbl td.num{text-align:right;padding-left:12px}
+  .wratefine{margin-top:10px;line-height:1.55}
   .walletlist{margin-top:26px;border-top:1px solid var(--line)}
   .walletlist .wr{display:flex;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--soft)}
   .walletlist .wr b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;min-width:74px}
@@ -738,6 +747,12 @@
       <p class="small" id="wheld" hidden></p>
       <div class="walletrow" id="wtopup"></div>
       <p class="small" id="wmsg" role="status" aria-live="polite" style="margin-top:12px"></p>
+      <div id="wrate" hidden>
+        <table class="wratetbl" id="wratetbl"></table>
+        <p class="small wratefine" id="wratefine"></p>
+      </div>
+      <p class="small wratefine" id="wnoexpire" data-t="Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.">Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.</p>
+      <p class="small wratefine" id="wrefund" data-t="Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.">Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.</p>
       <div class="walletlist" id="wlist"></div>
     </div>
 
@@ -2241,6 +2256,7 @@ async function loadWallet() {
     wh.textContent = held > 0 ? T('{n} is held while a render runs.', { n: wamount(held) }) : '';
   }
   drawTopups(d);
+  drawRate(d);
   loadWalletList();
 }
 function drawTopups(d) {
@@ -2260,6 +2276,53 @@ function drawTopups(d) {
   m.className = 'btn quiet'; m.type = 'button';
   m.textContent = T('Minimum {n}', { n: money(5) });
   m.disabled = true; m.style.display = 'none';
+}
+// What a top-up actually buys, said out loud. The rate comes from the same
+// sale offer the purchase route pins at checkout, so the shelf and the receipt
+// cannot disagree. "Today" and "about" are load-bearing: these are a rate at the
+// provider's current price, not a promise about next year's.
+const LISTEN_CHARS_PER_HOUR = 54000;   // ~150 wpm at ~6 chars a word
+function wchars(n) { return Math.round(n).toLocaleString(); }
+function whours(chars) {
+  const mins = Math.round(chars / LISTEN_CHARS_PER_HOUR * 60 / 5) * 5;
+  if (mins < 60) return T('{n} min', { n: mins });
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? T('{h} hr {m} min', { h: h, m: m }) : T('{h} hr', { h: h });
+}
+function drawRate(d) {
+  const box = $('#wrate'); if (!box) return;
+  const tbl = $('#wratetbl'), fine = $('#wratefine');
+  const rate = d && d.sale && d.sale.rate_per_1m_chars;
+  if (!rate || !tbl) { box.hidden = true; return; }
+  box.hidden = false;
+  tbl.innerHTML = '';
+  const cap = document.createElement('caption');
+  cap.textContent = T('At today\u2019s voice price, each top-up buys about this much:');
+  tbl.append(cap);
+  const head = document.createElement('tr');
+  [T('Add'), T('Characters'), T('Listening at normal speed')].forEach((label, i) => {
+    const th = document.createElement('th');
+    th.textContent = label; if (i) th.className = 'num';
+    head.append(th);
+  });
+  const thead = document.createElement('thead'); thead.append(head); tbl.append(thead);
+  const body = document.createElement('tbody');
+  TOPUPS.forEach(usd => {
+    const chars = Math.floor(usd * 1e6 / rate);
+    const tr = document.createElement('tr');
+    const pay = document.createElement('td');
+    pay.className = 'pay'; pay.textContent = money(usd);
+    const ch = document.createElement('td');
+    ch.className = 'num'; ch.textContent = wchars(chars);
+    const hr = document.createElement('td');
+    hr.className = 'num'; hr.textContent = whours(chars);
+    tr.append(pay, ch, hr); body.append(tr);
+  });
+  tbl.append(body);
+  if (fine) {
+    fine.textContent = T('That works out to {rate} per million characters as of today, and about {perhour} characters to a listening hour at normal speed. It is a rate, not a promise: if the voice provider changes its price, this table changes with it.')
+      .replace('{rate}', money(rate)).replace('{perhour}', wchars(LISTEN_CHARS_PER_HOUR));
+  }
 }
 async function buyTopup(usd) {
   const msg = t => { const m = $('#wmsg'); if (m) m.textContent = t; };

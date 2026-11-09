@@ -202,3 +202,33 @@ that $6 for a platform that still makes you buy credits is the part that reads a
 greedy. My own note at the time: $3 survives 50 subscribers (~$84/mo net) and it
 caps the slope at about half of what $6 would earn at the same headcount, so the
 tier's job is retention and the character line keeps the margin.
+
+## What $5 buys, said out loud (2026-11-09)
+
+Dollar credits removed the one number a buyer could reason with. The wallet now
+shows it, computed from the same sale rate the checkout pins
+(`sale_rate_per_1m_chars`), so the shelf and the receipt cannot disagree.
+
+At the current retail rate (**$19.63/M characters** = Azure neural $15 + $0.10
+infra, x1.3) and **~54,000 characters per listening hour** (~150 wpm at ~6
+characters a word):
+
+| Add | Characters | Listening at normal speed |
+|---|---|---|
+| $5 | ~254,000 | ~4 hr 45 min |
+| $10 | ~509,000 | ~9 hr 25 min |
+| $25 | ~1,273,000 | ~23 hr 35 min |
+| $50 | ~2,547,000 | ~47 hr 10 min |
+
+The copy says "as of today" and "about" on purpose. It is a rate against the
+provider's current price, not a promise about next year's: if Azure's price
+moves, the table moves with it, and nobody was told otherwise.
+
+Two lines that must be on the panel, not in a policy page:
+
+- **Credit does not expire.** It stays in the wallet until spent, and nothing is
+  taken back for being unused.
+- **Refunds:** money added to the wallet is not refundable, except where the law
+  requires it or where we charged twice for the same thing.
+
+Minimum top-up is **$5**: Paddle's $0.50 fixed fee is 10% at $5 and 21.7% at $3.
