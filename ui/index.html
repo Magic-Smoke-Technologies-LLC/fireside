@@ -3555,6 +3555,9 @@ async function requireSession() {
     };
     $('#lock').hidden = true;
     document.body.classList.remove('locked');
+    // The price list is not a stranger's page only: a reader upgrading from
+    // Account has to be able to come back to it.
+    const navplans = $('#navplans'); if (navplans) navplans.hidden = false;
     refreshBalance();
     return true;
   }
@@ -5951,11 +5954,13 @@ window.addEventListener('load', async () => {
     ROUTE_LAST = '#/plans';
     return;
   }
-  // A signed-in reader who arrives at /pricing gets the app at its own address,
-  // so the next reload is not a page that only exists for strangers.
+  // A signed-in reader who arrives at /pricing gets the price list, in the app,
+  // at the app's own address. Sending them to the library instead closed the
+  // only route to the card form: the provider's checkout answer is "open the
+  // pricing page", so a reader who tapped Upgrade landed back on their shelf
+  // with nothing to pay. The plans view is the same view, so show that.
   if (publicPricing()) {
-    try { history.replaceState({ route: location.hash || '#/library' },
-                               '', '/' + (location.hash || '#/library')); } catch (_) {}
+    try { history.replaceState({ route: '#/plans' }, '', '/#/plans'); } catch (_) {}
   }
   try { await loadPlugins(); } catch (e) { fail(e); }
   loadQueue();

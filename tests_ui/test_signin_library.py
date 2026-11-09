@@ -152,6 +152,25 @@ class TestSignInAndLibrary(BrowserTest):
         self.assertEqual([c["title"] for c in self.shelf()], [owner_title])
         self.assert_no_page_errors()
 
+    def test_a_signed_in_reader_can_still_reach_the_price_list(self):
+        """The checkout answer is "open /pricing", so bouncing a reader off
+        /pricing closes the only road to the card form. That shipped: tapping
+        Upgrade from Account followed the provider's answer, landed on the
+        price page, was redirected to the library, and there was nothing left
+        to pay on. The plan cards have to be the view they land on, with the
+        Pricing tab reachable afterwards."""
+        self.register("ui_pricing")
+        self.page.goto(self.host.url("/pricing"))
+        wait_until(self.page, "() => document.readyState === 'complete'")
+        wait_until(self.page,
+                   "() => !!document.querySelector('#v-plans.on')")
+        self.assertTrue(self.page.url.endswith("#/plans"), self.page.url)
+        self.assertTrue(self.page.is_visible("#navplans"),
+                        "a signed-in reader has to be able to come back")
+        self.assertEqual(self.page.evaluate(
+            "() => document.querySelectorAll('#pageplans .prcard').length"), 4)
+        self.assert_no_page_errors()
+
 
 if __name__ == "__main__":
     unittest.main()
