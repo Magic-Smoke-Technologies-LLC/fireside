@@ -57,3 +57,31 @@ class TestPlansOrder(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheKokoroPath(unittest.TestCase):
+    """"Run it yourself, free" has to lead somewhere. An invitation to
+    self-host with no instructions is a dead end for the reader most likely to
+    take it."""
+
+    def test_the_plans_page_links_the_guide(self):
+        body = plans_section()
+        self.assertIn('href="/kokoro"', body)
+
+    def test_the_guide_is_public(self):
+        from host.app import GET_ROUTES, PUBLIC_ROUTES
+        self.assertEqual(GET_ROUTES.get("/kokoro"), "kokoro")
+        self.assertIn("/kokoro", PUBLIC_ROUTES)
+
+    def test_the_guide_covers_the_three_steps(self):
+        import io as _io
+        page = _io.open(os.path.join(os.path.dirname(PAGE), "kokoro.html"),
+                        encoding="utf-8").read()
+        self.assertIn("docker run", page)
+        self.assertIn("reverse_proxy", page)
+        self.assertIn("Caddyfile", page)
+        # and the part only we can tell them: where it goes in fireside
+        self.assertIn("Account → Voice", page)
+        # no leftover template tokens: this page is served by _legal(), which
+        # only fills company and contact
+        self.assertNotIn("__HOST_VERSION__", page)

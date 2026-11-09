@@ -547,7 +547,12 @@
   .prcard ul b{color:var(--text);font-weight:600}
   .prcard .buy{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:16px}
   .prcard .btn{width:100%;text-align:center;padding:10px 14px;font-size:14px}
-  .prcard .btn.year{background:none;color:var(--soft);border:1px solid var(--line);font-weight:500}
+  /* One thing to press. The yearly price used to be a second button under
+     Subscribe, which read as two products instead of one plan sold two ways. */
+  .prcard .cycle{display:flex;gap:6px;margin-bottom:8px}
+  .prcard .cycle button{flex:1 1 0;padding:7px 8px;border:1px solid var(--line);border-radius:999px;
+    background:none;color:var(--soft);font:500 12.5px var(--ui);cursor:pointer;white-space:nowrap}
+  .prcard .cycle button[aria-pressed="true"]{border-color:var(--flame);color:var(--text)}
   .prlist{list-style:none;padding:0;margin:12px 0 0;color:var(--soft);font-size:14.5px;line-height:1.6}
   .prlist li{padding:9px 0;border-top:1px solid var(--line)}
   .prlist b{color:var(--text);font-weight:600}
@@ -921,7 +926,7 @@
       <caption data-t="What narration costs">What narration costs</caption>
       <tr><th data-t="Our voice">Our voice</th><td><b class="rate" data-t="$19.63 per million characters">$19.63 per million characters</b>
         <span class="ratefine" data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
-      <tr><th data-t="Your own voice">Your own voice</th><td><b data-t="Nothing to us">Nothing to us</b>
+      <tr><th data-t="Your own voice">Your own voice</th><td><b data-t="No platform cost">No platform cost</b>
         <span class="ratefine" data-t="your Azure key, or a Kokoro server on your own machine">your Azure key, or a Kokoro server on your own machine</span></td></tr>
       <tr><th data-t="Paid plans">Paid plans</th><td><b data-t="Include wallet credit each month">Include wallet credit each month</b>
         <span class="ratefine"><a href="/pricing" data-t="see the plans">see the plans</a></span></td></tr>
@@ -1436,14 +1441,16 @@
 
     <h3 style="margin-top:34px" data-t="Run it yourself, free">Run it yourself, free</h3>
     <p class="sub" data-t="fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.">fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.</p>
+    <p class="sub" style="margin-top:10px" data-t="Want a voice that costs nothing per character? Run Kokoro on your own machine and connect it. It takes one command, one certificate, and one field in Settings.">Want a voice that costs nothing per character? Run Kokoro on your own machine and connect it. It takes one command, one certificate, and one field in Settings.</p>
+    <p style="margin-top:10px"><a class="btn quiet" href="/kokoro" data-t="How to set up Kokoro →">How to set up Kokoro →</a></p>
 
     <h3 style="margin-top:34px" data-t="Narration, bought on its own">Narration, bought on its own</h3>
     <table class="ratetable">
       <tr><th data-t="Our voice">Our voice</th><td><b data-t="$19.63 per million characters">$19.63 per million characters</b>
         <span data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
-      <tr><th data-t="Your own Azure key">Your own Azure key</th><td><b data-t="Nothing to us">Nothing to us</b>
+      <tr><th data-t="Your own Azure key">Your own Azure key</th><td><b data-t="No platform cost">No platform cost</b>
         <span data-t="your text goes to Microsoft under your account and Azure bills you">your text goes to Microsoft under your account and Azure bills you</span></td></tr>
-      <tr><th data-t="Your own voice server">Your own voice server</th><td><b data-t="Nothing to us, and nothing to anyone">Nothing to us, and nothing to anyone</b>
+      <tr><th data-t="Your own voice server">Your own voice server</th><td><b data-t="No platform cost, on hardware you already own">No platform cost, on hardware you already own</b>
         <span data-t="run Kokoro or any OpenAI-compatible speech server on your own machine and connect it under Settings, Voice servers. Your hardware, your electricity.">run Kokoro or any OpenAI-compatible speech server on your own machine and connect it under Settings, Voice servers. Your hardware, your electricity.</span></td></tr>
     </table>
 
@@ -3409,25 +3416,43 @@ function planCard(t, plan, cat, cfg) {
     if (!b.disabled) b.onclick = () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
     buy.append(b);
   } else {
-    // Two cycles, two buttons: the yearly price only ever existed on the static
-    // page, so the app sold twelve months of nothing. With no way to charge
-    // either cycle, one disabled line says so instead of two that repeat it.
+    // One plan, sold two ways, so there is one thing to press. The cycle is a
+    // choice above it; the button says the price of the choice that is on,
+    // instead of two stacked buttons that read as two products.
     const can = cycle => !!paddlePriceId(cfg, t.id, cycle)
       || !!(cat && cat.payments_configured);
-    const mk = (cycle, cls, label, ok) => {
-      const b = document.createElement('button'); b.className = 'btn ' + cls; b.type = 'button';
-      b.textContent = ok ? label : T('Not for sale yet');
-      b.disabled = !ok;
-      b.onclick = () => buyPlan(t.id, cycle);
-      buy.append(b);
-    };
-    if (!can('month') && !can('year')) mk('month', '', T('Subscribe'), false);
-    else {
-      mk('month', '', cents == null ? T('Subscribe') : T('Subscribe, {x} a month', {x: usd(cents)}),
-         can('month'));
-      if (t.list_annual_cents != null) {
-        mk('year', 'year', T('{x} a year', {x: usd(t.list_annual_cents)}), can('year'));
+    const cycles = [{ c: 'month', label: T('Monthly'), ready: can('month'),
+                      btn: cents == null ? T('Subscribe')
+                        : T('Subscribe, {x} a month', { x: usd(cents) }) }];
+    if (t.list_annual_cents != null) {
+      cycles.push({ c: 'year', label: T('Yearly'), ready: can('year'),
+                    btn: T('Subscribe, {x} a year', { x: usd(t.list_annual_cents) }) });
+    }
+    const offer = cycles.filter(x => x.ready);
+    if (!offer.length) {
+      const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
+      b.textContent = T('Not for sale yet'); b.disabled = true; buy.append(b);
+    } else {
+      let pick = offer[0];
+      const go = document.createElement('button');
+      go.className = 'btn'; go.type = 'button';
+      const paint = () => { go.textContent = pick.btn; go.onclick = () => buyPlan(t.id, pick.c); };
+      if (offer.length > 1) {
+        const bar = document.createElement('div'); bar.className = 'cycle';
+        bar.setAttribute('role', 'group');
+        bar.setAttribute('aria-label', T('How you pay'));
+        offer.forEach(o => {
+          const b = document.createElement('button'); b.type = 'button';
+          b.textContent = o.label; b.setAttribute('aria-pressed', o === pick ? 'true' : 'false');
+          b.onclick = () => { pick = o;
+            bar.querySelectorAll('button').forEach(x =>
+              x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+            paint(); };
+          bar.append(b);
+        });
+        buy.append(bar);
       }
+      paint(); buy.append(go);
     }
   }
   if (t.id === plan) {
