@@ -376,6 +376,25 @@
   /* add belongs on the library screen */
   .addpanel{margin-top:16px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
   .addpanel[hidden]{display:none}
+
+  /* pricing: the price list in the same room as the library. The rung is the
+     serif, the amount is the serif, and the flame is only ever the action. */
+  .pricegrid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));margin-top:18px}
+  .prcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:20px 18px;display:flex;flex-direction:column}
+  .prcard.on{border-color:var(--flame)}
+  .prcard .rung{font:400 21px/1.2 var(--serif);letter-spacing:.01em}
+  .prcard .amount{font:400 31px/1.1 var(--serif);margin-top:8px;letter-spacing:-.01em}
+  .prcard .amount span{font:400 13px var(--ui);color:var(--faint);letter-spacing:0}
+  .prcard .yearly{color:var(--faint);font-size:13px;margin-top:3px}
+  .prcard ul{margin:14px 0 4px;padding-left:18px;font-size:14px;line-height:1.55;color:var(--soft)}
+  .prcard ul b{color:var(--text);font-weight:600}
+  .prcard .buy{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:16px}
+  .prcard .btn{width:100%;text-align:center;padding:10px 14px;font-size:14px}
+  .prcard .btn.year{background:none;color:var(--soft);border:1px solid var(--line);font-weight:500}
+  .prlist{list-style:none;padding:0;margin:12px 0 0;color:var(--soft);font-size:14.5px;line-height:1.6}
+  .prlist li{padding:9px 0;border-top:1px solid var(--line)}
+  .prlist b{color:var(--text);font-weight:600}
   /* a series page is a shelf of its own: list what is there, let them pick */
   .serlist{margin-top:12px;display:flex;flex-direction:column;gap:2px;max-height:44vh;overflow-y:auto;overflow-x:hidden}
   .serrow{display:flex;align-items:flex-start;gap:10px;padding:9px 6px;border-radius:8px;cursor:pointer;min-width:0;
@@ -715,7 +734,7 @@
     <p class="err" id="autherr" role="alert" aria-live="polite"></p>
     <button class="toggle" id="lockforgot" type="button" hidden data-t="Forgot password?">Forgot password?</button>
     <button class="toggle" id="locktoggle" type="button" aria-label="Switch between signing in and creating an account" data-t-aria="Switch between signing in and creating an account" hidden></button>
-    <a class="toggle" id="lockplans" href="/pricing" target="_blank" rel="noopener" style="text-decoration:none" data-t="See plans &amp; pricing →">See plans &amp; pricing →</a>
+    <a class="toggle" id="lockplans" href="/pricing" style="text-decoration:none" data-t="See plans &amp; pricing →">See plans &amp; pricing →</a>
     <a class="toggle" href="/privacy" target="_blank" rel="noopener" style="text-decoration:none" data-t="Privacy">Privacy</a>
     <a class="toggle" href="/terms" target="_blank" rel="noopener" style="text-decoration:none" data-t="Terms">Terms</a>
     <div id="lockproviders" class="sso"></div>
@@ -729,10 +748,11 @@
   <nav class="tabs" id="tabs" aria-label="Sections" data-t-aria="Sections">
     <button data-v="lib" class="on" aria-current="page" data-t="Library">Library</button>
     <button data-v="set" data-t="Account">Account</button>
-    <button data-v="plans" id="navplans" hidden data-t="Plans">Plans</button>
+    <button data-v="plans" id="navplans" hidden data-t="Pricing">Pricing</button>
     <button data-v="adm" id="navadmin" hidden data-t="Admin">Admin</button>
   </nav>
   <div class="topright" id="who">
+      <button class="btn quiet" id="publicsignin" type="button" hidden>Sign in</button>
       <button class="balchip" id="balchip" type="button" title="Characters left" data-t-title="Characters left" hidden>—</button>
       <button class="bell" id="bell" type="button" aria-label="Alerts" data-t-aria="Alerts">🔔<span class="dot"></span></button>
       <button class="avatar" id="avatar" type="button" aria-label="Account menu" data-t-aria="Account menu">?</button>
@@ -1115,40 +1135,88 @@
     <p class="small" id="admmsg" style="min-height:18px"></p>
   </section>
 
-  <!-- plans: a page for buying the platform, said plainly -------------------- -->
+  <!-- pricing: the price list, in the same room as the library. A stranger
+       arrives from /pricing or the door, a reader from Account; it is one page
+       either way. The cards below are the published list, readable before any
+       script runs; loadPlansPage replaces them with the live catalog and the
+       provider's own prices, so nothing here can drift from what charges. -->
   <section class="view" id="v-plans">
-    <h2 data-t="Get fireside">Get fireside</h2>
-    <p class="sub" data-t="The reader is free to try. A plan buys the platform, and the platform is only half the story.">The reader is free to try. A plan buys the platform, and the platform is only half the story.</p>
+    <h2 data-t="Pricing">Pricing</h2>
+    <p class="sub" data-t="fireside turns the books and web stories you already have into audio you can listen to, in the browser or in the app. You bring the book; we render it and stream it back.">fireside turns the books and web stories you already have into audio you can listen to, in the browser or in the app. You bring the book; we render it and stream it back.</p>
     <p class="sub" id="pagesignupline" style="margin-top:10px"><span data-t="New here?">New here?</span> <button class="btn quiet" id="pagesignup" type="button" data-t="Create a free account">Create a free account</button> <span data-t="No card needed.">No card needed.</span></p>
 
-    <div class="addpanel" style="margin-top:16px;border-color:var(--flame)">
-      <div style="font-weight:600" data-t="Read this before you buy">Read this before you buy</div>
-      <p class="sub" style="margin:8px 0 0" data-t="A subscription buys the platform: this server, the reader app, your storage, and updates. It does not include a voice.">A subscription buys the platform: this server, the reader app, your storage, and updates. It does not include a voice.</p>
-      <p class="sub" style="margin:8px 0 0" data-t="The voice is what actually reads to you, and it comes from a speech provider you connect yourself (your own Azure Speech key, or a server a friend shares with you). Without a voice provider the platform has nothing to read with, so a subscription on its own is close to worthless.">The voice is what actually reads to you, and it comes from a speech provider you connect yourself (your own Azure Speech key, or a server a friend shares with you). Without a voice provider the platform has nothing to read with, so a subscription on its own is close to worthless.</p>
-      <p class="sub" style="margin:8px 0 0" data-t="Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.">Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.</p>
-    </div>
-
-    <h3 style="margin-top:28px" data-t="The plans">The plans</h3>
-    <div id="pageplans" style="margin-top:14px;display:flex;gap:14px;flex-wrap:wrap"></div>
-    <p class="sub" style="margin-top:12px" data-t="No plan includes a voice provider. That part is always yours to plug in.">No plan includes a voice provider. That part is always yours to plug in.</p>
-
-    <h3 style="margin-top:28px" data-t="Storage blocks">Storage blocks</h3>
-    <div id="pageblocks" style="margin-top:12px"></div>
-
-    <h3 style="margin-top:28px" data-t="Your cart">Your cart</h3>
-    <div class="addpanel" style="margin-top:10px">
-      <div id="pagecart" class="small" data-t="Nothing in the cart yet.">Nothing in the cart yet.</div>
-      <div id="pagetotal" class="small" style="margin-top:10px;font-weight:600"></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center">
-        <button class="btn" id="pagebuy" type="button" data-t="Purchase">Purchase</button>
-        <button class="btn quiet" id="pageclearcart" type="button" data-t="Empty cart">Empty cart</button>
-        <button class="btn quiet" id="pagesignin" type="button" style="display:none" data-t="Sign in or create an account">Sign in or create an account</button>
+    <div class="pricegrid" id="pageplans">
+      <div class="prcard">
+        <div class="rung" data-t="Free">Free</div>
+        <div class="amount">$0</div>
+        <div class="yearly" data-t="no card, no expiry">no card, no expiry</div>
+        <ul>
+          <li data-t="500 MB of storage">500 MB of storage</li>
+          <li data-t="The whole library and playback">The whole library and playback</li>
+          <li data-t="Narration bought separately, or with your own key">Narration bought separately, or with your own key</li>
+        </ul>
+      </div>
+      <div class="prcard">
+        <div class="rung" data-t="Reader">Reader</div>
+        <div class="amount">$3</div>
+        <div class="yearly" data-t="a month, or $36 a year">a month, or $36 a year</div>
+        <ul>
+          <li data-t="50,000 characters a month, about 45 minutes">50,000 characters a month, about 45 minutes</li>
+          <li data-t="2 GB of storage">2 GB of storage</li>
+          <li data-t="Enough for a novel a month">Enough for a novel a month</li>
+        </ul>
+      </div>
+      <div class="prcard">
+        <div class="rung" data-t="Listener">Listener</div>
+        <div class="amount">$8</div>
+        <div class="yearly" data-t="a month, or $96 a year">a month, or $96 a year</div>
+        <ul>
+          <li data-t="250,000 characters a month, about 3 hours 45 minutes">250,000 characters a month, about 3 hours 45 minutes</li>
+          <li data-t="5 GB of storage">5 GB of storage</li>
+          <li data-t="Series, long fics, and a shelf that grows">Series, long fics, and a shelf that grows</li>
+        </ul>
+      </div>
+      <div class="prcard">
+        <div class="rung" data-t="Studio">Studio</div>
+        <div class="amount">$20</div>
+        <div class="yearly" data-t="a month, or $240 a year">a month, or $240 a year</div>
+        <ul>
+          <li data-t="1,000,000 characters a month, about 15 hours">1,000,000 characters a month, about 15 hours</li>
+          <li data-t="10 GB of storage">10 GB of storage</li>
+          <li data-t="The platform, plus the whole million a month">The platform, plus the whole million a month</li>
+        </ul>
       </div>
     </div>
 
+    <div class="addpanel" style="border-color:var(--flame)">
+      <div style="font-weight:600" data-t="Read this before you buy">Read this before you buy</div>
+      <p class="sub" style="margin:8px 0 0" data-t="A subscription buys the platform: this server, the reader app, your storage, and updates. It does not include a voice.">A subscription buys the platform: this server, the reader app, your storage, and updates. It does not include a voice.</p>
+      <p class="sub" style="margin:8px 0 0" data-t="The voice is what actually reads to you, and it comes from a speech provider you connect yourself, either your own Azure Speech key or a server a friend shares with you.">The voice is what actually reads to you, and it comes from a speech provider you connect yourself, either your own Azure Speech key or a server a friend shares with you.</p>
+      <p class="sub" style="margin:8px 0 0" data-t="If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.">If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.</p>
+    </div>
+
+    <h3 style="margin-top:34px" data-t="Narration, bought on its own">Narration, bought on its own</h3>
+    <p class="sub" data-t="$19.63 per million characters, about 15 hours of listening. It goes into your balance, never expires, and is spent only on chapters you render. That price is the speech provider&#x27;s rate plus about ten cents per million, which covers the payment fee and support.">$19.63 per million characters, about 15 hours of listening. It goes into your balance, never expires, and is spent only on chapters you render. That price is the speech provider's rate plus about ten cents per million, which covers the payment fee and support.</p>
+    <p class="sub" data-t="Bring your own Azure Speech key and pay us nothing for narration. Your text goes to Microsoft under your own account and Azure bills you directly.">Bring your own Azure Speech key and pay us nothing for narration. Your text goes to Microsoft under your own account and Azure bills you directly.</p>
+
+    <h3 style="margin-top:34px" data-t="On every plan">On every plan</h3>
+    <ul class="prlist">
+      <li data-t="Pay once per chapter, then listen for free, forever. A chapter you have already voiced stays voiced; replaying it next year costs no characters. You are charged for new text, not for listening.">Pay once per chapter, then listen for free, forever. A chapter you have already voiced stays voiced; replaying it next year costs no characters. You are charged for new text, not for listening.</li>
+      <li data-t="Import what you already have. An EPUB, or a link to a story page. Chapters split themselves and keep their order.">Import what you already have. An EPUB, or a link to a story page. Chapters split themselves and keep their order.</li>
+      <li data-t="Follow along. The page and the voice stay together, with the current sentence highlighted as it is read.">Follow along. The page and the voice stay together, with the current sentence highlighted as it is read.</li>
+      <li data-t="Say names right. A pronunciation dictionary per book or for your whole library.">Say names right. A pronunciation dictionary per book or for your whole library.</li>
+      <li data-t="Resume anywhere. Your position follows you between the browser and the installed app, per book.">Resume anywhere. Your position follows you between the browser and the installed app, per book.</li>
+    </ul>
+
+    <h3 style="margin-top:34px" data-t="Run it yourself, free">Run it yourself, free</h3>
+    <p class="sub" data-t="fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.">fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.</p>
+
+    <h3 style="margin-top:34px" data-t="Questions, refunds, cancellations">Questions, refunds, cancellations</h3>
+    <p class="sub">Write to <a href="mailto:__CONTACT__">__CONTACT__</a>. Refund and cancellation terms are in the <a href="/terms" data-t="terms of service">terms of service</a>; what we collect is in the <a href="/privacy" data-t="privacy policy">privacy policy</a>.</p>
+    <p class="small">fireside is operated by __COMPANY__.</p>
+
     <p class="sub" id="pageplanmsg" style="margin-top:16px"></p>
   </section>
-
   <div class="err" id="err"></div>
   <audio id="audio" preload="metadata"></audio>
 </main>
@@ -1571,7 +1639,12 @@ function show(v, mode) {
   if (v === 'lib') renderActiveJobs();
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => show(b.dataset.v));
-const brandhome = $('#brandhome'); if (brandhome) brandhome.onclick = () => show('lib');
+const brandhome = $('#brandhome'); if (brandhome) brandhome.onclick = () => {
+  // On the public price list the wordmark is the way to the front door, not
+  // back into a library this visitor does not have.
+  if (!AUTH.user) { location.href = '/'; return; }
+  show('lib');
+};
 
 // --- settings page tabs -----------------------------------------------------
 // The settings page holds unrelated jobs (voices, words, plan, account, admin),
@@ -2856,102 +2929,116 @@ const PLAN_BULLETS = {
          'No credit included: add money, or bring your own Azure key',
          'Voices: only the ones you connect yourself'],
 };
-// The cart. It survives sign-up: a logged-out visitor can pick a plan and
-// storage, hit purchase, make the account, and come back to a filled cart. The
-// account is created first, then the paid items go out as one checkout, so the
-// payment is linked to the account by the provider metadata (user = uid).
+// What survives sign-up: the rung a stranger picked before there was an
+// account, so the page reopens on the same card and the card form is one tap
+// away. The payment is linked to the account by the provider metadata
+// (fireside_user), not by the email the buyer typed.
 const CART_KEY = 'fireside.cart';
 function readCart() {
   try { const c = JSON.parse(localStorage.getItem(CART_KEY) || '{}') || {};
     return { tier: typeof c.tier === 'string' ? c.tier : '',
+             cycle: c.cycle === 'year' ? 'year' : 'month',
              blocks: Math.max(0, parseInt(c.blocks || 0, 10) || 0) }; }
-  catch (e) { return { tier: '', blocks: 0 }; }
+  catch (e) { return { tier: '', cycle: 'month', blocks: 0 }; }
 }
 function writeCart(c) { try { localStorage.setItem(CART_KEY, JSON.stringify(c)); } catch (e) {} }
 function clearCart() { try { localStorage.removeItem(CART_KEY); } catch (e) {} }
 function tierById(id) { return ((PLAN_CAT && PLAN_CAT.tiers) || []).find(t => t.id === id) || null; }
-function cartItems() {
-  const c = readCart(), cat = PLAN_CAT || {}, items = [];
-  if (c.tier && c.tier !== 'free') items.push({ plan: c.tier, quantity: 1 });
-  if (c.blocks > 0 && cat.storage) items.push({ plan: cat.storage.addon, quantity: c.blocks });
-  return items;
+// The price a card prints: the provider's registered price when there is one
+// (that is the number that charges a card), otherwise the published list price,
+// because "price not set" told a reader nothing and the rung still sells.
+function shownCents(t) { return t.amount_cents != null ? t.amount_cents : t.list_amount_cents; }
+// The provider's half of checkout, read once per visit to the page: a client
+// token, which cycle is a price id, and whether it is sandbox or live.
+let BILL_CFG = null;
+async function billingConfig(force) {
+  if (BILL_CFG && !force) return BILL_CFG;
+  try { BILL_CFG = (await api('/billing/config')) || {}; }
+  catch (e) { BILL_CFG = {}; }
+  return BILL_CFG;
 }
-function cartTotalCents() {
-  const c = readCart(), cat = PLAN_CAT || {}, t = tierById(c.tier);
-  let total = 0, known = true;
-  if (t) { if (t.amount_cents == null) known = false; else total += t.amount_cents; }
-  if (c.blocks > 0) {
-    if (!cat.storage || cat.storage.amount_cents == null) known = false;
-    else total += cat.storage.amount_cents * c.blocks;
-  }
-  return { total: total, known: known, hasTier: !!t };
+function paddlePriceId(cfg, id, cycle) {
+  const row = (cfg && cfg.prices && cfg.prices[id]) || {};
+  return (cycle === 'year' ? row.year : row.month) || '';
 }
-function planCard(t, plan, cat) {
-  const c = readCart();
-  const on = t.id === plan;
-  const inCart = c.tier === t.id;
-  const sellable = !!(cat && cat.payments_configured && t.amount_cents != null);
-  // The price a card prints: the provider's when one is registered (that is the
-  // number that charges a card), otherwise our published list price, with the
-  // "not for sale yet" line doing the honest work underneath it.
-  const shown = t.amount_cents != null ? t.amount_cents : t.list_amount_cents;
-  const annual = t.list_annual_cents;
+function planCard(t, plan, cat, cfg) {
+  const free = t.id === 'free';
   const card = document.createElement('div');
-  card.className = 'addpanel';
-  card.style.cssText = 'flex:1 1 240px;margin:0;text-align:left'
-    + (inCart ? ';border-color:var(--flame)' : '');
-  const h = document.createElement('div'); h.style.cssText = 'font-weight:600;font-size:17px';
-  h.textContent = t.label || t.id; card.append(h);
-  const price = document.createElement('div'); price.style.cssText = 'margin-top:6px;font-size:22px;font-weight:600';
-  price.textContent = shown == null ? 'price not set'
-    : (shown ? usd(shown) + '/' + (t.interval || 'mo') : 'free');
-  card.append(price);
-  const per = document.createElement('p'); per.className = 'sub'; per.style.margin = '2px 0 0';
-  per.textContent = (shown && annual) ? usd(annual) + ' a year (ten months)'
-    : (t.description || '');
-  card.append(per);
-  const sub = document.createElement('p'); sub.className = 'sub'; sub.style.margin = '8px 0 0';
-  sub.textContent = fmtBytes(t.included_bytes) + ' of storage included.';
-  card.append(sub);
+  card.className = 'prcard' + (t.id === plan ? ' on' : '');
+  const rung = document.createElement('div'); rung.className = 'rung';
+  rung.textContent = t.label || t.id; card.append(rung);
+
+  const amount = document.createElement('div'); amount.className = 'amount';
+  const cents = shownCents(t);
+  amount.textContent = free ? '$0' : (cents == null ? T('price not set') : usd(cents));
+  if (!free && cents != null) {
+    const per = document.createElement('span'); per.textContent = ' ' + T('/ month');
+    amount.append(per);
+  }
+  card.append(amount);
+
+  const yearly = document.createElement('div'); yearly.className = 'yearly';
+  if (free) yearly.textContent = T('no card, no expiry');
+  else if (t.list_annual_cents != null) yearly.textContent = T('or {x} a year', {x: usd(t.list_annual_cents)});
+  card.append(yearly);
+
+  // What the rung includes, built from the catalog, so the numbers on the card
+  // are the numbers the server grants.
   const ul = document.createElement('ul');
-  ul.style.cssText = 'margin:12px 0 0;padding-left:20px;line-height:1.8';
-  const bullets = PLAN_BULLETS[t.id] || planBullets(t, lowerTierLabel(t));
-  bullets.forEach(x => { const li = document.createElement('li'); li.textContent = x; ul.append(li); });
-  card.append(ul);
-  if (on) {
-    const tag = document.createElement('p'); tag.className = 'sub'; tag.style.margin = '12px 0 0';
-    tag.textContent = T('This is your current plan.'); card.append(tag);
-  }
-  // Every paid rung carries a button, on the current plan too: a card with no
-  // button reads as a broken card, and right now nothing is purchasable, so the
-  // only truthful label is "not for sale yet".
-  const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
-  b.style.marginTop = '12px';
-  if (t.amount_cents === 0) {
-    const freeSignup = !AUTH.user;
-    b.textContent = freeSignup ? T('Create a free account') : T('Use the free plan');
-    if (on) {
-      // Already on it: nothing to buy, and the tag above already says so.
-      b.textContent = T('Your current plan'); b.disabled = true;
-    } else {
-      b.onclick = () => {
-        // The free tier costs nothing and needs no cart: a visitor just makes an
-        // account, and the server starts every new account on free.
-        if (freeSignup) { openDoor('create'); return; }
-        const cc = readCart(); cc.tier = t.id; writeCart(cc);
-        loadPlansPage();
-      };
-    }
-  } else if (!sellable) {
-    b.textContent = T('Not for sale yet'); b.disabled = true;
+  const line = (text, bold) => {
+    const el = document.createElement('li');
+    if (bold) {
+      const b = document.createElement('b'); b.textContent = bold;
+      el.append(b, document.createTextNode(' ' + text));
+    } else el.textContent = text;
+    ul.append(el);
+  };
+  const lower = lowerTierLabel(t);
+  if (t.included_usd) {
+    const span = creditTime(t.included_usd);
+    line((span ? T('about {x} of listening', {x: span}) + ', ' : '') + T('and it rolls over'),
+         T('{x} of credit a month', {x: money(t.included_usd)}));
   } else {
-    b.textContent = inCart ? 'In the cart ✓' : ('Add ' + (t.label || t.id));
-    b.onclick = () => {
-      const cc = readCart(); cc.tier = t.id; writeCart(cc);
-      loadPlansPage();
-    };
+    line(T('Narration bought separately, or with your own Azure key'));
   }
-  card.append(b);
+  line(fmtBytes(t.included_bytes) + ' of storage');
+  if (lower) line(lower, T('Everything in'));
+  card.append(ul);
+
+  const buy = document.createElement('div'); buy.className = 'buy';
+  if (free) {
+    const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
+    b.textContent = AUTH.user ? T('Use the free plan') : T('Create a free account');
+    b.disabled = !!AUTH.user && t.id === plan;
+    if (!b.disabled) b.onclick = () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
+    buy.append(b);
+  } else {
+    // Two cycles, two buttons: the yearly price only ever existed on the static
+    // page, so the app sold twelve months of nothing. With no way to charge
+    // either cycle, one disabled line says so instead of two that repeat it.
+    const can = cycle => !!paddlePriceId(cfg, t.id, cycle)
+      || !!(cat && cat.payments_configured);
+    const mk = (cycle, cls, label, ok) => {
+      const b = document.createElement('button'); b.className = 'btn ' + cls; b.type = 'button';
+      b.textContent = ok ? label : T('Not for sale yet');
+      b.disabled = !ok;
+      b.onclick = () => buyPlan(t.id, cycle);
+      buy.append(b);
+    };
+    if (!can('month') && !can('year')) mk('month', '', T('Subscribe'), false);
+    else {
+      mk('month', '', cents == null ? T('Subscribe') : T('Subscribe, {x} a month', {x: usd(cents)}),
+         can('month'));
+      if (t.list_annual_cents != null) {
+        mk('year', 'year', T('{x} a year', {x: usd(t.list_annual_cents)}), can('year'));
+      }
+    }
+  }
+  if (t.id === plan) {
+    const now = document.createElement('p'); now.className = 'sub'; now.style.margin = '0';
+    now.textContent = T('This is your current plan.'); buy.append(now);
+  }
+  card.append(buy);
   return card;
 }
 function lowerTierLabel(t) {
@@ -2961,50 +3048,49 @@ function lowerTierLabel(t) {
   const lower = (PLAN_CAT.tiers || [])[i - 1];
   return (lower && (lower.label || lower.id)) || '';
 }
-function renderCart() {
-  const c = readCart(), cat = PLAN_CAT || {}, t = tierById(c.tier);
-  const box = $('#pagecart'); if (!box) return;
-  const lines = [];
-  if (t) lines.push(t.label + (t.id === 'free' ? ' (free)' : '') + ': '
-    + (t.amount_cents == null ? 'price not set'
-       : (t.amount_cents ? usd(t.amount_cents) + '/' + (t.interval || 'mo') : 'free')));
-  if (c.blocks > 0 && cat.storage) lines.push('Storage: ' + c.blocks + ' block'
-    + (c.blocks > 1 ? 's' : '') + ' × ' + fmtBytes(cat.storage.block_bytes)
-    + (cat.storage.amount_cents != null
-       ? ' — ' + usd(cat.storage.amount_cents * c.blocks) + '/' + (cat.storage.interval || 'mo')
-       : ' — price not set'));
-  box.innerHTML = '';
-  if (!lines.length) box.textContent = T('Nothing in the cart yet. Pick a plan, and add storage if you need it.');
-  lines.forEach(x => { const d = document.createElement('div'); d.textContent = x; box.append(d); });
-  const tot = cartTotalCents();
-  $('#pagetotal').textContent = lines.length
-    ? ('Total: ' + (tot.known ? (tot.total ? usd(tot.total) + '/mo' : 'free') : '—')) : '';
-  const btn = $('#pagebuy');
-  const payable = tot.hasTier && cartItems().length > 0;
-  btn.textContent = (!AUTH.user && payable) ? 'Create account & purchase' : 'Purchase';
-  btn.disabled = !tot.hasTier;
-  $('#pagesignin').style.display = AUTH.user ? 'none' : '';
+// --- checkout --------------------------------------------------------------
+// The card form itself is Paddle's overlay, loaded only when a buyer asks for
+// it. The page never sees a card number, and the server never holds the
+// browser token: the webhook writes the subscription from Paddle's own event.
+let PADDLE_KEY = '';
+function loadPaddle() {
+  if (window.Paddle) return Promise.resolve(window.Paddle);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.paddle.com/paddle/v2/paddle.js';
+    s.onload = () => resolve(window.Paddle);
+    s.onerror = () => reject(new Error('paddle.js did not load'));
+    document.head.append(s);
+  });
 }
-async function buyPurchase() {
-  const c = readCart(), cat = PLAN_CAT || {}, msg = $('#pageplanmsg');
-  if (!c.tier) { msg.textContent = T('Pick a plan first.'); return; }
-  const items = cartItems();
-  if (!items.length) {
-    // The free plan costs nothing: there is no charge, only an account.
-    if (!AUTH.user) { openDoor('create'); return; }
-    clearCart(); loadPlansPage();
-    idle(T('You are on the free plan.'));
-    msg.textContent = T('You are on the free plan. Connect a voice provider to start listening.');
-    return;
+async function openPaddle(cfg, priceId) {
+  await loadPaddle();
+  const key = (cfg.client_token || '') + '|' + (cfg.env || '');
+  if (PADDLE_KEY !== key) {
+    // Paddle.js reads sandbox or live from the ENVIRONMENT, not from the token,
+    // and defaults to production: a test token sent to the live API comes back
+    // invalid_client_token, so the overlay opened and every checkout was
+    // refused. An "environment" option inside Initialize throws.
+    try { if (/^test_/.test(cfg.client_token || '')) Paddle.Environment.set('sandbox'); } catch (_) {}
+    Paddle.Initialize({ token: cfg.client_token,
+                        checkout: { settings: { displayMode: 'overlay', theme: 'dark' } } });
+    PADDLE_KEY = key;
   }
-  if (!AUTH.user) { openDoor('create'); return; }   // account first, then the payment
-  if (!cat.payments_configured) {
-    msg.textContent = 'Payments are not switched on yet, so nothing was charged. '
-      + 'Your cart is saved; try again once a payment provider is live.';
-    return;
-  }
-  await startCheckout({ items: items }, msg);
+  Paddle.Checkout.open({
+    items: [{ priceId: priceId, quantity: 1 }],
+    // Our own key: the webhook finds the account from this, not from the email
+    // the buyer typed, which may be a different one.
+    customData: { fireside_user: AUTH.user },
+    settings: {
+      displayMode: 'overlay',
+      theme: 'dark',
+      locale: (navigator.language || 'en').slice(0, 2),
+      successUrl: location.origin + '/?purchased=1'
+    }
+  });
 }
+// The door over the app, used by the price list when a visitor has no account
+// yet. It is the same screen a first visit gets, not a second sign-up form.
 function openDoor(mode) {
   AUTH.mode = mode || 'sign';
   document.body.classList.add('locked');
@@ -3012,54 +3098,61 @@ function openDoor(mode) {
   renderAuth();
   $('#lockuser').focus();
 }
+async function buyPlan(id, cycle) {
+  const msg = $('#pageplanmsg');
+  if (msg) msg.textContent = '';
+  if (!AUTH.user) {
+    // The account comes first, and the choice survives it: the page reopens
+    // here after sign-up with the same rung in hand.
+    try { const c = readCart(); c.tier = id; c.cycle = cycle || 'month'; writeCart(c); } catch (e) {}
+    openDoor(AUTH.hasAccounts ? 'sign' : 'create');
+    if (msg) msg.textContent = T('Sign in or create an account, then the card form opens on this page.');
+    return;
+  }
+  const cfg = await billingConfig();
+  const priceId = paddlePriceId(cfg, id, cycle);
+  if (priceId && cfg.client_token) {
+    try { await openPaddle(cfg, priceId); }
+    catch (e) { if (msg) msg.textContent = T('The card form did not start: {x}',
+                                            {x: (e && e.message) || 'unknown error'}); }
+    return;
+  }
+  // A provider whose checkout is a redirect (Stripe) goes through the server.
+  try { await startCheckout({ plan: id }, msg); }
+  catch (e) { if (msg) msg.textContent = errorText(e); }
+}
 async function loadPlansPage() {
   const box = $('#pageplans'); if (!box) return;
-  let s = {}, cat = null;
-  // The plans page is public. Do not ask for /storage unless there is a session:
-  // it answers 401 when logged out, and a 401 makes api() re-lock the page,
-  // which yanks the login door over the plans the visitor just opened.
+  let s = {}, cat = null, cfg = null;
+  // The page is public. Do not ask for /storage unless there is a session: it
+  // answers 401 when logged out, and a 401 makes api() re-lock the page, which
+  // yanks the login door over the prices the visitor just opened.
   if (AUTH.user) { try { s = await api('/storage') || {}; } catch (e) {} }
   try { cat = await api('/plans') || {}; } catch (e) {}
+  try { cfg = await billingConfig(true) || {}; } catch (e) {}
   if (cat) PLAN_CAT = cat;
   const plan = AUTH.user ? (s.plan || 'free') : '';
   box.innerHTML = '';
-  ((cat && cat.tiers) || []).forEach(t => box.append(planCard(t, plan, cat)));
+  ((cat && cat.tiers) || []).forEach(t => box.append(planCard(t, plan, cat, cfg)));
   if (!cat || !cat.tiers) box.textContent = T('Could not load the plans just now.');
-  const blocks = $('#pageblocks');
-  if (blocks) {
-    blocks.innerHTML = '';
-    const st = cat && cat.storage;
-    if (st) {
-      const c = readCart();
-      const p = document.createElement('p'); p.className = 'sub'; p.style.margin = '0 0 8px';
-      p.textContent = fmtBytes(st.block_bytes) + ' each'
-        + (st.amount_cents != null ? ', ' + usd(st.amount_cents) + '/' + (st.interval || 'mo') : ', price not set yet')
-        + (AUTH.user ? '. You hold ' + (s.storage_blocks || 0) + '.' : '.');
-      const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
-      const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.value = String(c.blocks || 0);
-      inp.style.maxWidth = '90px';
-      const b = document.createElement('button'); b.className = 'btn quiet'; b.type = 'button'; b.textContent = T('Set blocks');
-      b.onclick = () => { const cc = readCart(); cc.blocks = Math.max(0, parseInt(inp.value || '0', 10) || 0);
-                          writeCart(cc); loadPlansPage(); };
-      row.append(inp, b); blocks.append(p, row);
-    }
-  }
-  renderCart();
   const sl = $('#pagesignupline');
   if (sl) sl.style.display = AUTH.user ? 'none' : '';
   const msg = $('#pageplanmsg');
-  msg.textContent = (cat && cat.payments_configured) ? ''
-    : 'Payments are not switched on yet, so a paid purchase cannot complete. '
-      + 'You can still create a free account, and the plans and prices are the real shape.';
+  if (!msg) return;
+  if (cfg && cfg.ok && cfg.env && cfg.env !== 'production') {
+    // Sandbox money is not money. Saying so is the difference between a test
+    // and a customer who thinks they bought something.
+    msg.textContent = T('Test mode. Cards are handled by the payment provider in its sandbox, so nothing is charged and no plan is granted yet.');
+  } else if (cfg && cfg.ok) {
+    msg.textContent = '';
+  } else {
+    msg.textContent = (cat && cat.payments_configured)
+      ? '' : T('Payments are not switched on yet, so a paid purchase cannot complete. You can still create a free account, and the prices are the real shape.');
+  }
 }
-if ($('#pagebuy')) $('#pagebuy').onclick = () => buyPurchase();
-if ($('#pageclearcart')) $('#pageclearcart').onclick = () => { clearCart(); loadPlansPage(); };
-if ($('#pagesignin')) $('#pagesignin').onclick = () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
-if ($('#pagesignup')) $('#pagesignup').onclick = () => openDoor('create');
+if ($('#pagesignup')) $('#pagesignup').onclick = () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
 if ($('#gotoplans')) $('#gotoplans').onclick = () => show('plans');
 if ($('#gotosand')) $('#gotosand').onclick = () => show('sand');
-// The bar's title is the door to the page: a bar that shows a book you cannot
-// open is a status line, not a player.
 if ($('#tnowbook')) $('#tnowbook').onclick = () => { if (player.id) show('play'); };
 if ($('#lockplans') && $('#lockplans').tagName === 'BUTTON') $('#lockplans').onclick = () => {
   document.body.classList.remove('locked');
@@ -3370,6 +3463,30 @@ async function authSubmit() {
   }
 }
 
+function publicPricing() {
+  const p = location.pathname.replace(/\/+$/, '');
+  return (p || '/') === '/pricing';
+}
+// The price list without the door: the bar, the cards, and one way in.
+function enterPublicPricing() {
+  AUTH.mode = AUTH.hasAccounts ? 'sign' : 'create';
+  document.body.classList.remove('locked');
+  $('#lock').hidden = true;
+  document.querySelectorAll('#tabs button').forEach(b => { b.hidden = b.dataset.v !== 'plans'; });
+  const np = $('#navplans'); if (np) np.hidden = false;
+  ['#bell', '#balchip', '#avatar'].forEach(sel => {
+    const el = $(sel);
+    // [hidden] loses to any class that sets display, so say it twice.
+    if (el) { el.hidden = true; el.style.display = 'none'; }
+  });
+  const si = $('#publicsignin'); if (si) si.hidden = false;
+  return 'public';
+}
+if (document.getElementById('publicsignin')) {
+  document.getElementById('publicsignin').onclick =
+    () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
+}
+
 async function requireSession() {
   // A half-session is signed in and one factor short. Ask before anything
   // else: every other call answers 401 with a twofa field, which without this
@@ -3412,6 +3529,10 @@ async function requireSession() {
     refreshBalance();
     return true;
   }
+  // /pricing is the one public place: a stranger gets the shell with the price
+  // list in it instead of the door, because a payment processor's reviewer has
+  // to read the prices before an account exists.
+  if (publicPricing()) return enterPublicPricing();
   AUTH.mode = AUTH.hasAccounts ? 'sign' : 'create';
   document.body.classList.add('locked');
   $('#lock').hidden = false;        // reveal the door; body.locked hid the app
@@ -5793,6 +5914,20 @@ if ('mediaSession' in navigator) {
 window.addEventListener('load', async () => {
   const ok = await requireSession();
   if (!ok) return;
+  if (ok === 'public') {
+    // The price list is the whole page: show it and stop. Nothing here needs
+    // a session, and asking for the library would 401 and drop the door on it.
+    show('plans');
+    BOOTING = false;
+    ROUTE_LAST = '#/plans';
+    return;
+  }
+  // A signed-in reader who arrives at /pricing gets the app at its own address,
+  // so the next reload is not a page that only exists for strangers.
+  if (publicPricing()) {
+    try { history.replaceState({ route: location.hash || '#/library' },
+                               '', '/' + (location.hash || '#/library')); } catch (_) {}
+  }
   try { await loadPlugins(); } catch (e) { fail(e); }
   loadQueue();
   await loadLibrary();
@@ -5829,6 +5964,10 @@ window.addEventListener('load', async () => {
     if (lp.get('linked')) {
       idle('Linked with ' + lp.get('linked') + '. You can sign in that way from now on.');
       history.replaceState({}, '', location.pathname + location.hash);
+    }
+    if (lp.get('purchased')) {
+      history.replaceState({}, '', '/' + (location.hash || '#/library'));
+      idle(T('Payment received. Your plan updates as soon as the provider confirms it.'));
     }
     if (lp.get('checkout')) {
       const ref = lp.get('checkout');

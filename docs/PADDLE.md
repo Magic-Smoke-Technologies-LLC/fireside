@@ -147,6 +147,7 @@ catalog exists; the destination does not yet.
 
 ## Annual prices
 
-`plans.LIST_PRICE_CENTS` and `ui/pricing.html` are `$3/$36`, `$8/$96`,
+`plans.LIST_PRICE_CENTS` and the price view in `ui/index.html` are `$3/$36`, `$8/$96`,
 `$20/$240`, matching the sandbox price ids in `host/payments_paddle.py`. The page
-and the charged amount now agree.
+and the charged amount now agree, and /pricing serves that same app page rather
+than a separate static list that could drift from it.

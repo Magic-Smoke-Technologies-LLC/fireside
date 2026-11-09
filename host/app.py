@@ -422,9 +422,17 @@ class App:
         return 200, {"questions": questions or []}
 
     def ui(self, q, body):
-        """Serve the browser client. The host owns its own UI; plugins ship none."""
+        """Serve the browser client. The host owns its own UI; plugins ship none.
+
+        /pricing is this same page, opened on the price list: one design and
+        one checkout, instead of a second static page that drifted from the
+        app it was selling.
+        """
         with open(os.path.join(UI_DIR, "index.html"), "r", encoding="utf-8") as f:
-            page = f.read().replace("__HOST_VERSION__", HOST_VERSION)
+            page = (f.read().replace("__HOST_VERSION__", HOST_VERSION)
+                    .replace("__COMPANY__", os.environ.get("FIRESIDE_COMPANY", "Fireside"))
+                    .replace("__CONTACT__", os.environ.get(
+                        "FIRESIDE_CONTACT_EMAIL", "support@readfireside.com")))
         # localisable: the handler picks the language and splices the catalog in,
         # because only the request knows the cookie and Accept-Language.
         return 200, {"_html": page, "_locale": True}
@@ -451,10 +459,13 @@ class App:
         return 200, {"_html": page}
 
     def pricing(self, q, body):
-        """The public price list. A payment processor asks for pricing that is
-        visible before an account exists, so this page cannot sit behind the
-        sign-in screen the way /plans does."""
-        return self._legal("pricing.html")
+        """The public price list, served as the app opening on its own price view.
+
+        A payment processor asks for pricing that is visible before an account
+        exists, so the page cannot sit behind the sign-in screen the way /plans
+        used to: a stranger gets the shell with only the price list in it.
+        """
+        return self.ui(q, body)
 
     def checkout(self, q, body):
         """The checkout page a payment processor's reviewer needs to see.

@@ -200,8 +200,12 @@ def inject(page, code=None, cookies=None, query=None, accept_language=None):
         "locales": available(),
     }
     blob = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
-    script = ('<script src="/i18n.js"></script>\n'
-              '<script>window.__FS_I18N__=' + blob + ';</script>\n')
+    # The catalog goes in FIRST. i18n.js captures window.__FS_I18N__ when it
+    # runs, so a page that loaded the runtime before the catalog left T() as
+    # identity: the markup was translated server-side and every string the
+    # script drew stayed English, in Spanish, with the tests still green.
+    script = ('<script>window.__FS_I18N__=' + blob + ';</script>\n'
+              '<script src="/i18n.js"></script>\n')
     page = render(page, {"locale": code, "messages": cat["messages"]})
     page = re.sub(r'<html lang="[^"]*"', '<html lang="%s" dir="%s"' % (code, cat["dir"]),
                   page, count=1)
