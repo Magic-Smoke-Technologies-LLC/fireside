@@ -437,6 +437,23 @@
 
   /* pricing: the price list in the same room as the library. The rung is the
      serif, the amount is the serif, and the flame is only ever the action. */
+  /* What you are buying, said before the prices rather than in a panel after
+     them: the old panel contradicted the cards by arriving late and loud. */
+  .buywhat{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;
+    margin:20px 0 6px;padding:16px 18px;border:1px solid var(--line);border-radius:14px;
+    background:var(--surface)}
+  .buywhat h3{font:600 15px/1.3 var(--ui);margin:0 0 6px;color:var(--text)}
+  .buywhat p{margin:0;color:var(--soft);font-size:14px;line-height:1.55}
+  /* A rate in a table, with its qualifier beside it, instead of a number buried
+     inside a paragraph that has to be re-read to find it. */
+  .ratetable{border-collapse:collapse;margin-top:14px;width:100%;max-width:620px;font-size:15px}
+  .ratetable th{text-align:left;font-weight:400;color:var(--soft);padding:10px 18px 10px 0;
+    vertical-align:top;white-space:nowrap;border-top:1px solid var(--line)}
+  .ratetable td{padding:10px 0;border-top:1px solid var(--line);color:var(--text)}
+  .ratetable td span{display:block;color:var(--faint);font-size:13px;margin-top:2px}
+  .prlist.twocol{columns:2;column-gap:36px}
+  .prlist.twocol li{break-inside:avoid}
+  @media(max-width:760px){ .prlist.twocol{columns:1} }
   .pricegrid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));margin-top:18px}
   .prcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;
     padding:20px 18px;display:flex;flex-direction:column}
@@ -818,8 +835,8 @@
       <caption data-t="What narration costs">What narration costs</caption>
       <tr><th data-t="Our voice">Our voice</th><td><b class="rate" data-t="$19.63 per million characters">$19.63 per million characters</b>
         <span class="ratefine" data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
-      <tr><th data-t="Your own speech key">Your own speech key</th><td><b data-t="Nothing to us">Nothing to us</b>
-        <span class="ratefine" data-t="you pay your provider directly">you pay your provider directly</span></td></tr>
+      <tr><th data-t="Your own voice">Your own voice</th><td><b data-t="Nothing to us">Nothing to us</b>
+        <span class="ratefine" data-t="your Azure key, or a Kokoro server on your own machine">your Azure key, or a Kokoro server on your own machine</span></td></tr>
       <tr><th data-t="Paid plans">Paid plans</th><td><b data-t="Include wallet credit each month">Include wallet credit each month</b>
         <span class="ratefine"><a href="/pricing" data-t="see the plans">see the plans</a></span></td></tr>
     </table>
@@ -1276,6 +1293,17 @@
     <p class="sub" data-t="fireside turns the books and web stories you already have into audio you can listen to, in the browser or in the app. You bring the book; we render it and stream it back.">fireside turns the books and web stories you already have into audio you can listen to, in the browser or in the app. You bring the book; we render it and stream it back.</p>
     <p class="sub" id="pagesignupline" style="margin-top:10px"><span data-t="New here?">New here?</span> <button class="btn quiet" id="pagesignup" type="button" data-t="Create a free account">Create a free account</button> <span data-t="No card needed.">No card needed.</span></p>
 
+    <div class="buywhat" id="buywhat">
+      <div>
+        <h3 data-t="A plan buys the reader">A plan buys the reader</h3>
+        <p data-t="This server, the app, your shelf and your storage. Import an EPUB or a story link, split it into chapters, follow along as it reads, resume on any device.">This server, the app, your shelf and your storage. Import an EPUB or a story link, split it into chapters, follow along as it reads, resume on any device.</p>
+      </div>
+      <div>
+        <h3 data-t="The voice is metered separately">The voice is metered separately</h3>
+        <p data-t="Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or add dollars to your wallet and our voice reads to you at the standard rate below. A paid plan already includes some wallet credit each month.">Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or add dollars to your wallet and our voice reads to you at the standard rate below. A paid plan already includes some wallet credit each month.</p>
+      </div>
+    </div>
+
     <div class="pricegrid" id="pageplans">
       <div class="prcard">
         <div class="rung" data-t="Free">Free</div>
@@ -1319,19 +1347,19 @@
       </div>
     </div>
 
-    <div class="addpanel" style="border-color:var(--flame)">
-      <div style="font-weight:600" data-t="Read this before you buy">Read this before you buy</div>
-      <p class="sub" style="margin:8px 0 0" data-t="A subscription buys the platform: this server, the reader app, your storage, and updates. It does not include a voice.">A subscription buys the platform: this server, the reader app, your storage, and updates. It does not include a voice.</p>
-      <p class="sub" style="margin:8px 0 0" data-t="The voice is what actually reads to you, and it comes from a speech provider you connect yourself, either your own Azure Speech key or a server a friend shares with you.">The voice is what actually reads to you, and it comes from a speech provider you connect yourself, either your own Azure Speech key or a server a friend shares with you.</p>
-      <p class="sub" style="margin:8px 0 0" data-t="If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.">If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.</p>
-    </div>
-
     <h3 style="margin-top:34px" data-t="Narration, bought on its own">Narration, bought on its own</h3>
-    <p class="sub" data-t="$19.63 per million characters, about 15 hours of listening. It goes into your balance, never expires, and is spent only on chapters you render. That price is the speech provider&#x27;s rate plus about ten cents per million, which covers the payment fee and support.">$19.63 per million characters, about 15 hours of listening. It goes into your balance, never expires, and is spent only on chapters you render. That price is the speech provider's rate plus about ten cents per million, which covers the payment fee and support.</p>
-    <p class="sub" data-t="Bring your own Azure Speech key and pay us nothing for narration. Your text goes to Microsoft under your own account and Azure bills you directly.">Bring your own Azure Speech key and pay us nothing for narration. Your text goes to Microsoft under your own account and Azure bills you directly.</p>
+    <table class="ratetable">
+      <tr><th data-t="Our voice">Our voice</th><td><b data-t="$19.63 per million characters">$19.63 per million characters</b>
+        <span data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
+      <tr><th data-t="Your own Azure key">Your own Azure key</th><td><b data-t="Nothing to us">Nothing to us</b>
+        <span data-t="your text goes to Microsoft under your account and Azure bills you">your text goes to Microsoft under your account and Azure bills you</span></td></tr>
+      <tr><th data-t="Your own voice server">Your own voice server</th><td><b data-t="Nothing to us, and nothing to anyone">Nothing to us, and nothing to anyone</b>
+        <span data-t="run Kokoro or any OpenAI-compatible speech server on your own machine and connect it under Settings, Voice servers. Your hardware, your electricity.">run Kokoro or any OpenAI-compatible speech server on your own machine and connect it under Settings, Voice servers. Your hardware, your electricity.</span></td></tr>
+    </table>
+    <p class="sub" style="margin-top:10px" data-t="Wallet dollars never expire and are spent only on chapters you render, once per chapter. Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.">Wallet dollars never expire and are spent only on chapters you render, once per chapter. Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.</p>
 
     <h3 style="margin-top:34px" data-t="On every plan">On every plan</h3>
-    <ul class="prlist">
+    <ul class="prlist twocol">
       <li data-t="Pay once per chapter, then listen for free, forever. A chapter you have already voiced stays voiced; replaying it next year costs no characters. You are charged for new text, not for listening.">Pay once per chapter, then listen for free, forever. A chapter you have already voiced stays voiced; replaying it next year costs no characters. You are charged for new text, not for listening.</li>
       <li data-t="Import what you already have. An EPUB, or a link to a story page. Chapters split themselves and keep their order.">Import what you already have. An EPUB, or a link to a story page. Chapters split themselves and keep their order.</li>
       <li data-t="Follow along. The page and the voice stay together, with the current sentence highlighted as it is read.">Follow along. The page and the voice stay together, with the current sentence highlighted as it is read.</li>
