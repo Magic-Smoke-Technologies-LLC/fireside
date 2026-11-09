@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Running your own voice — fireside</title>
+<meta name="color-scheme" content="dark">
+<style>
+  :root{
+    --bg:#14110f; --surface:#1d1916; --raise:#241f1b; --line:#332c26;
+    --text:#efe7dd; --faint:#9a8f83; --flame:#e3a857; --on-flame:#241808;
+    --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 var(--ui);
+       -webkit-font-smoothing:antialiased}
+  main{max-width:720px;margin:0 auto;padding:56px 22px 96px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  header img{width:40px;height:40px;border-radius:10px}
+  h1{font-size:26px;margin:18px 0 4px;letter-spacing:-.01em}
+  h2{font-size:17px;margin:34px 0 8px;color:var(--flame);letter-spacing:.01em}
+  p,li{color:var(--text)}
+  .lead{color:var(--faint)}
+  ul{padding-left:20px}
+  li{margin:5px 0}
+  a{color:var(--flame)}
+  .meta{color:var(--faint);font-size:13px;margin-top:6px}
+  .back{display:inline-block;margin-top:40px;color:var(--faint);text-decoration:none;
+        border:1px solid var(--line);border-radius:999px;padding:9px 18px}
+  .back:hover{color:var(--text);border-color:var(--flame)}
+  code{background:var(--surface);padding:1px 5px;border-radius:5px;font-size:14px}
+  pre{margin:10px 0 14px;background:var(--surface);border:1px solid var(--line);border-radius:10px;
+      padding:12px 14px;overflow-x:auto}
+  pre code{background:none;padding:0;font-size:13.5px;line-height:1.5}
+  .foot{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
+        display:flex;gap:18px;flex-wrap:wrap;font-size:14px}
+  .foot a{color:var(--faint);text-decoration:none}
+  .foot a:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<main>
+  <header><img src="/icon-192.png" alt=""><strong>fireside</strong></header>
+  <h1>Run your own voice</h1>
+  <p class="lead">Kokoro on your own machine, over HTTPS, connected to fireside. No account with a
+  speech provider, no per-character bill, nothing leaving your network but the text you ask it to
+  read.</p>
+
+  <h2>What Kokoro is</h2>
+  <p>Kokoro is a small open text-to-speech model (82 million parameters) that runs on a CPU. It is
+  quick, it is Apache-2.0, and the voices are prebuilt. What it is not is a server: the model is a
+  file, and something has to answer HTTP requests with it.</p>
+  <p>The wrapper almost everyone runs is <a href="https://github.com/remsky/Kokoro-FastAPI"
+  target="_blank" rel="noopener">Kokoro-FastAPI</a>. It answers OpenAI's
+  <code>/v1/audio/speech</code> shape, which is exactly what fireside's voice-server plugin speaks,
+  so you do not need to write a bridge.</p>
+
+  <h2>1. Run it</h2>
+  <p>CPU, one command, no build:</p>
+  <pre><code>docker run --name kokoro-tts --restart unless-stopped -d \
+  -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest</code></pre>
+  <p>With an NVIDIA card, swap the image for <code>kokoro-fastapi-gpu:latest</code> and add
+  <code>--gpus all</code>. Check it answers:</p>
+  <pre><code>curl http://localhost:8880/v1/audio/voices</code></pre>
+  <p>You should get a list of voice names. Nothing else works until that does.</p>
+
+  <h2>2. Put HTTPS in front of it</h2>
+  <p>The container speaks plain HTTP on 8880. Two things go wrong if you expose that directly:
+  browsers refuse to call an insecure endpoint from a page served over HTTPS, and your speech
+  requests travel in the clear. Terminate TLS at a reverse proxy.</p>
+  <p>Caddy is the short route, because it gets and renews a certificate by itself. In a
+  <code>Caddyfile</code>:</p>
+  <pre><code>kokoro.example.com {
+  reverse_proxy kokoro:8880
+}</code></pre>
+  <p>That is the whole configuration if Caddy runs in the same Docker network as the container,
+  with the port reached as <code>kokoro:8880</code>. If Caddy runs on the host instead, publish the
+  port to loopback only (<code>-p 127.0.0.1:8880:8880</code>) and use
+  <code>reverse_proxy 127.0.0.1:8880</code>.</p>
+  <p>nginx is the same idea with more lines: a <code>server</code> block on 443 with
+  <code>ssl_certificate</code>, <code>ssl_certificate_key</code>, and
+  <code>proxy_pass http://127.0.0.1:8880;</code>. Certificates come from certbot.</p>
+  <p>The <a href="https://github.com/hwdsl2/docker-kokoro" target="_blank" rel="noopener">hwdsl2/docker-kokoro
+  image</a> is the same model with a README that walks through securing the server, the Caddy and
+  nginx examples, CORS and rate limiting in more detail than this page.</p>
+
+  <h2>3. Two things people hit</h2>
+  <ul>
+    <li><strong>CORS.</strong> The server sets no <code>Access-Control-Allow-Origin</code> by
+    default. If you call it from a page on a different origin, add the header at the proxy, not in
+    the container. Fireside calls it server-to-server, so it does not need CORS.</li>
+    <li><strong>Rate limiting.</strong> A public endpoint with no limit is a way for a stranger to
+    spend your electricity. Put a cap per client IP at the proxy.</li>
+  </ul>
+
+  <h2>4. Connect it to fireside</h2>
+  <p>In fireside, open <strong>Account → Voice</strong> and add a voice server. Give it the base URL
+  you published, ending in <code>/v1</code> — for example
+  <code>https://kokoro.example.com/v1</code>. Leave the key blank unless your proxy asks for one.
+  Pick a voice, and the next chapter renders through your machine.</p>
+  <p>Nothing about this costs fireside anything, and nothing about it is metered. Your hardware,
+  your electricity, your text staying where you put it.</p>
+
+  <h2>If you would rather not run a server</h2>
+  <p>Two other routes, both on the <a href="/pricing">price list</a>: connect your own Microsoft
+  Azure speech key (you pay Azure directly), or add dollars to your wallet and our voice reads to
+  you at the standard rate.</p>
+
+  <p class="meta">The commands above are the upstream projects' own at the time of writing. Their
+  READMEs are the source of truth for image tags and options.</p>
+
+  <nav class="foot" aria-label="About fireside">
+    <a href="/about">About</a>
+    <a href="/contact">Contact us</a>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+  </nav>
+
+  <a class="back" href="/">← Back to fireside</a>
+</main>
+</body>
+</html>
