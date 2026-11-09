@@ -481,6 +481,18 @@ class App:
         """The privacy policy. Public, static, and store-listing mineable."""
         return self._legal("privacy.html")
 
+    def about(self, q, body):
+        """What this is, who runs it, and what it costs. Public: a store listing
+        and a stranger deciding whether to sign up both need it without an
+        account, which is the same reason the price list is public."""
+        return self._legal("about.html")
+
+    def contact(self, q, body):
+        """The one address, on a page rather than only at the bottom of a
+        policy. Public because the people who need it most are the ones who
+        cannot get in."""
+        return self._legal("contact.html")
+
     def terms(self, q, body):
         """The terms of service. Public, static, and store-listing mineable."""
         return self._legal("terms.html")
@@ -1490,6 +1502,7 @@ class App:
                              "reason": getattr(quote, "refusal_reason", "")}
             price = float(getattr(quote, "price", 0.0) or 0.0)
             if price > 0:
+                allowance.welcome(self.conn, user)
                 allowance.due(self.conn, user)
                 try:
                     res_id = accounting.reserve(self.conn, user, price,
@@ -1565,6 +1578,7 @@ class App:
         """The signed-in user's character balance, plus what a sale connection
         would charge. Read-only: buying happens at /credits/purchase."""
         uid = self._uid(q, body)
+        allowance.welcome(self.conn, uid)
         allowance.due(self.conn, uid)
         out = {
             "balance": accounting.balance(self.conn, uid),
@@ -3029,6 +3043,7 @@ GET_ROUTES = {
     "/icon-192.png": "icon192", "/icon-512.png": "icon512",
     "/icon-maskable-512.png": "icon_maskable",
     "/privacy": "privacy", "/terms": "terms", "/delete-account": "delete_account",
+    "/about": "about", "/contact": "contact",
     "/pricing": "pricing", "/checkout": "checkout",
     "/health": "health", "/plugins": "plugins", "/library": "library_list",
     "/series": "series_list", "/tags": "tags_get",
@@ -3116,6 +3131,7 @@ def signature_header(headers, provider_id="stripe"):
 PUBLIC_ROUTES = {"/", "/index.html", "/i18n.js", "/favicon.ico", "/health", "/auth/providers",
                  "/auth/policy", "/auth/forgot", "/auth/reset", "/me", "/plans",
                  "/privacy", "/terms", "/delete-account", "/pricing", "/checkout",
+                 "/about", "/contact",
                  # A signed-out visitor sees prices before signing in, so the
                  # overlay's price ids have to be readable without a session.
                  "/billing/config",

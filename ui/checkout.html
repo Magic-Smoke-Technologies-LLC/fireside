@@ -39,6 +39,10 @@
     background:var(--raise);color:var(--faint);border:1px solid var(--line);text-decoration:none}
   .card.feature{border-color:var(--flame)}
   .note{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:18px 0}
+  .foot{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
+        display:flex;gap:18px;flex-wrap:wrap;font-size:14px}
+  .foot a{color:var(--faint);text-decoration:none}
+  .foot a:hover{color:var(--text)}
 </style>
 </head>
 <body>
@@ -69,6 +73,13 @@
   details are collected.</p>
 
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px">
+  <nav class="foot" aria-label="About fireside">
+    <a href="/about">About</a>
+    <a href="/contact">Contact us</a>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+  </nav>
+
     <a class="back" href="#" id="pay" aria-disabled="true"
        style="opacity:.5;cursor:not-allowed;border-color:var(--line)" onclick="return false">Pay (disabled)</a>
     <a class="back" href="/pricing">← Back to pricing</a>

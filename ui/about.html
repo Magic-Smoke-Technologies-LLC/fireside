@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About — fireside</title>
+<meta name="color-scheme" content="dark">
+<style>
+  :root{
+    --bg:#14110f; --surface:#1d1916; --raise:#241f1b; --line:#332c26;
+    --text:#efe7dd; --faint:#9a8f83; --flame:#e3a857; --on-flame:#241808;
+    --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 var(--ui);
+       -webkit-font-smoothing:antialiased}
+  main{max-width:720px;margin:0 auto;padding:56px 22px 96px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  header img{width:40px;height:40px;border-radius:10px}
+  h1{font-size:26px;margin:18px 0 4px;letter-spacing:-.01em}
+  h2{font-size:17px;margin:34px 0 8px;color:var(--flame);letter-spacing:.01em}
+  p,li{color:var(--text)}
+  .lead{color:var(--faint)}
+  ul{padding-left:20px}
+  li{margin:5px 0}
+  a{color:var(--flame)}
+  .meta{color:var(--faint);font-size:13px;margin-top:6px}
+  .foot{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
+        display:flex;gap:18px;flex-wrap:wrap;font-size:14px}
+  .foot a{color:var(--faint);text-decoration:none}
+  .foot a:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<main>
+  <header><img src="/icon-192.png" alt=""><strong>fireside</strong></header>
+  <h1>About fireside</h1>
+  <p class="meta">Last updated: 9 November 2026</p>
+
+  <p class="lead">fireside turns a book or a web story into audio you can play, pause, resume
+  and keep. Every chapter is rendered to a finished audio file before it plays, so playback
+  does not stall partway the way a live read-aloud does. Close the tab, come back a week
+  later, and it carries on where you stopped.</p>
+
+  <h2>What it does</h2>
+  <ul>
+    <li><strong>Bring your own books.</strong> An EPUB from your shelf, or a link to a story
+      on the web. Both land on the same shelf.</li>
+    <li><strong>Pick the voice.</strong> Connect your own speech key, or buy narration from
+      us by the character.</li>
+    <li><strong>Keep it.</strong> A chapter is voiced once and stored, so listening to it
+      again costs nothing.</li>
+  </ul>
+
+  <h2>How the money works</h2>
+  <p>Narration is the cost. We buy it from a speech provider and charge the provider's rate
+  plus a small margin that covers the payment fee and support, currently $19.63 per million
+  characters, about fifteen hours of listening. If you connect your own speech key, you pay
+  the provider directly and pay us nothing for narration. The hosted service is run by
+  __COMPANY__; the software itself is open source, and you can run your own server and pay
+  nobody for it.</p>
+
+  <nav class="foot" aria-label="About fireside">
+    <a href="/about">About</a>
+    <a href="/contact">Contact us</a>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+  </nav>
+
+  <a class="back" href="/">← Back to fireside</a>
+</main>
+</body>
+</html>

@@ -100,5 +100,73 @@ class AllowanceTest(unittest.TestCase):
         self.assertEqual(allowance.due(self.conn, "nobody"), 0)
 
 
+class WelcomeGrantTest(unittest.TestCase):
+    """The $3 welcome credit: once in the life of the account, and only after
+    the first real charge. A trial is not a charge, which is the whole reason
+    the gate is status "active" and not billing.active()."""
+
+    def setUp(self):
+        self.conn = connect(":memory:")
+        self.uid = "u1"
+        self.conn.execute("INSERT INTO users(id,name,created_at) VALUES(?,?,?)",
+                          (self.uid, "test", "0"))
+        self.conn.commit()
+
+    def _sub(self, plan=quota.PLATFORM_PLAN, status="active", days=20):
+        end = int(time.time()) + days * 86400
+        return billing.upsert(self.conn, self.uid, plan, status,
+                              current_period_end=end)
+
+    def test_free_account_gets_nothing(self):
+        self._sub(plan=quota.FREE_PLAN)
+        self.assertEqual(allowance.welcome(self.conn, self.uid), 0)
+        self.assertEqual(accounting.balance(self.conn, self.uid), 0.0)
+
+    def test_a_trial_is_not_a_charge(self):
+        self._sub(status="trialing")
+        self.assertEqual(allowance.welcome(self.conn, self.uid), 0)
+        self.assertEqual(accounting.balance(self.conn, self.uid), 0.0)
+        # the trial still carries the plan's included credit, as it always did
+        self.assertEqual(allowance.due(self.conn, self.uid),
+                         quota.PLATFORM_MONTH_GRANT)
+        self.assertEqual(accounting.balance(self.conn, self.uid),
+                         quota.PLATFORM_MONTH_GRANT)
+
+    def test_the_first_paid_month_gets_it_once(self):
+        self._sub(status="trialing")
+        allowance.welcome(self.conn, self.uid)
+        # the trial converts: the provider says active on the same period
+        self._sub(status="active")
+        self.assertEqual(allowance.welcome(self.conn, self.uid),
+                         quota.WELCOME_GRANT)
+        self.assertEqual(allowance.welcome(self.conn, self.uid), 0)
+        allowance.due(self.conn, self.uid)
+        self.assertEqual(accounting.balance(self.conn, self.uid),
+                         quota.WELCOME_GRANT + quota.PLATFORM_MONTH_GRANT)
+
+    def test_a_cancel_and_resubscribe_cannot_recollect_it(self):
+        self._sub(days=20)
+        allowance.welcome(self.conn, self.uid)
+        self._sub(status="canceled", days=20)
+        self.assertEqual(allowance.welcome(self.conn, self.uid), 0)
+        self._sub(status="active", days=60)
+        self.assertEqual(allowance.welcome(self.conn, self.uid), 0)
+
+    def test_a_character_wallet_never_gets_dollars(self):
+        other = "u_old"
+        self.conn.execute("INSERT INTO users(id,name,created_at) VALUES(?,?,?)",
+                          (other, "old", "0"))
+        self.conn.commit()
+        accounting.topup(self.conn, other, 1000, currency="chars")
+        billing.upsert(self.conn, other, quota.PLATFORM_PLAN, "active",
+                       current_period_end=int(time.time()) + 20 * 86400)
+        self.assertEqual(allowance.welcome(self.conn, other), 0)
+        self.assertEqual(accounting.currency(self.conn, other), "chars")
+
+    def test_unknown_user_is_harmless(self):
+        self.assertEqual(allowance.welcome(self.conn, "nobody"), 0)
+        self.assertEqual(allowance.welcome(self.conn, ""), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
