@@ -195,3 +195,36 @@ Two things this needs in code that do not exist yet:
 A user with no subscription cannot use that path (it bills "to a
 subscription"), so the top-up button is only live for subscribed accounts, or
 we open a one-off checkout for the same price. Decide later; not blocking.
+
+### Wallet only, and the $5 floor (2026-11-09, Chris)
+
+Two calls settled the shape of the top-up:
+
+1. **Wallet only.** There is no "buy this book for $0.42" one-off. A book is paid
+   for out of the dollar balance like every other render. One route, one
+   balance, one thing to keep correct. The button in the UI is therefore
+   **add funds**, never a per-book checkout.
+2. **$5 minimum.** The floor is $5 per load. Chris named the friction himself:
+   with $0.42 left, a $0.45 book forces a $5 load. That is accepted, because
+   the balance rolls and the leftover stays visible; $5 is also the point where
+   Paddle's fee stops eating the load (15% at $5, 21.7% at $3).
+
+Consequences that are now spec, not preference:
+
+- **No plan check anywhere in the render path.** Free accounts render with our
+  hosted voice. Plan rows only set the monthly allowance and the storage cap
+  (free = 0 chars allowance, 500 MB shelf). Verified 11-09 against
+  `host/app.py` `credits_purchase` and the render reserve path.
+- **A render that exceeds the balance on the estimate is refused up front**
+  (the existing `402 needed/available` shape). The refusal must offer the
+  top-up with the real remaining balance shown, not a dead error.
+- **Negative balance has exactly one legitimate cause**: the final cost came in
+  above the estimate and we absorb the overage (Chris, 11-09: "the only time
+  negative should happen is when the cost exceeds the estimate"). So the debit
+  that follows a run must clamp nothing and must write the reason: a charge row
+  with an `absorbed` note and the estimate-vs-final numbers. A negative balance
+  with no such note is a bug, and the one place to look is `accounting._debit`.
+- **The free-plan copy is stale** in `ui/index.html` ("stay on the free plan and
+  connect a voice first"): that sentence was written when credit was characters
+  and only subscribers had a reason to buy. It is corrected to say the free plan
+  is the whole product plus dollars.

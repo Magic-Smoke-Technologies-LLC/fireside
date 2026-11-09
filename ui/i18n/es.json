@@ -41,7 +41,6 @@
   "Booted {n} session(s) across the server.": "Cerradas {n} sesión(es) en todo el servidor.",
   "Buy blocks": "Comprar bloques",
   "Buy characters": "Comprar caracteres",
-  "Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, stay on the free plan and connect a voice first.": "Compra la plataforma solo si ya tienes un proveedor de voz o estás a punto de añadir uno. Si no tienes ninguno, quédate en el plan gratis y conecta una voz primero.",
   "Buying is not switched on yet, so nothing can be charged.": "Las compras aún no están activadas, así que no se puede cobrar nada.",
   "Buying is not switched on yet, so nothing was charged.": "Las compras aún no están activadas, así que no se cobró nada.",
   "Cancel": "Cancelar",
@@ -462,7 +461,8 @@
   "＋ Add a word": "＋ Añadir una palabra",
   "＋ Create series…": "＋ Crear serie…",
   "＋ Queue": "＋ Añadir a la cola",
-  "Pick a voice before converting.": "Elige una voz antes de convertir."
+  "Pick a voice before converting.": "Elige una voz antes de convertir.",
+  "Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.": "Compra la plataforma solo si ya tienes un proveedor de voz o estás a punto de añadir uno. Si no tienes ninguno, el plan gratis sigue siendo el lector completo: añade dólares a tu monedero y nuestra voz te lee."
  },
  "name": "Español"
 }

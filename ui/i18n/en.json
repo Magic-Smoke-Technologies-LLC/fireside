@@ -42,7 +42,6 @@
   "Booted {n} session(s) across the server.": "Booted {n} session(s) across the server.",
   "Buy blocks": "Buy blocks",
   "Buy characters": "Buy characters",
-  "Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, stay on the free plan and connect a voice first.": "Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, stay on the free plan and connect a voice first.",
   "Buying is not switched on yet, so nothing can be charged.": "Buying is not switched on yet, so nothing can be charged.",
   "Buying is not switched on yet, so nothing was charged.": "Buying is not switched on yet, so nothing was charged.",
   "Cancel": "Cancel",
@@ -463,6 +462,7 @@
   "＋ Add a word": "＋ Add a word",
   "＋ Create series…": "＋ Create series…",
   "＋ Queue": "＋ Queue",
-  "Pick a voice before converting.": "Pick a voice before converting."
+  "Pick a voice before converting.": "Pick a voice before converting.",
+  "Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.": "Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you."
  }
 }
