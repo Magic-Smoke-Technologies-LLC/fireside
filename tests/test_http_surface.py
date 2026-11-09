@@ -313,3 +313,28 @@ class TestHandlerHelpers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPricingIsTheApp(Base):
+    """/pricing is the app opened on its price view, not a second design.
+
+    It used to be a standalone static page with its own header and its own
+    checkout script, which is why the live site looked like two products and why
+    the app could say "Not for sale yet" while that page charged a card. One
+    route, one page, one checkout. The page must still be readable before an
+    account exists, because a payment processor's reviewer reads it first.
+    """
+
+    def test_serves_the_app_shell(self):
+        r = self.get("/pricing")
+        body = r.read().decode()
+        self.assertIn('id="v-plans"', body)
+        self.assertIn("Paddle.Initialize", body)
+
+    def test_prices_are_in_the_html_not_only_in_script(self):
+        # Crawlable: a page whose prices only exist after a fetch is a page a
+        # reviewer can see empty.
+        body = self.get("/pricing").read().decode()
+        self.assertIn("$19.63 per million characters", body)
+        self.assertIn("or $36 a year", body)
+        self.assertIn("or $240 a year", body)

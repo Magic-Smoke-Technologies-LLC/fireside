@@ -557,11 +557,15 @@ class TestPricingPageWiring(unittest.TestCase):
     callback, and the enable loop and the test-mode note after it never ran. A
     source check can only prove the page as shipped; the live proof is a
     headless load that sees the buttons enabled.
+
+    The page is now ui/index.html: /pricing serves the app opened on its price
+    view, so the wiring moved with the prices rather than staying on a second
+    static page that had drifted from the app it sold.
     """
 
     def setUp(self):
         here = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(here, "..", "ui", "pricing.html"), encoding="utf-8") as fh:
+        with open(os.path.join(here, "..", "ui", "index.html"), encoding="utf-8") as fh:
             self.page = fh.read()
         self.init = self.page.split("Paddle.Initialize", 1)[-1].split("})", 1)[0]
 
@@ -570,16 +574,23 @@ class TestPricingPageWiring(unittest.TestCase):
                          "Paddle.js rejects this option and the page goes dead")
 
     def test_initialize_carries_the_client_token(self):
-        self.assertIn("conf.client_token", self.init)
+        self.assertIn("cfg.client_token", self.init)
 
     def test_a_failed_initialize_still_tells_the_visitor(self):
         # A dead button with no reason is the failure this page must not have.
         self.assertIn("try {", self.page)
         self.assertIn("did not start", self.page)
 
-    def test_buttons_start_disabled_and_are_enabled_from_config(self):
-        self.assertIn("b.disabled = false", self.page)
-        self.assertIn("Try checkout (test)", self.page)
+    def test_buttons_are_disabled_until_a_price_exists(self):
+        # The page sells a cycle only when it has a price id for that cycle;
+        # otherwise it says so instead of opening an overlay that cannot charge.
+        self.assertIn("Not for sale yet", self.page)
+        self.assertIn("paddlePriceId(cfg, t.id, cycle)", self.page)
+
+    def test_the_yearly_cycle_is_reachable(self):
+        # It lived only on the static page, so the app could not sell a year.
+        self.assertIn("buyPlan(t.id, cycle)", self.page)
+        self.assertIn("'year'", self.page)
 
 
 class TestSignatureHeader(unittest.TestCase):

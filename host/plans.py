@@ -35,7 +35,7 @@ def _price_of(provider, plan_id):
 
 
 # The published list price, monthly and annual, in cents. This is our own price
-# (docs/PRICING.md, ui/pricing.html), not a provider's. It exists so a screen can
+# (docs/PRICING.md, the price view in ui/index.html), not a provider's. It exists so a screen can
 # print the real numbers while payments are still switched off, labelling them
 # "not for sale yet" instead of printing "price not set", which told a reader
 # nothing about what the tier costs. When a provider IS registered, its price

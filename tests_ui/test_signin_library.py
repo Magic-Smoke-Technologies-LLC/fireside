@@ -36,6 +36,19 @@ class TestSignInAndLibrary(BrowserTest):
             "() => document.body.classList.contains('locked')"))
         self.assert_no_page_errors()
 
+    def test_the_runtime_translates_not_just_the_markup(self):
+        """Spanish has two halves, and the script half was the quiet one.
+
+        The host renders data-t markup in Spanish, so a page check passed
+        while i18n.js had loaded BEFORE the catalog tag, captured an empty
+        object, and left T() returning its key: every toast, dialog and card
+        drawn by script stayed English for a Spanish reader.
+        """
+        self.page.goto(self.host.url("/?lang=es"))
+        wait_until(self.page, "() => document.readyState === 'complete'")
+        self.assertEqual(self.page.evaluate("() => document.documentElement.lang"), "es")
+        self.assertEqual(self.page.evaluate("() => T('Sign in')"), "Entrar")
+
     def test_registering_lands_in_an_empty_library_of_their_own(self):
         self.register("ui_first")
         self.wait_library(0)

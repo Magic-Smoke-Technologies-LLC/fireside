@@ -26,7 +26,12 @@
 
   function t(msgid, vars) {
     if (typeof msgid !== 'string') return msgid;
-    var s = C.messages[msgid];
+    // Read the catalog from the window at call time, not from the copy this
+    // closure took at load: the injected script is in the same head, and the
+    // order of two script tags should not be able to turn every runtime
+    // message back into English.
+    var cat = (window.__FS_I18N__ || C).messages || {};
+    var s = cat[msgid];
     return fmt(s === undefined ? msgid : s, vars);
   }
 
