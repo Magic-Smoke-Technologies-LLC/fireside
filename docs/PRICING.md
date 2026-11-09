@@ -203,6 +203,17 @@ greedy. My own note at the time: $3 survives 50 subscribers (~$84/mo net) and it
 caps the slope at about half of what $6 would earn at the same headcount, so the
 tier's job is retention and the character line keeps the margin.
 
+### Revised 2026-11-09: monthly is dearer than a year
+
+Chris's call: **$5/$10/$22 a month, $36/$96/$240 a year** (which is $3/$8/$20 a
+month when the year is paid up front). The yearly price is unchanged and is now
+the only place a reader sees the old monthly figure; that is the point of it.
+
+Paddle cannot edit a price's amount, so this is three new monthly prices
+(500/1000/2200 cents) and three archived ones. A subscriber left on the old
+monthly price keeps paying $3 until their plan changes, which is the honest
+default: no silent increase mid-period.
+
 ## What $5 buys, said out loud (2026-11-09)
 
 Dollar credits removed the one number a buyer could reason with. The wallet now

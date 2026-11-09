@@ -540,7 +540,15 @@
   .pricegrid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));margin-top:18px}
   .prcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;
     padding:20px 18px;display:flex;flex-direction:column}
+  /* The plan you are already on is a state, not a sentence. */
   .prcard.on{border-color:var(--flame)}
+  .prcard.current{background:color-mix(in srgb,var(--flame) 7%,var(--surface));
+    box-shadow:inset 0 0 0 1px var(--flame)}
+  .nowbadge{display:inline-block;margin-top:8px;padding:3px 9px;border-radius:999px;
+    font:500 11.5px var(--ui);letter-spacing:.04em;text-transform:uppercase;
+    color:var(--flame);border:1px solid var(--flame)}
+  .prcard .btn:disabled{opacity:.55;cursor:default}
+
   .prcard .rung{font:400 21px/1.2 var(--serif);letter-spacing:.01em}
   .prcard .amount{font:400 31px/1.1 var(--serif);margin-top:8px;letter-spacing:-.01em}
   .prcard .amount span{font:400 13px var(--ui);color:var(--faint);letter-spacing:0}
@@ -1162,7 +1170,6 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       <button data-p="voice" data-t="Voice">Voice</button>
       <button data-p="reading" data-t="Reading">Reading</button>
       <button data-p="words" data-t="Words">Words</button>
-      <button data-p="plan" data-t="Plan &amp; storage">Plan &amp; storage</button>
       <button data-p="account" data-t="Account">Account</button>
     </nav>
 
@@ -1239,23 +1246,6 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
         <button class="btn" id="pronsave" type="button" data-t="Save">Save</button>
       </div>
       <div id="pronmsg" class="sub" style="margin-top:8px"></div>
-    </div>
-
-    <div class="setpanel" data-p="plan">
-      <h3 style="margin-top:24px" data-t="Characters">Characters</h3>
-      <p class="sub" data-t="A metered voice charges by the character. Voices you connect yourself are not metered and do not touch this number.">A metered voice charges by the character. Voices you connect yourself are not metered and do not touch this number.</p>
-      <div id="creditsbox" class="small" style="margin-top:8px" data-t="Checking your balance…">Checking your balance…</div>
-      <div id="creditsrate" class="sub" style="margin-top:6px"></div>
-      <div id="creditsbuy" style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"></div>
-      <div id="creditsmsg" class="sub" style="margin-top:8px"></div>
-      <h3 style="margin-top:24px" data-t="Plan &amp; storage">Plan &amp; storage</h3>
-      <p class="sub" data-t="Your tier sets how much you can keep. Storage counts once per book you hold; delete a book and its bytes come back.">Your tier sets how much you can keep. Storage counts once per book you hold; delete a book and its bytes come back.</p>
-      <div id="planusage" class="small" style="margin-top:8px" data-t="loading…">loading…</div>
-      <div class="prog" id="planbar" style="margin-top:6px;display:none"><i id="planbarfill"></i></div>
-      <div id="plancards" style="margin-top:14px;display:flex;gap:12px;flex-wrap:wrap"></div>
-      <div id="planblocks" style="margin-top:14px"></div>
-      <div id="planmsg" class="sub" style="margin-top:8px"></div>
-      <div style="margin-top:14px"><button class="btn" id="gotoplans" type="button" data-t="Compare plans and buy →">Compare plans and buy →</button></div>
     </div>
 
     <div class="setpanel" data-p="account">
@@ -1462,6 +1452,8 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
         </ul>
       </div>
     </div>
+
+    <div id="pagebuys" hidden></div>
 
     <h3 style="margin-top:34px" data-t="Run it yourself, free">Run it yourself, free</h3>
     <p class="sub" data-t="fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.">fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.</p>
@@ -3451,23 +3443,45 @@ function paddlePriceId(cfg, id, cycle) {
 }
 function planCard(t, plan, cat, cfg) {
   const free = t.id === 'free';
+  const isCurrent = t.id === plan;
   const card = document.createElement('div');
-  card.className = 'prcard' + (t.id === plan ? ' on' : '');
+  card.className = 'prcard' + (isCurrent ? ' on current' : '');
   const rung = document.createElement('div'); rung.className = 'rung';
   rung.textContent = t.label || t.id; card.append(rung);
+  if (isCurrent) {
+    const badge = document.createElement('div'); badge.className = 'nowbadge'; badge.textContent = T('Your plan');
+    card.append(badge);
+  }
 
+  // The big number follows the cycle that is switched on, because $5 a month
+  // and $36 a year are the same card and the reader should not have to do the
+  // arithmetic to compare them.
   const amount = document.createElement('div'); amount.className = 'amount';
   const cents = shownCents(t);
-  amount.textContent = free ? '$0' : (cents == null ? T('price not set') : usd(cents));
-  if (!free && cents != null) {
-    const per = document.createElement('span'); per.textContent = ' ' + T('/ month');
-    amount.append(per);
-  }
+  const annual = t.list_annual_cents;
+  const paintAmount = (cycle) => {
+    amount.textContent = '';
+    if (free) { amount.textContent = '$0'; return; }
+    if (cycle === 'year' && annual != null) {
+      amount.textContent = usd(annual);
+      const per = document.createElement('span'); per.textContent = ' ' + T('/ year');
+      amount.append(per); return;
+    }
+    amount.textContent = cents == null ? T('price not set') : usd(cents);
+    if (cents != null) {
+      const per = document.createElement('span'); per.textContent = ' ' + T('/ month');
+      amount.append(per);
+    }
+  };
+  paintAmount('month');
   card.append(amount);
 
   const yearly = document.createElement('div'); yearly.className = 'yearly';
   if (free) yearly.textContent = T('no card, no expiry');
-  else if (t.list_annual_cents != null) yearly.textContent = T('or {x} a year', {x: usd(t.list_annual_cents)});
+  else if (annual != null) {
+    const perMonth = Math.round(annual / 12);
+    yearly.textContent = T('or {x} a year, {y} a month', {x: usd(annual), y: usd(perMonth)});
+  }
   card.append(yearly);
 
   // What the rung includes, built from the catalog, so the numbers on the card
@@ -3529,7 +3543,8 @@ function planCard(t, plan, cat, cfg) {
         offer.forEach(o => {
           const b = document.createElement('button'); b.type = 'button';
           b.textContent = o.label; b.setAttribute('aria-pressed', o === pick ? 'true' : 'false');
-          b.onclick = () => { pick = o;
+          b.disabled = isCurrent;
+          b.onclick = () => { pick = o; paintAmount(o.c);
             bar.querySelectorAll('button').forEach(x =>
               x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
             paint(); };
@@ -3537,12 +3552,13 @@ function planCard(t, plan, cat, cfg) {
         });
         buy.append(bar);
       }
-      paint(); buy.append(go);
+      paint(); paintAmount(pick.c);
+      if (isCurrent) {
+        go.disabled = true;
+        bar && bar.querySelectorAll('button').forEach(x => { x.disabled = true; });
+      }
+      buy.append(go);
     }
-  }
-  if (t.id === plan) {
-    const now = document.createElement('p'); now.className = 'sub'; now.style.margin = '0';
-    now.textContent = T('This is your current plan.'); buy.append(now);
   }
   card.append(buy);
   return card;
@@ -3627,6 +3643,67 @@ async function buyPlan(id, cycle) {
   try { await startCheckout({ plan: id }, msg); }
   catch (e) { if (msg) msg.textContent = errorText(e); }
 }
+// The two one-time things a signed-in reader buys, next to the plans: money in
+// the wallet, and more room on the shelf. Both were in Settings and neither
+// belonged there; a reader deciding what to spend wants them on the prices.
+function renderPageBuys(box, s, cat, cfg) {
+  const can = !!(cat && cat.payments_configured);
+  const note = (el, text) => { el.textContent = text; };
+  const msg = document.createElement('div'); msg.className = 'sub'; msg.style.marginTop = '8px';
+
+  const funds = document.createElement('section');
+  const h = document.createElement('h3'); h.style.marginTop = '34px'; h.textContent = T('Add funds');
+  const p = document.createElement('p'); p.className = 'sub';
+  p.textContent = T('Dollars in the wallet pay for narration, at the rate below. They do not expire. A plan already grants some each period.');
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap';
+  funds.append(h, p, row);
+  const usdToBuy = (usd) => async () => {
+    note(msg, T('Opening the payment page\u2026'));
+    try {
+      const r = await jpostIdem('/credits/purchase',
+        { usd: Number(usd), return_url: location.origin + location.pathname });
+      if (r.url) { location.href = r.url; return; }
+      note(msg, '+' + nchar(r.chars) + ' characters. Reference ' + r.reference + '.');
+    } catch (e) {
+      note(msg, e.status === 503 ? T('Buying is not switched on yet, so nothing was charged.')
+        : (e.message || 'could not add funds'));
+    }
+  };
+  if (!can) {
+    const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
+    b.textContent = T('Not for sale yet'); b.disabled = true; row.append(b);
+  } else {
+    const inp = document.createElement('input'); inp.type = 'number'; inp.min = '1';
+    inp.value = '5'; inp.style.maxWidth = '100px';
+    const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
+    b.textContent = T('Add funds'); b.onclick = () => usdToBuy(Math.max(1, parseFloat(inp.value || '0')))();
+    row.append(inp, b);
+  }
+
+  const room = document.createElement('section');
+  const h2 = document.createElement('h3'); h2.style.marginTop = '28px'; h2.textContent = T('More storage');
+  const st = cat && cat.storage;
+  const p2 = document.createElement('p'); p2.className = 'sub';
+  p2.textContent = st
+    ? T('{b} per block, {p}. You have {n}. Storage counts once per book you hold; delete a book and its bytes come back.',
+        { b: fmtBytes(st.block_bytes), p: st.amount_cents != null ? usd(st.amount_cents) + ' a ' + (st.interval || 'month') : T('price not set yet'), n: (s.storage_blocks || 0) + ' block(s)' })
+    : T('Storage is not priced on this server yet.');
+  const row2 = document.createElement('div');
+  row2.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap';
+  room.append(h2, p2, row2);
+  if (st) {
+    const inp = document.createElement('input'); inp.type = 'number'; inp.min = '1'; inp.value = '1';
+    inp.style.maxWidth = '90px';
+    const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
+    b.textContent = T('Buy blocks');
+    b.disabled = !(can && st.amount_cents != null);
+    if (b.disabled) b.title = T('Not for sale yet');
+    b.onclick = () => startCheckout({ plan: st.addon, quantity: Math.max(1, parseInt(inp.value || '1', 10)) }, msg);
+    row2.append(inp, b);
+  }
+  box.append(funds, room, msg);
+}
 async function loadPlansPage() {
   const box = $('#pageplans'); if (!box) return;
   let s = {}, cat = null, cfg = null;
@@ -3641,6 +3718,15 @@ async function loadPlansPage() {
   box.innerHTML = '';
   ((cat && cat.tiers) || []).forEach(t => box.append(planCard(t, plan, cat, cfg)));
   if (!cat || !cat.tiers) box.textContent = T('Could not load the plans just now.');
+  // Buying all lives here now: the plan, the wallet, the storage. The settings
+  // page no longer sells anything, so this is the one place a returning reader
+  // can add dollars or room without hunting through Account.
+  const buys = $('#pagebuys');
+  if (buys) {
+    buys.innerHTML = '';
+    buys.hidden = !AUTH.user;
+    if (AUTH.user) renderPageBuys(buys, s, cat, cfg);
+  }
   const sl = $('#pagesignupline');
   if (sl) sl.style.display = AUTH.user ? 'none' : '';
   const msg = $('#pageplanmsg');

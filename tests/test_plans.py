@@ -70,7 +70,7 @@ class TestPolicy(unittest.TestCase):
         # can print what the rung costs instead of "price not set"; the charged
         # amount stays None until a provider supplies it.
         self.assertEqual([t["list_amount_cents"] for t in cat["tiers"]],
-                         [None, 300, 800, 2000])
+                         [None, 500, 1000, 2200])
         self.assertEqual([t["list_annual_cents"] for t in cat["tiers"]],
                          [None, 3600, 9600, 24000])
         self.assertEqual(cat["storage"]["block_bytes"], quota.STORAGE_BLOCK_BYTES)
@@ -87,7 +87,7 @@ class TestPolicy(unittest.TestCase):
         self.assertEqual(plat["amount_cents"], 300)
         # a provider price wins over the list; the list is still reported, so a
         # screen that shows "our price" cannot silently drift from the charge
-        self.assertEqual(plat["list_amount_cents"], 300)
+        self.assertEqual(plat["list_amount_cents"], 500)
         self.assertEqual(cat["storage"]["amount_cents"], 100)
 
 
