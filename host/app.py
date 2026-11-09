@@ -476,6 +476,11 @@ class App:
             if os.path.exists(os.path.join(ASSETS_DIR, "hearth-poster.jpg")):
                 poster = ' poster="/hearth-poster.jpg"'
         page = page.replace("__HEARTH_POSTER__", poster).replace("__HEARTH__", hearth)
+        # Analytics is the operator's, not the product's: a self-hosted copy
+        # ships no tag because there is no id in its environment. The page
+        # refuses anything that is not a GA4 measurement id, so a typo is an
+        # absent tag rather than a broken one.
+        page = page.replace("__GA_ID__", (os.environ.get("FIRESIDE_GA_ID") or "").strip()[:32])
         # localisable: the handler picks the language and splices the catalog in,
         # because only the request knows the cookie and Accept-Language.
         # The theme rides the same render: applied after paint it is a flash of

@@ -898,6 +898,21 @@
   proto.pause = function () { nm('stop'); return _pause.apply(this, arguments); };
 })();
 </script>
+<script>
+/* Analytics, if this deployment has one. Two rules live here and they are the
+   whole reason the block exists rather than a pasted snippet:
+
+   1. FS_GA arrives from the render (FIRESIDE_GA_ID), so a self-hosted copy with
+      no id ships no tag at all. An empty id is the honest default.
+   2. The consent DEFAULT has to be on the page before gtag.js is ever
+      injected. A default written after the tag loads is a default that never
+      applied, and the first pageview is collected anyway. */
+window.FS_GA = "__GA_ID__";
+window.dataLayer = window.dataLayer || [];
+function gtag() { window.dataLayer.push(arguments); }
+gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
+                            ad_personalization: 'denied', analytics_storage: 'denied'});
+</script>
 </head>
 <body class="locked">
 <a class="skip" href="#main" data-t="Skip to content">Skip to content</a>
@@ -1301,6 +1316,13 @@
       </div>
       <div id="sessmsg" class="sub" style="margin-top:8px"></div>
       <h3 style="margin-top:30px" data-t="Privacy &amp; terms">Privacy &amp; terms</h3>
+      <div id="gaoptwrap" hidden>
+        <label style="display:flex;gap:10px;align-items:flex-start;margin:0 0 6px;font-weight:500;text-transform:none;letter-spacing:0;font-size:15px">
+          <input type="checkbox" id="gaopt" style="margin-top:3px;width:auto">
+          <span data-t="Send anonymous usage statistics to Google Analytics">Send anonymous usage statistics to Google Analytics</span>
+        </label>
+        <p class="hint" data-t="Off until you say so. It helps us see which pages people read and where they leave. It sets Google’s cookies, and turning it back off stops them being used.">Off until you say so. It helps us see which pages people read and where they leave. It sets Google’s cookies, and turning it back off stops them being used.</p>
+      </div>
       <p class="sub">What we collect, who we share it with, and how to ask us to delete your
         account. <a href="/privacy" target="_blank" rel="noopener" data-t="Read the privacy policy →">Read the privacy policy →</a>
         The rules for using the service are in the
@@ -1879,6 +1901,7 @@ function show(v, mode) {
   if (v === 'plans') loadPlansPage();
   if (v === 'adm') { if (AUTH.admin) loadAdmin(); else show('lib'); }
   if (v === 'lib') renderActiveJobs();
+  fsPageView(v);
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => show(b.dataset.v));
 const brandhome = $('#brandhome'); if (brandhome) brandhome.onclick = () => {
@@ -2073,6 +2096,65 @@ function buildThemeControl(mount) {
     sel.value = FS_THEMES.includes(boot) ? boot : '';
     sel.onchange = () => applyTheme(sel.value, true);
   }
+})();
+
+// --- analytics: loaded cookieless, full only if the reader asks -------------
+// Two jobs, and the order between them is the whole design:
+//
+//  * the tag loads on every page, because an operator asking "how many people
+//    read this" deserves an answer for the visitors who never sign up. It loads
+//    with analytics_storage DENIED, which is GA4's cookieless mode: no cookie,
+//    no identifier, one ping per pageview. The consent default is set in the
+//    HEAD, before this file can inject gtag.js, so nothing here can quietly turn
+//    it into a cookie-setting tag.
+//  * a reader who ticks the box gets the ordinary, cookie-backed tag, and can
+//    untick it again.
+//
+// A deployment with no FIRESIDE_GA_ID ships no tag at all, and an id this page
+// does not recognise is treated the same: half a tag is a console error on
+// every load.
+let GA_ON = false;
+try { GA_ON = localStorage.getItem('fs.analytics') === '1'; } catch (_) {}
+function gaId() {
+  const id = String(window.FS_GA || '').trim();
+  return /^G-[A-Z0-9]{4,}$/i.test(id) ? id : '';
+}
+function gaConfigured() { return !!gaId(); }
+function gaLoad() {
+  const id = gaId(); if (!id || window.__fsGa) return;
+  window.__fsGa = 1;
+  const s = document.createElement('script');
+  s.async = true;
+  s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(id);
+  document.head.appendChild(s);
+  if (window.gtag) { gtag('js', new Date()); gtag('config', id, { anonymize_ip: true }); }
+}
+function gaGrant(v) {
+  if (window.gtag) gtag('consent', 'update', { analytics_storage: v ? 'granted' : 'denied' });
+}
+/* The app is one page with hash routes, so GA never sees a second pageview on
+   its own. Every real view change sends one, and the location is the route a
+   reader could share. */
+function fsPageView(v) {
+  if (!v || !gaConfigured() || !window.gtag) return;
+  gtag('event', 'page_view', {
+    page_title: v, page_location: location.origin + location.pathname + '#/' + v });
+}
+(function wireAnalytics() {
+  const box = $('#gaopt'), wrap = $('#gaoptwrap');
+  if (!gaConfigured()) { if (wrap) wrap.hidden = true; return; }
+  if (wrap) wrap.hidden = false;
+  if (box) {
+    box.checked = GA_ON;
+    box.onchange = () => {
+      GA_ON = !!box.checked;
+      try { GA_ON ? localStorage.setItem('fs.analytics', '1')
+                   : localStorage.removeItem('fs.analytics'); } catch (_) {}
+      gaLoad(); gaGrant(GA_ON);
+    };
+  }
+  gaLoad();
+  if (GA_ON) gaGrant(true);
 })();
 
 // --- settings: voice servers, kept on the server ---------------------------
