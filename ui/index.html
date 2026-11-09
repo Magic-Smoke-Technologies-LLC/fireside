@@ -363,7 +363,7 @@
   .themebtn:hover{color:var(--text);border-color:var(--line)}
   .themebtn[aria-expanded="true"]{color:var(--text);border-color:var(--line)}
   .themebtn svg{width:17px;height:17px;display:block}
-  .thememenu{position:absolute;top:calc(100% + 8px);left:0;z-index:95;min-width:216px;
+  .thememenu{position:absolute;top:calc(100% + 8px);right:0;left:auto;z-index:95;min-width:216px;
     background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px;
     box-shadow:0 18px 44px #0007}
   .thememenu[hidden]{display:none}
@@ -379,8 +379,10 @@
   .thememenu .sw{display:inline-flex;gap:3px;margin-right:8px;vertical-align:-1px}
   .thememenu .sw i{width:9px;height:9px;border-radius:2px;display:block;
     box-shadow:inset 0 0 0 1px #0003}
-  /* On the door there is no bar to sit in, so the gear floats over the overlay. */
-  body.locked .thememount.door{position:fixed;top:10px;left:12px;z-index:80}
+  /* Top right, where a person looks for settings: beside the avatar when there
+     is one, and on its own over the door, which has no bar at all. One control
+     in one corner, so nobody has to learn two places. */
+  body.locked .thememount.door{position:fixed;top:10px;right:12px;left:auto;z-index:80}
   @media(max-width:880px){
     .lockwrap{grid-template-columns:minmax(0,1fr);gap:26px;max-width:400px}
     .hearth{display:none}
@@ -962,7 +964,6 @@
 <header>
   <div class="brand">
     <h1 class="wordmark"><button type="button" id="brandhome" data-t="fireside">fireside</button></h1>
-    <div class="thememount" id="thememount"></div>
     <span id="ver">v__HOST_VERSION__</span>
   </div>
   <nav class="tabs" id="tabs" aria-label="Sections" data-t-aria="Sections">
@@ -972,6 +973,7 @@
     <button data-v="adm" id="navadmin" hidden data-t="Admin">Admin</button>
   </nav>
   <div class="topright" id="who">
+      <div class="thememount" id="thememount"></div>
       <button class="btn quiet" id="publicsignin" type="button" hidden>Sign in</button>
       <button class="balchip" id="balchip" type="button" title="Credit left" data-t-title="Credit left" hidden>—</button>
       <button class="bell" id="bell" type="button" aria-label="Alerts" data-t-aria="Alerts">🔔<span class="dot"></span></button>
@@ -1980,10 +1982,11 @@ function providerTiles(host, providers, suffix) {
    saved there as well, because a preference that lives only in localStorage
    means every new device starts over.
 
-   The control itself is a gear, and it sits in the top left of every page: in
-   the bar where there is a bar, floating over the overlay on the door. It is
-   one element built from one function, mounted twice, so the two cannot drift
-   apart into different menus. */
+   The control itself is a gear, and it sits in the top right of every page:
+   beside the avatar where there is a bar, floating over the overlay on the
+   door. (Chris, 11-09: it was top left; settings belong where people look for
+   them.) It is one element built from one function, mounted twice, so the two
+   cannot drift apart into different menus. */
 const FS_THEMES = ['light', 'dark', 'hc', 'cvd'];
 const FS_THEME_OPTS = [['', 'Follow this device'], ['light', 'Light'], ['dark', 'Dark'],
                        ['hc', 'High contrast'], ['cvd', 'Colour-vision safe']];
