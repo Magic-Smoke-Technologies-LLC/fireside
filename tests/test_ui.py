@@ -362,13 +362,55 @@ class TestAppShell(unittest.TestCase):
         with open(os.path.join(UI_DIR, "index.html"), encoding="utf-8") as f:
             return f.read()
 
-    def test_settings_lives_in_the_account_menu(self):
+    def test_account_is_the_second_destination(self):
+        # Two destinations, not a tab per screen: Library is where the reading
+        # is, Account is everything about the reader, and Now playing is the
+        # bar at the bottom. Settings, plans and the sandbox live inside
+        # Account, so the top bar never grows into a menu.
         html = self._html()
         self.assertIn('id="avatar"', html)
         self.assertIn('id="usermenu"', html)
         self.assertIn('id="menuset"', html)
-        self.assertNotIn('data-v="set"', html)     # settings is not a tab
-        self.assertNotIn('data-v="add"', html)     # neither is add
+        self.assertIn('data-v="set"', html)        # Account, the second place
+        self.assertNotIn('data-v="add"', html)     # add is not a destination
+        self.assertNotIn('data-v="sand"', html)    # nor is the sandbox
+        self.assertNotIn('data-v="play"', html)    # nor is now playing: the bar is
+
+    def test_the_wallet_is_a_panel_in_account(self):
+        # Money is not a page of its own; it is the first panel of Account, so
+        # the balance chip, the add buttons and the history are one place.
+        html = self._html()
+        setview = html.split('id="v-set"')[1].split("id=\"v-adm\"")[0]
+        self.assertIn('data-p="wallet" class="on"', setview)
+        self.assertIn('id="wbal"', setview)
+        self.assertIn('id="wtopup"', setview)
+        self.assertIn('id="wlist"', setview)
+        self.assertIn("if (p === 'wallet') loadWallet();", html)
+        # the history comes from the ledger route, not from arithmetic here
+        self.assertIn("await api('/credits/history')", html)
+        self.assertIn("function loadWallet(", html)
+
+    def test_the_wallet_states_what_five_dollars_buys(self):
+        # "Add money" with no idea how much reading that is is a price with no
+        # unit. The table is drawn from the sale rate the purchase route pins,
+        # so it cannot drift from what a top-up actually credits.
+        html = self._html()
+        self.assertIn('id="wratetbl"', html)
+        self.assertIn("function drawRate(", html)
+        self.assertIn("d.sale && d.sale.rate_per_1m_chars", html)
+        self.assertIn("drawRate(d)", html)
+        # Two claims a reader is entitled to hear before paying: it does not
+        # expire, and it is not refundable except where the law says otherwise.
+        self.assertIn('id="wnoexpire"', html)
+        self.assertIn('id="wrefund"', html)
+        self.assertIn('Credit does not expire.', html)
+        self.assertIn('is not refundable, except where the law requires it', html)
+
+    def test_the_player_bar_opens_now_playing(self):
+        # A bar that shows a book you cannot open is a status line.
+        html = self._html()
+        self.assertIn('id="tnowbook"', html)
+        self.assertIn("$('#tnowbook').onclick", html)
 
     def test_add_is_on_the_library_screen(self):
         html = self._html()
@@ -779,11 +821,12 @@ class TestBalanceInHeader(unittest.TestCase):
         self.assertIn("function refreshBalance", html)
         self.assertIn("await api('/credits')", html)
 
-    def test_it_opens_the_plan_screen(self):
+    def test_it_opens_the_wallet(self):
         html = self._html()
         self.assertIn("$('#balchip').onclick", html)
-        # one history entry for the tap, so Back undoes it in one press
-        self.assertIn("setSetTab('plan', 'replace')", html)
+        # the chip is a balance, so it lands on the balance; one history entry
+        # for the tap, so Back undoes it in one press
+        self.assertIn("setSetTab('wallet', 'replace')", html)
 
     def test_it_refreshes_when_the_number_can_have_moved(self):
         html = self._html()

@@ -56,6 +56,19 @@ STUDIO_ALLOWANCE_BYTES = 10 * 1000 ** 3         # 10 GB
 # Included narration characters per paid period, by tier. The grant itself lives
 # in host/allowance.py and is keyed to the paid period, so these are ceilings for
 # the period, not a balance that accumulates.
+# What a paid plan carries each period, in DOLLARS of wallet credit. Money, not
+# characters, because the wallet is the thing a reader can also top up and spend
+# on anything else we sell later, and because a dollar grant survives a change
+# to the per-character rate while a character count does not. It rolls: the
+# grant is a top-up, and a balance does not expire.
+PLAN_GRANT = {FREE_PLAN: 0.0,
+              PLATFORM_PLAN: 1.0,
+              LISTENER_PLAN: 3.0,
+              STUDIO_PLAN: 15.0}
+PLATFORM_MONTH_GRANT = PLAN_GRANT[PLATFORM_PLAN]
+# The character ladder an account created before the switch still holds. Read
+# it only for an account whose wallet is already in characters; never grant
+# characters to a dollar wallet, and never the reverse.
 PLAN_CHARS = {FREE_PLAN: 0,
               PLATFORM_PLAN: 50_000,
               LISTENER_PLAN: 250_000,

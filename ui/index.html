@@ -100,9 +100,36 @@
     font-variant-numeric:tabular-nums}
   .balchip:hover{color:var(--text);border-color:var(--flame)}
   .balchip.zero{color:var(--warn);border-color:var(--warn)}
-  nav.tabs{display:flex;gap:2px;margin-top:12px;overflow-x:auto}
+  /* Two destinations, not six. Library is where the reading is and Account is
+     everything about you; Now playing is the bar at the bottom, and Plans and
+     Admin live inside Account. A tab per screen makes the app a menu; two
+     places make it a place. */
+  nav.tabs{display:flex;gap:4px;margin-top:12px}
   nav.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:9px 12px;color:var(--soft);font-size:14px;cursor:pointer;white-space:nowrap}
   nav.tabs button.on{color:var(--text);border-color:var(--flame)}
+  /* The wallet. One number, one set of add buttons, one list of what happened.
+     The panel formats whatever /credits and /credits/history hand it and
+     computes nothing: dollars on an account that holds dollars, characters on
+     an old account that still holds characters. */
+  .walletbal{font:600 34px/1.1 var(--serif);font-variant-numeric:tabular-nums;margin:4px 0 2px}
+  .walletbal.neg{color:var(--warn)}
+  .walletrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .walletrow .btn{padding:9px 18px}
+  .wratetbl{margin-top:20px;width:100%;border-collapse:collapse;font-size:13px;
+    font-variant-numeric:tabular-nums;color:var(--soft)}
+  .wratetbl caption{text-align:left;font-size:13px;color:var(--faint);
+    padding-bottom:6px;caption-side:top}
+  .wratetbl th,.wratetbl td{padding:7px 0;border-bottom:1px solid var(--line);text-align:left}
+  .wratetbl th{font-weight:400;font-size:12px;color:var(--faint);border-bottom:1px solid var(--line)}
+  .wratetbl td.pay{color:var(--text);font-weight:600}
+  .wratetbl td.num{text-align:right;padding-left:12px}
+  .wratefine{margin-top:10px;line-height:1.55}
+  .walletlist{margin-top:26px;border-top:1px solid var(--line)}
+  .walletlist .wr{display:flex;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--soft)}
+  .walletlist .wr b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;min-width:74px}
+  .walletlist .wr.neg b{color:var(--warn)}
+  .walletlist .wr .wn{flex:1;min-width:0}
+  .walletlist .wr .wd{margin-left:auto;font-size:12px;color:var(--faint);white-space:nowrap}
   main{padding:30px 40px 80px;max-width:960px;margin:0 auto}
   .view{display:none}.view.on{display:block}
   .settabs{margin-top:16px;border-bottom:1px solid var(--line)}
@@ -315,7 +342,8 @@
   #transport .tplay{width:38px;height:38px;flex:none;border-radius:50%;border:0;background:var(--flame);color:var(--on-flame);font-size:15px;cursor:pointer}
   #transport .tq{background:none;border:1px solid var(--line);border-radius:9px;color:var(--text);padding:7px 10px;cursor:pointer;font-size:13px;line-height:1}
   #transport .tnav{background:none;border:1px solid var(--line);border-radius:9px;color:var(--text);padding:7px 12px;cursor:pointer;font-size:13px;line-height:1}
-  #transport .tnow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft);font-size:13px}
+  #transport .tnow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft);font-size:13px;background:none;border:0;text-align:left;cursor:pointer;padding:6px 2px}
+  #transport .tnow:hover{color:var(--text)}
   #transport .ttime{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px}
   #transport .vol{display:flex;align-items:center;gap:6px;flex:0 0 auto;color:var(--soft);font-size:12px}
   #transport .vol input{width:90px;padding:0;border:0;background:none}
@@ -552,9 +580,8 @@
   </div>
   <nav class="tabs" id="tabs" aria-label="Sections" data-t-aria="Sections">
     <button data-v="lib" class="on" aria-current="page" data-t="Library">Library</button>
-    <button data-v="play" data-t="Now playing">Now playing</button>
-    <button data-v="sand" data-t="Try a voice">Try a voice</button>
-    <button data-v="plans" data-t="Plans">Plans</button>
+    <button data-v="set" data-t="Account">Account</button>
+    <button data-v="plans" id="navplans" hidden data-t="Plans">Plans</button>
     <button data-v="adm" id="navadmin" hidden data-t="Admin">Admin</button>
   </nav>
 </header>
@@ -703,17 +730,33 @@
 
   <!-- settings -->
   <section class="view" id="v-set">
-    <h2 data-t="Settings">Settings</h2>
-    <p class="sub" data-t="Voice servers and source logins live on this server. Keys never reach your browser.">Voice servers and source logins live on this server. Keys never reach your browser.</p>
-    <nav class="tabs settabs" id="settabs" aria-label="Settings sections" data-t-aria="Settings sections">
-      <button data-p="voice" class="on" data-t="Voice">Voice</button>
+    <h2 data-t="Account">Account</h2>
+    <p class="sub" data-t="Your balance, your voices, and what this server knows about you.">Your balance, your voices, and what this server knows about you.</p>
+    <nav class="tabs settabs" id="settabs" aria-label="Account sections" data-t-aria="Account sections">
+      <button data-p="wallet" class="on" data-t="Wallet">Wallet</button>
+      <button data-p="voice" data-t="Voice">Voice</button>
       <button data-p="reading" data-t="Reading">Reading</button>
       <button data-p="words" data-t="Words">Words</button>
       <button data-p="plan" data-t="Plan &amp; storage">Plan &amp; storage</button>
       <button data-p="account" data-t="Account">Account</button>
     </nav>
 
-    <div class="setpanel on" data-p="voice">
+    <div class="setpanel on" data-p="wallet">
+      <div class="walletbal" id="wbal" aria-live="polite">—</div>
+      <p class="small" id="wnote" data-t="Money in your wallet pays for narration. It stays yours until you spend it.">Money in your wallet pays for narration. It stays yours until you spend it.</p>
+      <p class="small" id="wheld" hidden></p>
+      <div class="walletrow" id="wtopup"></div>
+      <p class="small" id="wmsg" role="status" aria-live="polite" style="margin-top:12px"></p>
+      <div id="wrate" hidden>
+        <table class="wratetbl" id="wratetbl"></table>
+        <p class="small wratefine" id="wratefine"></p>
+      </div>
+      <p class="small wratefine" id="wnoexpire" data-t="Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.">Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.</p>
+      <p class="small wratefine" id="wrefund" data-t="Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.">Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.</p>
+      <div class="walletlist" id="wlist"></div>
+    </div>
+
+    <div class="setpanel" data-p="voice">
       <div id="conns"></div>
       <div style="margin-top:14px"><button class="btn quiet" id="addconn" type="button" data-t="＋ Add a voice server">＋ Add a voice server</button></div>
       <div class="addpanel" id="connform" hidden>
@@ -877,6 +920,16 @@
       <div id="delmsg" class="sub" style="margin-top:8px"></div>
     </div>
 
+    <!-- Two screens that are places to go rather than settings: plans is a
+         purchase, the voice sandbox is a toy. They live here as rows so the
+         top bar can stay two destinations wide. -->
+    <div class="setpanel" data-p="wallet" style="margin-top:28px;border-top:1px solid var(--line);padding-top:16px">
+      <div class="connrow" style="flex-wrap:wrap">
+        <button class="btn quiet" id="gotopplans" type="button" data-t="Plans &amp; storage →">Plans &amp; storage →</button>
+        <button class="btn quiet" id="gotosand" type="button" data-t="Try a voice →">Try a voice →</button>
+      </div>
+    </div>
+
   </section>
 
   <!-- admin: the accounts of this server, in one place ----------------------
@@ -909,7 +962,7 @@
       <div style="font-weight:600" data-t="Read this before you buy">Read this before you buy</div>
       <p class="sub" style="margin:8px 0 0" data-t="A subscription buys the platform: this server, the reader app, your storage, and updates. It does not include a voice.">A subscription buys the platform: this server, the reader app, your storage, and updates. It does not include a voice.</p>
       <p class="sub" style="margin:8px 0 0" data-t="The voice is what actually reads to you, and it comes from a speech provider you connect yourself (your own Azure Speech key, or a server a friend shares with you). Without a voice provider the platform has nothing to read with, so a subscription on its own is close to worthless.">The voice is what actually reads to you, and it comes from a speech provider you connect yourself (your own Azure Speech key, or a server a friend shares with you). Without a voice provider the platform has nothing to read with, so a subscription on its own is close to worthless.</p>
-      <p class="sub" style="margin:8px 0 0" data-t="Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, stay on the free plan and connect a voice first.">Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, stay on the free plan and connect a voice first.</p>
+      <p class="sub" style="margin:8px 0 0" data-t="Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.">Buy the platform only if you already have a voice provider, or you are about to add one. If you have neither, the free plan is still the whole reader: add dollars to your wallet and our voice reads to you.</p>
     </div>
 
     <h3 style="margin-top:28px" data-t="The plans">The plans</h3>
@@ -946,7 +999,7 @@
   <button class="tnav" id="tfwd" type="button" title="Forward 15 seconds" data-t-title="Forward 15 seconds" aria-label="Forward 15 seconds" data-t-aria="Forward 15 seconds">+15s</button>
   <button class="tnav" id="tnext" type="button" title="Next chapter" data-t-title="Next chapter" aria-label="Next chapter" data-t-aria="Next chapter">⏭</button>
   <button class="tq" id="tqueue" type="button" title="Queue" data-t-title="Queue" aria-label="Queue" data-t-aria="Queue">☰</button>
-  <span class="tnow" id="tnowbook"></span>
+  <button class="tnow" id="tnowbook" type="button" aria-label="Open now playing" data-t-aria="Open now playing"></button>
   <span class="ttime" id="ttimes" aria-hidden="true"></span>
   <span class="sr-only" id="tstatus" role="status" aria-live="polite"></span>
   <label class="vol" title="Volume" data-t-title="Volume">Vol<input id="tvol" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" data-t-aria="Volume"></label>
@@ -1363,11 +1416,14 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => show(b.
 function setSetTab(p, mode) {
   const bar = $('#settabs'); if (!bar) return;
   let btn = p ? bar.querySelector(`button[data-p="${p}"]`) : null;
-  if (!btn || btn.hidden) { p = 'voice'; btn = bar.querySelector('button[data-p="voice"]'); }
+  /* Account opens on the wallet: the one thing on this page that changes
+     while you are away from it. */
+  if (!btn || btn.hidden) { p = 'wallet'; btn = bar.querySelector('button[data-p="wallet"]'); }
   bar.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b === btn);
     if (b === btn) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   document.querySelectorAll('#v-set .setpanel').forEach(el => el.classList.toggle('on', el.dataset.p === p));
   try { localStorage.setItem(SETTAB_KEY, p); } catch (_) {}
+  if (p === 'wallet') loadWallet();
   if (p === 'plan') loadCredits();
   if (p === 'account') loadTwofa();
   syncRoute(mode === 'replace' ? 'replace' : undefined);
@@ -2156,6 +2212,167 @@ async function bootEveryone() {
   } catch (e) { admNote(e.message || T('could not sign them out')); }
 }
 
+// --- wallet: the balance, the add buttons, and what happened to it --------
+// The panel formats; it computes nothing. /credits says which unit the account
+// holds (an old account still holds characters, a new one holds dollars) and
+// /credits/history is the ledger itself, so an absorbed overage shows up here
+// as a row with estimate against final instead of hiding in a support log.
+const WKIND = { topup: 'Added', charge: 'Narration', release: 'Released',
+                refund: 'Refund', grant: 'Included with your plan' };
+const TOPUPS = [5, 10, 25, 50];
+let WUNIT = 'USD';
+function wamount(n) {
+  if (n == null) return '\u2014';
+  if (WUNIT !== 'USD') return nchar(n) + ' chars';
+  const v = Math.round(Number(n) * 100) / 100;
+  return (v < 0 ? '\u2212' : '') + '$' + Math.abs(v).toFixed(2);
+}
+async function loadWallet() {
+  const bal = $('#wbal'); if (!bal) return;
+  const note = $('#wnote');
+  if (!USER) { bal.textContent = '\u2014'; if (note) note.textContent = T('Sign in to see your wallet.'); return; }
+  bal.textContent = '\u2026';
+  let d;
+  try { d = await api('/credits'); }
+  catch (e) {
+    bal.textContent = '\u2014';
+    if (note) note.textContent = e.status === 401
+      ? T('Sign in to see your wallet.')
+      : T('Couldn\u2019t reach the server, so this number may be out of date.');
+    const box = $('#wtopup'); if (box) box.innerHTML = '';
+    return;
+  }
+  WUNIT = d.unit || 'USD';
+  const avail = d.available || 0;
+  bal.textContent = wamount(avail);
+  bal.classList.toggle('neg', avail < 0);
+  if (note) note.textContent = WUNIT === 'USD'
+    ? T('Money in your wallet pays for narration. It stays yours until you spend it.')
+    : T('This account still holds characters from before the switch to dollars. They work exactly as before.');
+  const held = d.reserved || 0;
+  const wh = $('#wheld');
+  if (wh) {
+    wh.hidden = held <= 0;
+    wh.textContent = held > 0 ? T('{n} is held while a render runs.', { n: wamount(held) }) : '';
+  }
+  drawTopups(d);
+  drawRate(d);
+  loadWalletList();
+}
+function drawTopups(d) {
+  const box = $('#wtopup'); if (!box) return;
+  box.innerHTML = '';
+  const can = !!d.payments_configured;
+  TOPUPS.forEach(usd => {
+    const b = document.createElement('button');
+    b.className = 'btn'; b.type = 'button';
+    b.textContent = '+' + money(usd);
+    b.disabled = !can;
+    if (!can) b.title = T('Not for sale yet');
+    b.onclick = () => buyTopup(usd);
+    box.append(b);
+  });
+  const m = document.createElement('button');
+  m.className = 'btn quiet'; m.type = 'button';
+  m.textContent = T('Minimum {n}', { n: money(5) });
+  m.disabled = true; m.style.display = 'none';
+}
+// What a top-up actually buys, said out loud. The rate comes from the same
+// sale offer the purchase route pins at checkout, so the shelf and the receipt
+// cannot disagree. "Today" and "about" are load-bearing: these are a rate at the
+// provider's current price, not a promise about next year's.
+const LISTEN_CHARS_PER_HOUR = 54000;   // ~150 wpm at ~6 chars a word
+function wchars(n) { return Math.round(n).toLocaleString(); }
+function whours(chars) {
+  const mins = Math.round(chars / LISTEN_CHARS_PER_HOUR * 60 / 5) * 5;
+  if (mins < 60) return T('{n} min', { n: mins });
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? T('{h} hr {m} min', { h: h, m: m }) : T('{h} hr', { h: h });
+}
+function drawRate(d) {
+  const box = $('#wrate'); if (!box) return;
+  const tbl = $('#wratetbl'), fine = $('#wratefine');
+  const rate = d && d.sale && d.sale.rate_per_1m_chars;
+  if (!rate || !tbl) { box.hidden = true; return; }
+  box.hidden = false;
+  tbl.innerHTML = '';
+  const cap = document.createElement('caption');
+  cap.textContent = T('At today\u2019s voice price, each top-up buys about this much:');
+  tbl.append(cap);
+  const head = document.createElement('tr');
+  [T('Add'), T('Characters'), T('Listening at normal speed')].forEach((label, i) => {
+    const th = document.createElement('th');
+    th.textContent = label; if (i) th.className = 'num';
+    head.append(th);
+  });
+  const thead = document.createElement('thead'); thead.append(head); tbl.append(thead);
+  const body = document.createElement('tbody');
+  TOPUPS.forEach(usd => {
+    const chars = Math.floor(usd * 1e6 / rate);
+    const tr = document.createElement('tr');
+    const pay = document.createElement('td');
+    pay.className = 'pay'; pay.textContent = money(usd);
+    const ch = document.createElement('td');
+    ch.className = 'num'; ch.textContent = wchars(chars);
+    const hr = document.createElement('td');
+    hr.className = 'num'; hr.textContent = whours(chars);
+    tr.append(pay, ch, hr); body.append(tr);
+  });
+  tbl.append(body);
+  if (fine) {
+    fine.textContent = T('That works out to {rate} per million characters as of today, and about {perhour} characters to a listening hour at normal speed. It is a rate, not a promise: if the voice provider changes its price, this table changes with it.')
+      .replace('{rate}', money(rate)).replace('{perhour}', wchars(LISTEN_CHARS_PER_HOUR));
+  }
+}
+async function buyTopup(usd) {
+  const msg = t => { const m = $('#wmsg'); if (m) m.textContent = t; };
+  msg(T('Opening the payment page\u2026'));
+  try {
+    const r = await jpostIdem('/credits/purchase', {
+      usd: Number(usd),
+      return_url: location.origin + location.pathname,
+    });
+    if (r.url) { location.href = r.url; return; }
+    msg(T('{n} added. Reference {ref}.', { n: money(usd), ref: r.reference || '' }));
+    loadWallet();
+  } catch (e) {
+    if (e.status === 503) msg(T('Adding money is not switched on yet, so nothing was charged.'));
+    else if (e.status === 402) msg(T('The payment was refused. Nothing was charged.'));
+    else if (e.status === 400) msg(T('That amount is below the minimum.'));
+    else msg(e.message || T('could not add money'));
+  }
+}
+async function loadWalletList() {
+  const box = $('#wlist'); if (!box) return;
+  box.innerHTML = '';
+  let d;
+  try { d = await api('/credits/history'); }
+  catch (_) { return; }
+  const rows = (d && d.entries) || [];
+  if (!rows.length) {
+    const p = document.createElement('p');
+    p.className = 'small'; p.style.marginTop = '14px';
+    p.textContent = T('Nothing has moved yet. Your first top-up or voiced chapter shows up here.');
+    box.append(p); return;
+  }
+  rows.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'wr' + ((r.delta || 0) < 0 ? ' neg' : '');
+    const amt = document.createElement('b');
+    amt.textContent = (r.delta > 0 ? '+' : '') + wamount(r.delta);
+    const what = document.createElement('span');
+    what.className = 'wn';
+    what.textContent = r.note || WKIND[r.kind] || r.kind;
+    const when = document.createElement('span');
+    when.className = 'wd';
+    const at = String(r.at || '');
+    if (at) { const dt = new Date(at.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(at) ? '' : 'Z'));
+      when.textContent = isNaN(dt) ? at.slice(0, 10) : dt.toLocaleDateString(); }
+    row.append(amt, what, when);
+    box.append(row);
+  });
+}
+
 // --- characters: the balance, the rate, and the one buy button -------------
 // The server is the authority on what a character costs: /credits carries the
 // sale connection's own rate and bundles, and this panel formats what it is
@@ -2242,7 +2459,7 @@ async function refreshBalance() {
   try { drawChip(await api('/credits')); }
   catch (_) { drawChip(null); }
 }
-if ($('#balchip')) $('#balchip').onclick = () => { show('set'); setSetTab('plan', 'replace'); };
+if ($('#balchip')) $('#balchip').onclick = () => { show('set'); setSetTab('wallet', 'replace'); };
 // Another tab may be rendering, which spends characters. Coming back to this
 // one is the moment worth re-asking, and no more often than once a minute.
 window.addEventListener('focus', () => {
@@ -2340,8 +2557,8 @@ async function loadPlan() {
       const p = document.createElement('p'); p.className = 'small'; p.style.margin = '6px 0';
       p.textContent = [
         fmtBytes(t.included_bytes) + ' included.',
-        t.included_chars ? nchar(t.included_chars) + ' characters a month.'
-                         : 'No characters included.',
+        t.included_usd ? money(t.included_usd) + ' of credit a month.'
+                       : 'No credit included.',
         (t.description || '')
       ].join(' ');
       card.append(h, p);
@@ -2446,24 +2663,25 @@ async function confirmCheckout(ref) {
 // Same catalog the settings tab reads, laid out as a sales page: what each tier
 // is, what it includes, and the one thing it does not (a voice).
 // What a rung includes, built from the catalog so the numbers on the card are
-// the numbers the server grants: characters per period and storage, then the
-// ladder (each rung is everything below it), and always the voice caveat. A tier
-// with no character allowance says so instead of printing "0 characters".
-function charsTime(n) {
-  // about 66,000 characters an hour of narration, the rate the public price
-  // page has used since 2026-11-06 (50k ~ 45 min, 1M ~ 15 h).
-  const mins = Math.round(n / 66000 * 60);
+// the numbers the server grants: credit per period and storage, then the ladder
+// (each rung is everything below it), and always the voice caveat. A tier with
+// no credit says so instead of printing "$0.00".
+// Narration costs about $19.63 per million characters, so a dollar buys roughly
+// those characters; the hours line is the same arithmetic said in listening time.
+function creditTime(usd) {
+  const chars = usd / 19.63 * 1_000_000;
+  const mins = Math.round(chars / 66000 * 60);
   if (!mins) return '';
   return mins < 90 ? 'about ' + mins + ' minutes' : 'about ' + (mins / 60).toFixed(1) + ' hours';
 }
 function planBullets(t, lower) {
   const out = [];
-  if (t.included_chars) {
-    const span = charsTime(t.included_chars);
-    out.push(nchar(t.included_chars) + ' narration characters a month'
-      + (span ? ' (' + span + ')' : '') + ', renewed each paid month');
+  if (t.included_usd) {
+    const span = creditTime(t.included_usd);
+    out.push(money(t.included_usd) + ' of credit a month'
+      + (span ? ' (' + span + ' of listening)' : '') + ', and it rolls over');
   } else {
-    out.push('No narration included: buy characters, or bring your own Azure key');
+    out.push('No credit included: add money, or bring your own Azure key');
   }
   if (lower) out.push('Everything in ' + lower);
   out.push('Voices: none are included, you connect your own');
@@ -2471,7 +2689,7 @@ function planBullets(t, lower) {
 }
 const PLAN_BULLETS = {
   free: ['The reader and this server', 'Add books by EPUB or link',
-         'No narration included: buy characters, or bring your own Azure key',
+         'No credit included: add money, or bring your own Azure key',
          'Voices: only the ones you connect yourself'],
 };
 // The cart. It survives sign-up: a logged-out visitor can pick a plan and
@@ -2675,6 +2893,10 @@ if ($('#pageclearcart')) $('#pageclearcart').onclick = () => { clearCart(); load
 if ($('#pagesignin')) $('#pagesignin').onclick = () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
 if ($('#pagesignup')) $('#pagesignup').onclick = () => openDoor('create');
 if ($('#gotoplans')) $('#gotoplans').onclick = () => show('plans');
+if ($('#gotosand')) $('#gotosand').onclick = () => show('sand');
+// The bar's title is the door to the page: a bar that shows a book you cannot
+// open is a status line, not a player.
+if ($('#tnowbook')) $('#tnowbook').onclick = () => { if (player.id) show('play'); };
 if ($('#lockplans') && $('#lockplans').tagName === 'BUTTON') $('#lockplans').onclick = () => {
   document.body.classList.remove('locked');
   $('#lock').hidden = true;

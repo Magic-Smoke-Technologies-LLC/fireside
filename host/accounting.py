@@ -51,6 +51,25 @@ def balance(conn, user_id):
     return float(r["amount"]) if r else 0.0
 
 
+def currency(conn, user_id):
+    """The unit this user's balance is held in, or "" for an account with no
+    balance row yet. Read it instead of assuming - a cutover leaves both
+    units live until the last row moves."""
+    r = conn.execute("SELECT currency FROM balances WHERE user_id=?",
+                     (user_id,)).fetchone()
+    return (r["currency"] or "") if r else ""
+
+
+def absorbed(conn, user_id):
+    """Ledger rows where a run cost more than we held and we ate the gap. The
+    wallet history shows these with estimate vs final; anything else here is a
+    bug wearing an overage's clothes."""
+    rows = conn.execute(
+        "SELECT * FROM ledger WHERE user_id=? AND note LIKE '%absorbed overage%'"
+        " ORDER BY created_at", (user_id,))
+    return [dict(r) for r in rows]
+
+
 def reserved_total(conn, user_id):
     r = conn.execute(
         "SELECT COALESCE(SUM(amount),0) s FROM reservations WHERE user_id=? AND state IN (?,?)",
@@ -171,12 +190,25 @@ def _set_state(conn, res_id, state):
 
 
 def _debit(conn, user_id, cost, currency, res):
+    """Debit the settled cost. Never clamps.
+
+    The only legitimate way a balance goes negative is a final cost above the
+    estimate we held, and we absorb that: the run already happened, so
+    refusing the debit would leave the ledger disagreeing with reality. The
+    row therefore says so, with both numbers, and an `absorbed` charge is
+    greppable - a negative balance without one is a bug.
+    """
+    held = float(res.get("amount") or 0.0)
+    note = "reservation %s" % res["id"]
+    if cost > held:
+        note = ("reservation %s absorbed overage %.2f: estimate %.2f final %.2f"
+                % (res["id"], cost - held, held, cost))
     conn.execute("INSERT OR IGNORE INTO balances(user_id,currency,amount) VALUES(?,?,0)",
                  (user_id, currency))
     conn.execute("UPDATE balances SET amount=amount-? WHERE user_id=?",
                  (cost, user_id))
     _entry(conn, user_id, "charge", -cost, currency, None, res.get("job_id"),
-           "reservation %s" % res["id"])
+           note)
 
 
 def _entry(conn, user_id, kind, delta, currency, book_id, job_id, note,

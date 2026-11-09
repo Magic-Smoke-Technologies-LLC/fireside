@@ -64,6 +64,32 @@ class TestAccounting(unittest.TestCase):
         kinds = [e["kind"] for e in acc.ledger_entries(self.conn, "u1")]
         self.assertEqual(kinds, ["topup", "charge"])
 
+    def test_overage_is_absorbed_and_says_so(self):
+        # A run that costs more than we held. We do not clamp: the run already
+        # happened, and the ledger has to agree with it.
+        rid = acc.reserve(self.conn, "u1", 3.0)
+        st = acc.settle(self.conn, rid, Report(charge="charged", cost=3.5,
+                                               currency="USD"))
+        self.assertEqual(st, "settled")
+        self.assertAlmostEqual(acc.balance(self.conn, "u1"), 6.5)
+        rows = acc.absorbed(self.conn, "u1")
+        self.assertEqual(len(rows), 1)
+        self.assertIn("absorbed overage 0.50", rows[0]["note"])
+        self.assertIn("estimate 3.00 final 3.50", rows[0]["note"])
+
+    def test_a_cheaper_run_is_not_an_absorbed_row(self):
+        rid = acc.reserve(self.conn, "u1", 3.0)
+        acc.settle(self.conn, rid, Report(charge="charged", cost=1.0,
+                                          currency="USD"))
+        self.assertEqual(acc.absorbed(self.conn, "u1"), [])
+        self.assertAlmostEqual(acc.available(self.conn, "u1"), 9.0)
+
+    def test_currency_is_read_not_assumed(self):
+        self.assertEqual(acc.currency(self.conn, "u1"), "USD")
+        acc.topup(self.conn, "u2", 50000, currency="chars")
+        self.assertEqual(acc.currency(self.conn, "u2"), "chars")
+        self.assertEqual(acc.currency(self.conn, "nobody"), "")
+
     def test_only_one_sale_connection(self):
         spec = {"provider": "azure", "voice": "en-US-Ava", "model": ""}
         self.assertTrue(acc.sale_connection_matches(spec, "azure", "en-US-Ava", "x"))
