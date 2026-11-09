@@ -197,7 +197,7 @@
     "Nothing was removed: {names}{rest}.": "No se borró nada: {names}{rest}.",
     "Numbers written with commas (50,000) are read as words (fifty thousand) automatically. A plain 1999 or Chapter 12 is left as the author wrote it.": "Los números con separador de miles (50.000) se leen como palabras (cincuenta mil) automáticamente. Un 1999 o un Capítulo 12 se dejan como los escribió el autor.",
     "Off. This is the only account on this server, so nothing forces it yet. Turn it on and every login asks for a code; once a second account exists, it is required.": "Desactivado. Es la única cuenta de este servidor, así que nada lo exige todavía. Si lo activas, cada inicio de sesión pedirá un código; cuando exista una segunda cuenta, será obligatorio.",
-    "On your shelf": "En tu estantería",
+    "My library": "Mi biblioteca",
     "Open means a stranger can make their own account on the buy page. Closed, only you can make accounts.": "Abierto significa que un desconocido puede crear su propia cuenta en la página de compra. Cerrado, solo tú puedes crear cuentas.",
     "Open now playing": "Abrir Reproduciendo ahora",
     "Open sign-ups": "Registro abierto",

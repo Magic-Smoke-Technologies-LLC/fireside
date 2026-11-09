@@ -198,7 +198,7 @@
     "Nothing was removed: {names}{rest}.": "Nothing was removed: {names}{rest}.",
     "Numbers written with commas (50,000) are read as words (fifty thousand) automatically. A plain 1999 or Chapter 12 is left as the author wrote it.": "Numbers written with commas (50,000) are read as words (fifty thousand) automatically. A plain 1999 or Chapter 12 is left as the author wrote it.",
     "Off. This is the only account on this server, so nothing forces it yet. Turn it on and every login asks for a code; once a second account exists, it is required.": "Off. This is the only account on this server, so nothing forces it yet. Turn it on and every login asks for a code; once a second account exists, it is required.",
-    "On your shelf": "On your shelf",
+    "My library": "My library",
     "Open means a stranger can make their own account on the buy page. Closed, only you can make accounts.": "Open means a stranger can make their own account on the buy page. Closed, only you can make accounts.",
     "Open now playing": "Open now playing",
     "Open sign-ups": "Open sign-ups",
