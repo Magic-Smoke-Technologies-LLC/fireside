@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Loading">
+  <style>
+    svg { color: #E0782F; }
+    .s { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .icon path { stroke-dasharray: 1 2; stroke-dashoffset: 1; animation: draw 6s ease-in-out infinite both; }
+    .fire path    { animation-delay: 0s; }
+    .glasses path { animation-delay: 2s; }
+    .book path    { animation-delay: 4s; }
+    /* stagger strokes within an icon */
+    .icon path:nth-child(2) { animation-name: draw2; }
+    .icon path:nth-child(n+3) { animation-name: draw3; }
+
+    @keyframes draw  { 0%{stroke-dashoffset:1} 14%{stroke-dashoffset:0} 26%{stroke-dashoffset:0} 32%{opacity:1} 33%,100%{stroke-dashoffset:-1;opacity:0} }
+    @keyframes draw2 { 0%,3%{stroke-dashoffset:1} 16%{stroke-dashoffset:0} 26%{stroke-dashoffset:0} 32%{opacity:1} 33%,100%{stroke-dashoffset:-1;opacity:0} }
+    @keyframes draw3 { 0%,6%{stroke-dashoffset:1} 18%{stroke-dashoffset:0} 26%{stroke-dashoffset:0} 32%{opacity:1} 33%,100%{stroke-dashoffset:-1;opacity:0} }
+
+    .fire { transform-origin: 60px 98px; animation: flicker 0.9s ease-in-out infinite alternate; }
+    @keyframes flicker { from { transform: scale(1, 1) skewX(0deg); } to { transform: scale(0.97, 1.03) skewX(-1.5deg); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .icon path, .fire { animation: none; }
+      .fire path { stroke-dashoffset: 0; }
+    }
+  </style>
+
+  <!-- Fire -->
+  <g class="icon fire s">
+    <path pathLength="1" d="M60 18 C72 36 87 48 83 70 C80 88 67 96 60 96 C51 96 37 89 37 72 C36 60 44 52 48 43 C50 53 54 57 58 57 C54 45 56 31 60 18 Z"/>
+    <path pathLength="1" d="M60 91 C52 91 48 84 50 77 C52 71 57 69 58 62 C64 68 70 74 69 82 C68 88 64 91 60 91 Z"/>
+    <path pathLength="1" d="M34 104 L86 98 M34 98 L86 104"/>
+  </g>
+
+  <!-- Reading glasses -->
+  <g class="icon glasses s">
+    <path pathLength="1" d="M26 62 A14 14 0 1 0 54 62 A14 14 0 1 0 26 62 Z"/>
+    <path pathLength="1" d="M66 62 A14 14 0 1 0 94 62 A14 14 0 1 0 66 62 Z"/>
+    <path pathLength="1" d="M54 60 Q60 53 66 60 M26 59 L16 52 M94 59 L104 52"/>
+  </g>
+
+  <!-- Open book -->
+  <g class="icon book s">
+    <path pathLength="1" d="M60 42 C49 35 35 35 22 40 L22 86 C35 81 49 81 60 88 Z"/>
+    <path pathLength="1" d="M60 42 C71 35 85 35 98 40 L98 86 C85 81 71 81 60 88"/>
+    <path pathLength="1" d="M31 52 C38 49 45 49 51 52 M31 62 C38 59 45 59 51 62 M69 52 C75 49 82 49 89 52 M69 62 C75 59 82 59 89 62"/>
+  </g>
+</svg>

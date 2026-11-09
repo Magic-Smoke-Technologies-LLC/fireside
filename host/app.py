@@ -588,6 +588,15 @@ class App:
             return 404, {"error": "no %s in this build" % name}
         return 200, {"_raw": data, "_mime": mime, "_cache": "public, max-age=86400"}
 
+    def loader(self, q, body):
+        """The boot mark: a line-art fire, glasses and book that draw in.
+
+        Served as a file rather than inlined, because its own stylesheet uses
+        bare class names and would land in the page's global CSS if it were
+        pasted in. In an <img> the document is isolated and its
+        prefers-reduced-motion query still applies."""
+        return self._media("loader.svg", "image/svg+xml")
+
     def hearth(self, q, body):
         """The fireplace loop behind the door's welcome pane.
 
@@ -3127,6 +3136,7 @@ class App:
 GET_ROUTES = {
     "/": "ui", "/index.html": "ui", "/favicon.ico": "favicon", "/i18n.js": "i18n_js",
     "/hearth.mp4": "hearth", "/hearth-poster.jpg": "hearth_poster",
+    "/loader.svg": "loader",
     "/manifest.webmanifest": "manifest", "/sw.js": "service_worker",
     "/icon-192.png": "icon192", "/icon-512.png": "icon512",
     "/icon-maskable-512.png": "icon_maskable",
@@ -3222,7 +3232,7 @@ PUBLIC_ROUTES = {"/", "/index.html", "/i18n.js", "/favicon.ico", "/health", "/au
                  "/about", "/contact", "/kokoro",
                  # The door's fire sits behind a signed-out visitor's first
                  # screen, so it has to load before there is a session.
-                 "/hearth.mp4", "/hearth-poster.jpg",
+                 "/hearth.mp4", "/hearth-poster.jpg", "/loader.svg",
                  # A signed-out visitor sees prices before signing in, so the
                  # overlay's price ids have to be readable without a session.
                  "/billing/config",
