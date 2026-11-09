@@ -348,10 +348,15 @@ class BrowserTest(unittest.TestCase):
                               " && !!document.querySelector('#v-lib.on')")
 
     def shelf(self):
-        """What the shelf actually renders: title + the voiced line, per cell."""
+        """What the shelf actually renders: title + the voiced line, per cell.
+
+        Selected by class, not by child index. The cell gained a mark-read
+        button and then an author line, and an index-based read quietly started
+        returning the author and calling it the voiced count.
+        """
         return self.page.evaluate("""() => Array.from(document.querySelectorAll('#shelf .bk')).map(
-            el => ({ title: (el.children[1] || {}).textContent || '',
-                     line: (el.children[3] || {}).textContent || '' }))""")
+            el => ({ title: (el.querySelector('.bktitle, div:nth-child(2)') || {}).textContent || '',
+                     line: (el.querySelector('.small') || {}).textContent || '' }))""")
 
     def library_via_host(self):
         """The same user's shelf, asked of the host directly with the browser's
