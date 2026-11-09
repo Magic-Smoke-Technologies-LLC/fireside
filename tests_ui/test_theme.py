@@ -127,3 +127,38 @@ class TestThemeOnTheDoor(BrowserTest):
                              "a control that disagrees with the page is worse than none")
         finally:
             other.close()
+
+    def test_the_control_sits_where_settings_belong(self):
+        # Chris, 11-09: "the settings should be top right where the gravatar is".
+        # It shipped top left, and a control in the wrong corner is a control
+        # nobody finds twice.
+        self.open_site()
+        self.wait_door_rendered()
+        vw = self.page.evaluate("() => innerWidth")
+        door = self.page.eval_on_selector(
+            "#thememountdoor .themebtn",
+            "e => { const r = e.getBoundingClientRect();"
+            " return {right: r.right, top: r.top}; }")
+        self.assertGreater(door["right"], vw - 60, "the door gear belongs at the right edge")
+        self.assertLess(door["top"], 60, "and at the top")
+        # signed in it keeps the same corner, beside the avatar rather than over
+        # a bar that no longer needs one on the left
+        self.register("corner_reader")
+        bar = self.page.eval_on_selector(
+            "#thememount .themebtn",
+            "e => { const r = e.getBoundingClientRect();"
+            " return {right: r.right, top: r.top}; }")
+        avatar = self.page.eval_on_selector(
+            "#avatar", "e => { const r = e.getBoundingClientRect(); return {x: r.x}; }")
+        self.assertGreater(bar["right"], vw - 200)
+        self.assertLessEqual(bar["right"], avatar["x"] + 1,
+                             "the gear sits to the left of the avatar, in the same corner")
+        self.assertLess(bar["top"], 60)
+        # and its menu opens back into the page instead of off the screen edge
+        self.page.click("#thememount .themebtn")
+        wait_visible(self.page, "#thememount .thememenu")
+        menu = self.page.eval_on_selector(
+            "#thememount .thememenu",
+            "e => { const r = e.getBoundingClientRect(); return {x: r.x, right: r.right}; }")
+        self.assertLessEqual(menu["right"], vw + 1)
+        self.assertGreater(menu["x"], 0)
