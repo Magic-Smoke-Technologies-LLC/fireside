@@ -1572,6 +1572,24 @@ class App:
             out["sale"] = _sale_offer(provider, speech, cred)
         return 200, out
 
+    def credits_history(self, q, body):
+        """The last rows of this user's own ledger, newest first.
+
+        The wallet is the one place where money changing is visible, so an
+        absorbed overage has to be a row a person can read - estimate against
+        final - rather than a line in a support log. Read-only."""
+        uid = self._uid(q, body)
+        if not uid:
+            return 401, {"error": "auth required"}
+        rows = accounting.ledger_entries(self.conn, uid)[-50:]
+        rows.reverse()
+        return 200, {
+            "unit": accounting.currency(self.conn, uid) or "USD",
+            "entries": [{"kind": r["kind"], "delta": r["delta"],
+                         "currency": r["currency"], "note": r["note"],
+                         "at": r["created_at"]} for r in rows],
+        }
+
     def credits_purchase(self, q, body):
         """Buy character capacity. Held until a payment provider is configured.
 
@@ -3015,6 +3033,7 @@ GET_ROUTES = {
     "/sessions": "sessions_list",
     "/2fa": "twofa_status",
     "/auth/users": "auth_users", "/credits": "credits",
+    "/credits/history": "credits_history",
     "/grants": "grants_list",
     "/admin/plans": "plans_admin",
     "/admin/accounts": "admin_accounts",
