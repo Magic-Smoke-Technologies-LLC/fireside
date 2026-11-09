@@ -307,6 +307,11 @@
   .lockwel .welcta:hover{border-color:var(--flame)}
   .lockwel .wellinks{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0 0;font-size:14px}
   .lockwel .wellinks a{color:var(--soft)}
+  /* A theme picker on the door: someone who needs the contrast should not have
+     to make an account to get it. */
+  .lockwel .weldisp{display:flex;align-items:center;gap:10px;margin:16px 0 0;font-size:14px;color:var(--soft)}
+  .lockwel .weldisp select{font:inherit;color:inherit;background:transparent;
+    border:1px solid var(--line);border-radius:8px;padding:4px 8px}
   @media(max-width:880px){
     .lockwrap{grid-template-columns:minmax(0,1fr);gap:26px;max-width:400px}
     .lockwel .welh{font-size:26px;margin:10px 0 8px}
@@ -747,15 +752,24 @@
    media queries decide: light scheme, then prefers-contrast. */
 (function () {
   var root = document.documentElement;
-  var pick = null;
-  try { pick = localStorage.getItem('fs.theme'); } catch (e) {}
-  if (pick === 'light' || pick === 'dark' || pick === 'hc' || pick === 'cvd') {
-    root.setAttribute('data-theme', pick);
-    var dark = pick !== 'light';
-    root.style.colorScheme = dark ? 'dark' : 'light';
-    var m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', pick === 'hc' ? '#000000' : (dark ? '#14110f' : '#f7f3ec'));
+  var THEMES = ['light', 'dark', 'hc', 'cvd'];
+  /* The account's theme, if this page was rendered for a signed-in reader. It
+     wins over this browser's copy: the account is the promise that a new
+     machine comes up right, and the browser is only what the last machine
+     remembered. */
+  var picked = root.getAttribute('data-theme') || '';
+  if (THEMES.indexOf(picked) < 0) {
+    picked = '';
+    try { picked = localStorage.getItem('fs.theme') || ''; } catch (e) {}
   }
+  if (THEMES.indexOf(picked) < 0) return;
+  root.setAttribute('data-theme', picked);
+  root.style.colorScheme = picked === 'light' ? 'light' : 'dark';
+  var m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute('content', picked === 'hc' ? '#000000' : (picked === 'light' ? '#f7f3ec' : '#14110f'));
+  /* Remember the account value here too, so the next load paints right before
+     the server has said anything. */
+  try { localStorage.setItem('fs.theme', picked); } catch (e) {}
 })();
 </script>
 <script>
@@ -795,6 +809,16 @@
       <a href="/privacy" target="_blank" rel="noopener" data-t="Privacy">Privacy</a>
       <a href="/terms" target="_blank" rel="noopener" data-t="Terms">Terms</a>
     </p>
+    <div class="weldisp">
+      <label for="doortheme" data-t="Theme">Theme</label>
+      <select id="doortheme" style="max-width:220px">
+        <option value="" data-t="Follow this device">Follow this device</option>
+        <option value="light" data-t="Light">Light</option>
+        <option value="dark" data-t="Dark">Dark</option>
+        <option value="hc" data-t="High contrast">High contrast</option>
+        <option value="cvd" data-t="Colour-vision safe">Colour-vision safe</option>
+      </select>
+    </div>
   </section>
   <form class="card" id="lockform" autocomplete="on" novalidate>
     <h1 id="locktitle" data-t="sign in">sign in</h1>
@@ -1774,21 +1798,45 @@ if ($('#settabs')) document.querySelectorAll('#settabs button').forEach(b => b.o
 
 // --- display: theme -------------------------------------------------------
 /* The attribute is already set before paint by the inline head script; this
-   only wires the control to it. Stored per browser on purpose: contrast is a
-   property of the screen you are sitting at, not of the account. */
+   only wires the controls to it.
+
+   Two scopes, on purpose. Before an account exists there is only this browser,
+   and the door carries a control of its own so someone who needs the contrast
+   can get it without signing up first. Once there is an account the choice is
+   saved there as well, because a preference that lives only in localStorage
+   means every new device starts over. */
+const FS_THEMES = ['light', 'dark', 'hc', 'cvd'];
+function paintTheme(v) {
+  const root = document.documentElement;
+  if (v) root.setAttribute('data-theme', v); else root.removeAttribute('data-theme');
+  root.style.colorScheme = v === 'light' ? 'light' : (v ? 'dark' : '');
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute('content', v === 'hc' ? '#000000' : (v === 'light' ? '#f7f3ec' : '#14110f'));
+  document.querySelectorAll('#themesel, #doortheme').forEach(el => { el.value = v || ''; });
+}
+function applyTheme(v, save) {
+  const ok = FS_THEMES.includes(v) ? v : '';
+  paintTheme(ok);
+  try { ok ? localStorage.setItem('fs.theme', ok) : localStorage.removeItem('fs.theme'); } catch (_) {}
+  if (save && USER) {
+    api('/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme: ok }) }).catch(() => {});
+  }
+}
 (function () {
-  const sel = $('#themesel'); if (!sel) return;
   let picked = ''; try { picked = localStorage.getItem('fs.theme') || ''; } catch (_) {}
-  sel.value = picked;
-  sel.onchange = () => {
-    const v = sel.value;
-    try { v ? localStorage.setItem('fs.theme', v) : localStorage.removeItem('fs.theme'); } catch (_) {}
-    const root = document.documentElement;
-    if (v) root.setAttribute('data-theme', v); else root.removeAttribute('data-theme');
-    root.style.colorScheme = v === 'light' ? 'light' : (v ? 'dark' : '');
-    const m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', v === 'hc' ? '#000000' : (v === 'light' ? '#f7f3ec' : '#14110f'));
-  };
+  const boot = document.documentElement.getAttribute('data-theme') || picked || '';
+
+  const sel = $('#themesel');
+  if (sel) {
+    sel.value = FS_THEMES.includes(boot) ? boot : '';
+    sel.onchange = () => applyTheme(sel.value, true);
+  }
+  const door = $('#doortheme');
+  if (door) {
+    door.value = FS_THEMES.includes(picked) ? picked : '';
+    door.onchange = () => applyTheme(door.value, false);
+  }
 })();
 
 // --- settings: voice servers, kept on the server ---------------------------
@@ -3622,6 +3670,19 @@ async function requireSession() {
     AUTH.hasPassword = !!me.has_password;
     const navadm = $('#navadmin'); if (navadm) navadm.hidden = !AUTH.admin;
     localStorage.setItem(UKEY, USER);
+    /* Theme on arrival. The account is the durable answer, this browser is
+       only the last machine. If the account has one, it wins and is copied
+       here so the next paint is right too. If the account has none and this
+       browser does, the browser's pick becomes the account's: that is what
+       choosing on the door before signing up is for. */
+    const accTheme = me.theme || '';
+    if (accTheme) {
+      paintTheme(accTheme);
+      try { localStorage.setItem('fs.theme', accTheme); } catch (_) {}
+    } else {
+      let local = ''; try { local = localStorage.getItem('fs.theme') || ''; } catch (_) {}
+      if (FS_THEMES.includes(local)) applyTheme(local, true);
+    }
     const label = me.user.includes(':') ? me.user.split(':')[1] : me.user;
     who.textContent = label + (AUTH.admin ? ' · admin' : '');
     $('#avatar').textContent = (label.replace(/[^A-Za-z0-9]/, '')[0] || '?');

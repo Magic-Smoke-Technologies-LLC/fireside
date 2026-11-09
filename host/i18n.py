@@ -185,7 +185,8 @@ def render(page, cat):
     return _outside_scripts(page, per_chunk)
 
 
-def inject(page, code=None, cookies=None, query=None, accept_language=None):
+def inject(page, code=None, cookies=None, query=None, accept_language=None,
+           theme=None):
     """Return the page with lang/dir and the catalog spliced in.
 
     Also the only place /i18n.js is referenced, so a page that never goes
@@ -207,8 +208,13 @@ def inject(page, code=None, cookies=None, query=None, accept_language=None):
     script = ('<script>window.__FS_I18N__=' + blob + ';</script>\n'
               '<script src="/i18n.js"></script>\n')
     page = render(page, {"locale": code, "messages": cat["messages"]})
-    page = re.sub(r'<html lang="[^"]*"', '<html lang="%s" dir="%s"' % (code, cat["dir"]),
-                  page, count=1)
+    # The theme goes on the html element at render, not in a script: a script
+    # runs after the body has started painting, and a reader who chose high
+    # contrast sees the ordinary page flash first.
+    attrs = '<html lang="%s" dir="%s"' % (code, cat["dir"])
+    if theme:
+        attrs += ' data-theme="%s"' % theme
+    page = re.sub(r'<html lang="[^"]*"', attrs, page, count=1)
     if "</head>" in page:
         return page.replace("</head>", script + "</head>", 1)
     return script + page

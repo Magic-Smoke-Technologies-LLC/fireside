@@ -315,6 +315,10 @@ _ADDED_COLUMNS = [
     # how the player reads along: highlight, scroll, scroll mode. JSON, because
     # it is one small bag of preferences and not a thing anything else queries.
     ("user_prefs", "reading", "TEXT"),
+    # the theme the reader picked, so a new browser comes up already right.
+    # '' means follow this device, which is why it is not NULL: an old row and a
+    # deliberately unchosen one mean the same thing.
+    ("user_prefs", "theme", "VARCHAR(16) DEFAULT ''"),
     ("renditions", "pron", "VARCHAR(16) DEFAULT ''"),
     # device tracking on a session: a public id to name it, and what it is.
     ("sessions", "sid", "VARCHAR(32) DEFAULT ''"),

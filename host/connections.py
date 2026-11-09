@@ -148,6 +148,16 @@ def resolve(conn, uid, conn_id):
 READING_DEFAULTS = {"highlight": True, "scroll": True, "mode": "follow"}
 READING_MODES = ("center", "follow")
 
+# Themes the client can draw. Kept here, not in the UI alone, because a stored
+# value from an older or a hand-edited client must not become an attribute the
+# page cannot render: an unknown theme would be a page with no colours at all.
+THEMES = ("light", "dark", "hc", "cvd")
+
+
+def theme_value(raw):
+    """A theme name, or '' for follow-this-device."""
+    return raw if raw in THEMES else ""
+
 
 def reading_prefs(raw, base=None):
     """One reading-preferences bag, defaults filled in.
@@ -168,19 +178,33 @@ def reading_prefs(raw, base=None):
 
 
 def get_prefs(conn, uid):
-    r = conn.execute("SELECT default_connection_id,default_voice,reading FROM user_prefs "
-                     "WHERE user_id=?", (uid,)).fetchone()
+    r = conn.execute("SELECT default_connection_id,default_voice,reading,theme "
+                     "FROM user_prefs WHERE user_id=?", (uid,)).fetchone()
     reading = _loads(r["reading"]) if r else {}
     return {"default_connection_id": (r["default_connection_id"] if r else "") or "",
             "default_voice": (r["default_voice"] if r else "") or "",
-            "reading": reading_prefs(reading)}
+            "reading": reading_prefs(reading),
+            "theme": theme_value(r["theme"] if r else "")}
 
 
-def set_prefs(conn, uid, connection_id=None, voice=None, reading=None):
+def get_theme(conn, uid):
+    """Just the theme, for the page render, which has no other business here."""
+    if not uid:
+        return ""
+    try:
+        r = conn.execute("SELECT theme FROM user_prefs WHERE user_id=?",
+                         (uid,)).fetchone()
+    except Exception:      # a database from before the column existed
+        return ""
+    return theme_value(r["theme"] if r else "")
+
+
+def set_prefs(conn, uid, connection_id=None, voice=None, reading=None, theme=None):
     """None leaves a field alone; "" clears it."""
     cur = get_prefs(conn, uid)
     cid = cur["default_connection_id"] if connection_id is None else connection_id
     v = cur["default_voice"] if voice is None else voice
+    th = cur["theme"] if theme is None else theme_value(theme)
     # carry `pron` and `reading` through: INSERT OR REPLACE drops any column
     # left out of the list, so saving a default voice must not wipe either.
     row = conn.execute("SELECT pron,reading FROM user_prefs WHERE user_id=?", (uid,)).fetchone()
@@ -190,7 +214,7 @@ def set_prefs(conn, uid, connection_id=None, voice=None, reading=None):
         rd = json.dumps(reading_prefs(reading, cur["reading"]))
     conn.execute(
         "INSERT OR REPLACE INTO user_prefs"
-        "(user_id,default_connection_id,default_voice,pron,reading,updated_at) "
-        "VALUES(?,?,?,?,?,?)",
-        (uid, cid or "", v or "", bag, rd, now()))
+        "(user_id,default_connection_id,default_voice,pron,reading,theme,updated_at) "
+        "VALUES(?,?,?,?,?,?,?)",
+        (uid, cid or "", v or "", bag, rd, th, now()))
     conn.commit()

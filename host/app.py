@@ -435,7 +435,11 @@ class App:
                         "FIRESIDE_CONTACT_EMAIL", "support@readfireside.com")))
         # localisable: the handler picks the language and splices the catalog in,
         # because only the request knows the cookie and Accept-Language.
-        return 200, {"_html": page, "_locale": True}
+        # The theme rides the same render: applied after paint it is a flash of
+        # the wrong colours, which is exactly what someone who needs the
+        # contrast cannot use.
+        return 200, {"_html": page, "_locale": True,
+                     "_theme": connections.get_theme(self.conn, (q or {}).get("_user") or "")}
 
     def i18n_js(self, q, body):
         """The client half of i18n: T(), data-t application, language switch.
@@ -2418,8 +2422,10 @@ class App:
             kw["voice"] = body.get("default_voice") or ""
         if "reading" in body and isinstance(body.get("reading"), dict):
             kw["reading"] = body.get("reading")
+        if "theme" in body:
+            kw["theme"] = body.get("theme") or ""
         connections.set_prefs(self.conn, uid, **kw)
-        return 200, {"ok": True}
+        return 200, {"ok": True, "theme": connections.get_theme(self.conn, uid)}
 
     # ---- pronunciation fixes (per user, applied before any engine) ----------
 
@@ -2678,7 +2684,11 @@ class App:
                      "admin": auth.is_admin(self.conn, uid),
                      # about yourself only: the account panel reads this to ask
                      # for a password (local) or a typed phrase (social-only).
-                     "has_password": bool(uid) and auth.has_local_account(self.conn, uid)}
+                     "has_password": bool(uid) and auth.has_local_account(self.conn, uid),
+                     # the account's theme: a new browser asks here, because the
+                     # browser's own copy says nothing about a machine it has
+                     # never seen.
+                     "theme": connections.get_theme(self.conn, uid) if uid else ""}
 
     def auth_linked(self, q, body):
         """Which social providers the signed-in user has attached."""
@@ -3579,7 +3589,8 @@ def make_handler(app):
             if isinstance(payload, dict) and "_html" in payload:
                 page = payload["_html"]
                 if payload.get("_locale"):
-                    page = i18n.inject(page, code=q.get("_lang"))
+                    page = i18n.inject(page, code=q.get("_lang"),
+                                       theme=payload.get("_theme"))
                 raw = page.encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
