@@ -43,7 +43,8 @@ def _free_port():
 class LocalHost:
     """A host process on a free port, over a data dir that is thrown away."""
 
-    def __init__(self, plugins=None):
+    def __init__(self, plugins=None, env_extra=None):
+        self.env_extra = dict(env_extra or {})
         self.data = tempfile.mkdtemp(prefix="fireside-ui-")
         self.plugins = plugins or PLUGINS
         self.port = _free_port()
@@ -62,6 +63,9 @@ class LocalHost:
             "PYTHONPATH": REPO,
             "PYTHONUNBUFFERED": "1",
         })
+        # A test that needs a provider configured passes the two env names the
+        # provider table reads. Everything else stays scrubbed.
+        env.update(self.env_extra)
         # the child's output goes to a file, not a pipe: a pipe we only read
         # after the process dies is useless at the moment we most want it, which
         # is while it is still running and misbehaving
@@ -224,7 +228,7 @@ class BrowserTest(unittest.TestCase):
     def setUp(self):
         result = getattr(self._outcome, "result", None)
         self._errors_before = len(result.errors) + len(result.failures) if result else 0
-        self.host = LocalHost()
+        self.host = LocalHost(env_extra=getattr(self, "host_env", None))
         self.context = self.browser.new_context(viewport={"width": 1280, "height": 900})
         self.page = self.context.new_page()
         self.page_errors = []          # uncaught exceptions: always a defect

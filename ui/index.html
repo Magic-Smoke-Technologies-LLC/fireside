@@ -25,25 +25,34 @@
     --ring:var(--flame);
   }
   /* Light: paper, not a washed-out dark theme. */
-  [data-theme="light"]{
+  [data-theme="light"], :root[data-theme="light"]{
     --bg:#f7f3ec; --surface:#fffdf8; --raise:#efe9df; --line:#d3c9b9;
     --text:#221e1a; --soft:#57503f; --faint:#6f6759;
     --flame:#8a5a12; --on-flame:#fff8ec; --ready:#2f6b3a; --warn:#9c3527;
     --ring:#8a5a12;
   }
-  /* Colour-vision safe: the same dark neutrals, so nothing but meaning moves.
-     Ready and warn sit on the axis deuteranopes and protanopes keep (blue
-     against purple), instead of the green/red pair that collapses to one
-     muddy colour. Simulated separation is asserted in tests/test_a11y.py:
-     ready vs warn measures 31/21 dE against 10/7 for the default palette. */
-  [data-theme="cvd"]{
+  /* Colour-vision safe. Ready and warn sit on the axis deuteranopes and
+     protanopes keep (blue against purple) instead of the green/red pair that
+     collapses into one muddy colour; simulated separation is asserted in
+     tests/test_a11y.py: ready vs warn measures 31/21 dE against 10/7 for the
+     default palette.
+     The neutrals move too, and that is a correction, not decoration. This
+     theme used to change three meaning tokens and nothing else, so a reader
+     on a shelf with no status marks picked it and saw the page not change at
+     all (measured: 1.3% of the screen differed). A preference that does
+     nothing reads as a broken control. The dark neutrals now go cool, which
+     is the change a person sees, while the warm flame stays distinct from the
+     blue/purple pair. */
+  [data-theme="cvd"], :root[data-theme="cvd"]{
+    --bg:#0e1116; --surface:#161b22; --raise:#1f262f; --line:#333c48;
+    --text:#e8edf4; --soft:#b0bac6; --faint:#939eac;
     --flame:#e69f00; --on-flame:#1a1206; --ready:#56b4e9; --warn:#cc79a7;
     --ring:#e69f00;
   }
   /* High contrast: full white on black, and the two states are told apart by
      lightness as well as hue, because colour alone is the thing some readers
      cannot use. Ready is the brightest, not-a-state is the flame. */
-  [data-theme="hc"]{
+  [data-theme="hc"], :root[data-theme="hc"]{
     --bg:#000000; --surface:#0b0b0b; --raise:#1a1a1a; --line:#8a8a8a;
     --text:#ffffff; --soft:#e6e6e6; --faint:#c8c8c8;
     --flame:#ffd400; --on-flame:#000000; --ready:#e6f2ff; --warn:#d2670a;
@@ -314,16 +323,40 @@
   .lockwel .welrates .ratefine{display:block;color:var(--faint);font-size:13px}
   .lockwel .welrates .ratefine a{color:var(--soft)}
   .lockwel .welcred{color:var(--flame);font-size:14px;margin:22px 0 0}
-  .lockwel .welcta{margin:18px 0 0;padding:11px 22px;border-radius:999px;border:1px solid var(--line);
-    background:transparent;color:var(--text);font:600 15px var(--ui);cursor:pointer}
-  .lockwel .welcta:hover{border-color:var(--flame)}
-  .lockwel .wellinks{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0 0;font-size:14px}
-  .lockwel .wellinks a{color:var(--soft)}
+  /* Two actions, and they look like actions. A door whose only obvious
+     buttons are "Sign in" and the providers leaves a stranger hunting for the
+     way in; the price list was a link in a sentence. */
+  .lockwel .welactions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 0}
+  .lockwel .welcta{margin:0;padding:11px 22px;border-radius:999px;border:1px solid transparent;
+    background:var(--flame);color:var(--on-flame);font:600 15px var(--ui);cursor:pointer}
+  .lockwel .welcta:hover{filter:brightness(1.06)}
+  .lockwel .welghost{padding:10px 18px;border-radius:999px;border:1px solid var(--line);
+    color:var(--text);font:500 14.5px var(--ui);text-decoration:none}
+  .lockwel .welghost:hover{border-color:var(--flame);color:var(--flame)}
   /* A theme picker on the door: someone who needs the contrast should not have
      to make an account to get it. */
-  .lockwel .weldisp{display:flex;align-items:center;gap:10px;margin:16px 0 0;font-size:14px;color:var(--soft)}
-  .lockwel .weldisp select{font:inherit;color:inherit;background:transparent;
-    border:1px solid var(--line);border-radius:8px;padding:4px 8px}
+  /* The theme control: top left on every page, in the bar where there is a
+     bar and as the same gear on the door, which has none. Someone who needs
+     contrast should not have to find a settings page to get it, and a control
+     that moves between pages is a control nobody finds twice. */
+  .thememount{position:relative;display:inline-flex;align-items:center}
+  .themebtn{display:inline-flex;align-items:center;justify-content:center;
+    background:none;border:1px solid transparent;border-radius:999px;padding:6px;
+    color:var(--faint);cursor:pointer}
+  .themebtn:hover{color:var(--text);border-color:var(--line)}
+  .themebtn[aria-expanded="true"]{color:var(--text);border-color:var(--line)}
+  .themebtn svg{width:17px;height:17px;display:block}
+  .thememenu{position:absolute;top:calc(100% + 8px);left:0;z-index:95;min-width:216px;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px;
+    box-shadow:0 18px 44px #0007}
+  .thememenu[hidden]{display:none}
+  .thememenu button{display:block;width:100%;text-align:left;background:none;border:0;
+    border-radius:8px;padding:8px 10px;font:13.5px var(--ui);color:var(--soft);cursor:pointer}
+  .thememenu button:hover{background:var(--raise);color:var(--text)}
+  .thememenu button[aria-checked="true"]{color:var(--text);font-weight:600}
+  .thememenu button[aria-checked="true"]::after{content:"✓";float:right;color:var(--flame)}
+  /* On the door there is no bar to sit in, so the gear floats over the overlay. */
+  body.locked .thememount.door{position:fixed;top:10px;left:12px;z-index:80}
   @media(max-width:880px){
     .lockwrap{grid-template-columns:minmax(0,1fr);gap:26px;max-width:400px}
     .lockwel .welh{font-size:26px;margin:10px 0 8px}
@@ -352,8 +385,20 @@
   .lock .toggle{display:block;margin:8px auto 0;background:none;border:0;color:var(--soft);
     font:14px var(--ui);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px 8px}
   .lock .toggle[hidden]{display:none}
-  .lock .sso{margin-top:20px;padding-top:20px;border-top:1px solid var(--line)}
+  .lock .sso{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
   .lock .sso:empty{display:none}
+  /* Providers are brands, so they are the brand mark and nothing else: a row
+     of "Continue with …" buttons of identical weight made a stranger read the
+     door as a list of paragraphs. The name stays under the glyph, small, so
+     the tile still says what it does; it is not hidden in a tooltip. */
+  .lock .sso .ssotiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px;margin-top:8px}
+  .lock .ssotile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+    width:100%;margin:0;padding:11px 8px;border:1px solid var(--line);border-radius:12px;
+    background:transparent;color:var(--soft);cursor:pointer;font:12px var(--ui);line-height:1.2}
+  .lock .ssotile:hover{border-color:var(--flame);color:var(--text)}
+  .lock .ssotile svg{width:22px;height:22px;display:block}
+  .lock .sso .ssocap{color:var(--faint);font-size:12px;letter-spacing:.08em;
+    text-transform:uppercase;margin:0 0 2px}
   /* --- the foot: who runs this and the papers, on every page -------------
      It lives outside <main> so it survives the door, where <main> is hidden;
      on the door the overlay is fixed and full-bleed, so the foot rides above
@@ -451,6 +496,17 @@
     vertical-align:top;white-space:nowrap;border-top:1px solid var(--line)}
   .ratetable td{padding:10px 0;border-top:1px solid var(--line);color:var(--text)}
   .ratetable td span{display:block;color:var(--faint);font-size:13px;margin-top:2px}
+  /* The wallet promise is what a buyer is actually deciding on: the money does
+     not rot, it is charged once per chapter, and the rate is the provider's
+     plus a tenth of a cent a thousand. It used to be fine print under the
+     rate table, which is where a promise goes to be missed. */
+  .walletpromise{margin:20px 0 6px;padding:16px 20px 18px;max-width:720px;
+    border:1px solid var(--line);border-left:4px solid var(--flame);border-radius:12px;
+    background:var(--surface)}
+  .walletpromise .wpk{margin:0 0 7px;color:var(--flame);font:600 11.5px var(--ui);
+    letter-spacing:.14em;text-transform:uppercase}
+  .walletpromise .wplead{margin:0;color:var(--text);font:600 19px/1.4 var(--ui);letter-spacing:-.005em}
+  .walletpromise .wpbody{margin:9px 0 0;color:var(--soft);font-size:14.5px;line-height:1.6}
   .prlist.twocol{columns:2;column-gap:36px}
   .prlist.twocol li{break-inside:avoid}
   @media(max-width:760px){ .prlist.twocol{columns:1} }
@@ -612,7 +668,7 @@
     --flame:#e8b06a; --on-flame:#1d1305;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
   }
-  [data-theme="light"]{
+  [data-theme="light"], :root[data-theme="light"]{
     --bg:#f6f1e7; --surface:#fffcf5; --raise:#ece4d6; --line:#d5c8b2;
     --text:#1f1a14; --soft:#544a3a; --faint:#6e6353;
     --flame:#8a5a12; --on-flame:#fff8ec;
@@ -623,6 +679,7 @@
     background:radial-gradient(90% 120% at 22% -14%,rgba(232,176,106,.11),rgba(232,176,106,.035) 42%,transparent 72%);
     z-index:0}
   [data-theme="light"] body::before{background:radial-gradient(90% 120% at 22% -14%,rgba(138,90,18,.07),transparent 68%)}
+  [data-theme="cvd"] body::before{background:radial-gradient(90% 120% at 22% -14%,rgba(86,180,233,.10),rgba(86,180,233,.03) 42%,transparent 72%)}
   [data-theme="hc"] body::before{display:none}
   body > *{position:relative;z-index:1}
 
@@ -820,6 +877,7 @@
 <body class="locked">
 <a class="skip" href="#main" data-t="Skip to content">Skip to content</a>
 <div class="lock" id="lock" hidden>
+ <div class="thememount door" id="thememountdoor"></div>
  <div class="lockwrap">
   <section class="lockwel" id="lockwel" aria-label="About fireside" data-t-aria="About fireside">
     <p class="mark" data-t="fireside">fireside</p>
@@ -841,21 +899,9 @@
         <span class="ratefine"><a href="/pricing" data-t="see the plans">see the plans</a></span></td></tr>
     </table>
     <p class="welcred" data-t="New accounts get $3 of narration credit when the first paid month begins.">New accounts get $3 of narration credit when the first paid month begins.</p>
-    <button class="welcta" id="welstart" type="button" data-t="Create a free account">Create a free account</button>
-    <p class="wellinks">
-      <a href="/pricing" data-t="Plans and pricing →">Plans and pricing →</a>
-      <a href="/privacy" target="_blank" rel="noopener" data-t="Privacy">Privacy</a>
-      <a href="/terms" target="_blank" rel="noopener" data-t="Terms">Terms</a>
-    </p>
-    <div class="weldisp">
-      <label for="doortheme" data-t="Theme">Theme</label>
-      <select id="doortheme" style="max-width:220px">
-        <option value="" data-t="Follow this device">Follow this device</option>
-        <option value="light" data-t="Light">Light</option>
-        <option value="dark" data-t="Dark">Dark</option>
-        <option value="hc" data-t="High contrast">High contrast</option>
-        <option value="cvd" data-t="Colour-vision safe">Colour-vision safe</option>
-      </select>
+    <div class="welactions">
+      <button class="welcta" id="welstart" type="button" data-t="Create a free account">Create a free account</button>
+      <a class="welghost" href="/pricing" data-t="Plans and pricing →">Plans and pricing →</a>
     </div>
   </section>
   <form class="card" id="lockform" autocomplete="on" novalidate>
@@ -881,9 +927,6 @@
     <p class="err" id="autherr" role="alert" aria-live="polite"></p>
     <button class="toggle" id="lockforgot" type="button" hidden data-t="Forgot password?">Forgot password?</button>
     <button class="toggle" id="locktoggle" type="button" aria-label="Switch between signing in and creating an account" data-t-aria="Switch between signing in and creating an account" hidden></button>
-    <a class="toggle" id="lockplans" href="/pricing" style="text-decoration:none" data-t="See plans &amp; pricing →">See plans &amp; pricing →</a>
-    <a class="toggle" href="/privacy" target="_blank" rel="noopener" style="text-decoration:none" data-t="Privacy">Privacy</a>
-    <a class="toggle" href="/terms" target="_blank" rel="noopener" style="text-decoration:none" data-t="Terms">Terms</a>
     <div id="lockproviders" class="sso"></div>
   </form>
  </div>
@@ -891,6 +934,7 @@
 <header>
   <div class="brand">
     <h1 class="wordmark"><button type="button" id="brandhome" data-t="fireside">fireside</button></h1>
+    <div class="thememount" id="thememount"></div>
     <span id="ver">v__HOST_VERSION__</span>
   </div>
   <nav class="tabs" id="tabs" aria-label="Sections" data-t-aria="Sections">
@@ -1304,6 +1348,12 @@
       </div>
     </div>
 
+    <div class="walletpromise" id="walletpromise">
+      <p class="wpk" data-t="Your wallet">Your wallet</p>
+      <p class="wplead" data-t="Wallet dollars never expire and are spent only on chapters you render, once per chapter.">Wallet dollars never expire and are spent only on chapters you render, once per chapter.</p>
+      <p class="wpbody" data-t="Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.">Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.</p>
+    </div>
+
     <div class="pricegrid" id="pageplans">
       <div class="prcard">
         <div class="rung" data-t="Free">Free</div>
@@ -1356,7 +1406,6 @@
       <tr><th data-t="Your own voice server">Your own voice server</th><td><b data-t="Nothing to us, and nothing to anyone">Nothing to us, and nothing to anyone</b>
         <span data-t="run Kokoro or any OpenAI-compatible speech server on your own machine and connect it under Settings, Voice servers. Your hardware, your electricity.">run Kokoro or any OpenAI-compatible speech server on your own machine and connect it under Settings, Voice servers. Your hardware, your electricity.</span></td></tr>
     </table>
-    <p class="sub" style="margin-top:10px" data-t="Wallet dollars never expire and are spent only on chapters you render, once per chapter. Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.">Wallet dollars never expire and are spent only on chapters you render, once per chapter. Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.</p>
 
     <h3 style="margin-top:34px" data-t="On every plan">On every plan</h3>
     <ul class="prlist twocol">
@@ -1845,6 +1894,54 @@ if ($('#settabs')) document.querySelectorAll('#settabs button').forEach(b => b.o
   sel.onchange = () => I.setLocale(sel.value);
 })();
 
+// --- sign-in providers: the brand mark, not another sentence --------------
+/* A row of identical ghost buttons reading "Continue with …" made the door
+   read as paragraphs with a submit at the end. Each provider is its own tile
+   with its own mark now: the glyph is what a person scans for, and the name
+   stays under it in small type so the tile still says what it does. The marks
+   are the official ones (Google's four-colour G from gstatic, the rest from
+   simple-icons); GitHub and X take currentColor so they hold up on every
+   theme instead of going black on a black background. */
+const PROVICON = {
+  github: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>',
+  google: '<svg viewBox="0 0 118 120" aria-hidden="true"><path fill="#4285F4" d="M117.6,61.3636364 C117.6,57.1090909 117.218182,53.0181818 116.509091,49.0909091 L60,49.0909091 L60,72.3 L92.2909091,72.3 C90.9,79.8 86.6727273,86.1545455 80.3181818,90.4090909 L80.3181818,105.463636 L99.7090909,105.463636 C111.054545,95.0181818 117.6,79.6363636 117.6,61.3636364 L117.6,61.3636364 Z"/><path fill="#34A853" d="M60,120 C76.2,120 89.7818182,114.627273 99.7090909,105.463636 L80.3181818,90.4090909 C74.9454545,94.0090909 68.0727273,96.1363636 60,96.1363636 C44.3727273,96.1363636 31.1454545,85.5818182 26.4272727,71.4 L6.38181818,71.4 L6.38181818,86.9454545 C16.2545455,106.554545 36.5454545,120 60,120 L60,120 Z"/><path fill="#FBBC05" d="M26.4272727,71.4 C25.2272727,67.8 24.5454545,63.9545455 24.5454545,60 C24.5454545,56.0454545 25.2272727,52.2 26.4272727,48.6 L26.4272727,33.0545455 L6.38181818,33.0545455 C2.31818182,41.1545455 0,50.3181818 0,60 C0,69.6818182 2.31818182,78.8454545 6.38181818,86.9454545 L26.4272727,71.4 L26.4272727,71.4 Z"/><path fill="#EA4335" d="M60,23.8636364 C68.8090909,23.8636364 76.7181818,26.8909091 82.9363636,32.8363636 L100.145455,15.6272727 C89.7545455,5.94545455 76.1727273,0 60,0 C36.5454545,0 16.2545455,13.4454545 6.38181818,33.0545455 L26.4272727,48.6 C31.1454545,34.4181818 44.3727273,23.8636364 60,23.8636364 L60,23.8636364 Z"/></svg>',
+  microsoft: '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+    '<rect x="1.2" y="1.2" width="10" height="10" fill="#F25022"/>' +
+    '<rect x="12.8" y="1.2" width="10" height="10" fill="#7FBA00"/>' +
+    '<rect x="1.2" y="12.8" width="10" height="10" fill="#00A4EF"/>' +
+    '<rect x="12.8" y="12.8" width="10" height="10" fill="#FFB900"/></svg>',
+  facebook: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0866FF" d="M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 2.103-.287 1.564h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.628 3.874 10.35 9.101 11.647Z"/></svg>',
+  x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>',
+  simplelogin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#6D4AFF" d="M2.474 17.75V24h4.401v-5.979c0-.582.232-1.14.645-1.551a2.204 2.204 0 0 1 1.556-.643h4.513a7.955 7.955 0 0 0 5.612-2.318 7.907 7.907 0 0 0 2.325-5.595 7.91 7.91 0 0 0-2.325-5.596A7.958 7.958 0 0 0 13.587 0H2.474v7.812h4.401V4.129h6.416c.995 0 1.951.394 2.656 1.097.704.7 1.1 1.653 1.101 2.646a3.742 3.742 0 0 1-1.101 2.648 3.766 3.766 0 0 1-2.656 1.097H8.627a6.158 6.158 0 0 0-4.352 1.795 6.133 6.133 0 0 0-1.801 4.338Z"/></svg>'
+};
+function providerShortName(p) {
+  return String(p.label || p.id || '').replace(/\s*\(.*\)\s*$/, '').trim();
+}
+function providerButton(p, start) {
+  const name = providerShortName(p);
+  const label = 'Continue with ' + (p.label || name);
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'ssotile';
+  b.title = label; b.setAttribute('aria-label', label);
+  b.innerHTML = PROVICON[p.id] || '';
+  const cap = document.createElement('span');
+  cap.className = 'ssolab'; cap.textContent = name;
+  b.append(cap);
+  b.onclick = () => socialStart(start);
+  return b;
+}
+function providerTiles(host, providers, suffix) {
+  host.innerHTML = '';
+  const list = (providers || []).filter(p => p && p.kind !== 'local' && p.start);
+  if (!list.length) return;
+  const cap = document.createElement('p');
+  cap.className = 'ssocap'; cap.textContent = T('Or continue with');
+  const tiles = document.createElement('div');
+  tiles.className = 'ssotiles';
+  list.forEach(p => tiles.append(providerButton(p, p.start + (suffix || ''))));
+  host.append(cap, tiles);
+}
+
 // --- display: theme -------------------------------------------------------
 /* The attribute is already set before paint by the inline head script; this
    only wires the controls to it.
@@ -1853,15 +1950,36 @@ if ($('#settabs')) document.querySelectorAll('#settabs button').forEach(b => b.o
    and the door carries a control of its own so someone who needs the contrast
    can get it without signing up first. Once there is an account the choice is
    saved there as well, because a preference that lives only in localStorage
-   means every new device starts over. */
+   means every new device starts over.
+
+   The control itself is a gear, and it sits in the top left of every page: in
+   the bar where there is a bar, floating over the overlay on the door. It is
+   one element built from one function, mounted twice, so the two cannot drift
+   apart into different menus. */
 const FS_THEMES = ['light', 'dark', 'hc', 'cvd'];
+const FS_THEME_OPTS = [['', 'Follow this device'], ['light', 'Light'], ['dark', 'Dark'],
+                       ['hc', 'High contrast'], ['cvd', 'Colour-vision safe']];
+const FS_GEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<circle cx="12" cy="12" r="3.1"/>' +
+  '<path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 ' +
+  '1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83' +
+  'l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87' +
+  'l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 ' +
+  '1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09' +
+  'a1.7 1.7 0 0 0-1.55 1Z"/></svg>';
 function paintTheme(v) {
   const root = document.documentElement;
   if (v) root.setAttribute('data-theme', v); else root.removeAttribute('data-theme');
   root.style.colorScheme = v === 'light' ? 'light' : (v ? 'dark' : '');
   const m = document.querySelector('meta[name="theme-color"]');
   if (m) m.setAttribute('content', v === 'hc' ? '#000000' : (v === 'light' ? '#f7f3ec' : '#14110f'));
-  document.querySelectorAll('#themesel, #doortheme').forEach(el => { el.value = v || ''; });
+  const sel = $('#themesel'); if (sel) sel.value = v || '';
+  document.querySelectorAll('.thememenu').forEach(menu => {
+    menu.querySelectorAll('button[data-theme]').forEach(b => {
+      b.setAttribute('aria-checked', b.dataset.theme === (v || '') ? 'true' : 'false');
+    });
+  });
 }
 function applyTheme(v, save) {
   const ok = FS_THEMES.includes(v) ? v : '';
@@ -1872,19 +1990,49 @@ function applyTheme(v, save) {
                     body: JSON.stringify({ theme: ok }) }).catch(() => {});
   }
 }
+function buildThemeControl(mount) {
+  if (!mount || mount.dataset.built) return;
+  mount.dataset.built = '1';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'themebtn';
+  btn.setAttribute('aria-label', T('Theme')); btn.title = T('Theme');
+  btn.setAttribute('aria-haspopup', 'true'); btn.setAttribute('aria-expanded', 'false');
+  btn.innerHTML = FS_GEAR;
+  const menu = document.createElement('div');
+  menu.className = 'thememenu'; menu.hidden = true; menu.setAttribute('role', 'menu');
+  FS_THEME_OPTS.forEach(([v, label]) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.theme = v; b.setAttribute('role', 'menuitemradio');
+    b.setAttribute('aria-checked', 'false');
+    b.textContent = T(label);
+    b.onclick = () => { applyTheme(v, true); menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+    menu.append(b);
+  });
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const open = menu.hidden;
+    document.querySelectorAll('.thememenu').forEach(m => { m.hidden = true; });
+    document.querySelectorAll('.themebtn').forEach(b => b.setAttribute('aria-expanded', 'false'));
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  mount.append(btn, menu);
+  document.addEventListener('click', (e) => {
+    if (!mount.contains(e.target)) { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.hidden) { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+  });
+}
 (function () {
   let picked = ''; try { picked = localStorage.getItem('fs.theme') || ''; } catch (_) {}
   const boot = document.documentElement.getAttribute('data-theme') || picked || '';
-
+  document.querySelectorAll('.thememount').forEach(buildThemeControl);
+  paintTheme(FS_THEMES.includes(boot) ? boot : '');
   const sel = $('#themesel');
   if (sel) {
     sel.value = FS_THEMES.includes(boot) ? boot : '';
     sel.onchange = () => applyTheme(sel.value, true);
-  }
-  const door = $('#doortheme');
-  if (door) {
-    door.value = FS_THEMES.includes(picked) ? picked : '';
-    door.onchange = () => applyTheme(door.value, false);
   }
 })();
 
@@ -3343,11 +3491,7 @@ if ($('#pagesignup')) $('#pagesignup').onclick = () => openDoor(AUTH.hasAccounts
 if ($('#gotoplans')) $('#gotoplans').onclick = () => show('plans');
 if ($('#gotosand')) $('#gotosand').onclick = () => show('sand');
 if ($('#tnowbook')) $('#tnowbook').onclick = () => { if (player.id) show('play'); };
-if ($('#lockplans') && $('#lockplans').tagName === 'BUTTON') $('#lockplans').onclick = () => {
-  document.body.classList.remove('locked');
-  $('#lock').hidden = true;
-  show('plans');
-};
+
 async function revokeSessions(others, allUsers) {
   try {
     const body = { others: others }; if (allUsers) body.all_users = true;
@@ -3579,14 +3723,9 @@ function renderAuth() {
                                : (create ? 'I already have an account' : 'Create a new account');
   $('#lockforgot').hidden = create || forgot || reset;   // only on the sign-in door
   authMsg('');
-  const provs = $('#lockproviders'); provs.innerHTML = '';
+  const provs = $('#lockproviders');
   if (forgot || reset) return;                  // no social buttons while resetting
-  AUTH.providers.filter(p => p.kind !== 'local' && p.start).forEach(p => {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'btn ghost'; b.textContent = 'Continue with ' + p.label;
-    b.onclick = () => socialStart(p.start);
-    provs.append(b);
-  });
+  providerTiles(provs, AUTH.providers);
 }
 
 async function authSubmit() {
@@ -3797,7 +3936,6 @@ async function renderClaim() {
   $('#lockpass').setAttribute('autocomplete', 'current-password');
   $('#lockgo').textContent = T('Confirm and link');
   $('#locktoggle').hidden = true;
-  if ($('#lockplans')) $('#lockplans').hidden = true;
   authMsg('');
   const provs = $('#lockproviders'); provs.innerHTML = '';
   try {
@@ -3815,13 +3953,7 @@ async function renderClaim() {
     go.hidden = !d.has_password;
     pfield.disabled = !d.has_password;
     go.disabled = !d.has_password;
-    (d.methods || []).forEach(p => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'btn ghost';
-      b.textContent = 'Continue with ' + p.label;
-      b.onclick = () => socialStart(p.start + '?claim=' + encodeURIComponent(AUTH.claim));
-      provs.append(b);
-    });
+    providerTiles(provs, d.methods || [], '?claim=' + encodeURIComponent(AUTH.claim));
     if (d.has_password) { pfield.focus(); }
     else if (!(d.methods || []).length) {
       $('#locksub').textContent = T('This sign-in has expired. Go back and start again.');
