@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 import host.app as appmod
-from host import auth, billing, connections, grants, payments
+from host import accounting as acc, auth, billing, connections, grants, payments
 from host.app import App
 from tests.test_app import READER_BODY, STORAGE_BODY
 from tests.test_pluginhost import write_plugin
@@ -585,6 +585,25 @@ class TestCreditsAndBilling(Base):
         self.assertEqual(out["sale"]["provider"], "sale")
         self.assertAlmostEqual(out["sale"]["rate_per_1m_chars"], 15.0)
         self.assertEqual(out["sale"]["bundles"], [{"usd": 5, "chars": 333333}])
+
+    def test_history_needs_a_signed_in_user(self):
+        self.assertEqual(self.app.credits_history({}, {})[0], 401)
+
+    def test_history_is_this_users_own_ledger(self):
+        # The wallet shows what happened to the money, so the rows it reads have
+        # to be this account's rows: another user's top-up must not appear, and
+        # every row carries enough to be printed (amount, unit, note, time).
+        acc.topup(self.conn, "u1", 5.0, "USD", note="added funds")
+        acc.topup(self.conn, "u2", 9.0, "USD", note="someone else")
+        s, out = self.app.credits_history({}, {"user": "u1"})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(out["unit"], "USD")
+        notes = [e["note"] for e in out["entries"]]
+        self.assertIn("added funds", notes)
+        self.assertNotIn("someone else", notes)
+        for e in out["entries"]:
+            self.assertLessEqual({"kind", "delta", "currency", "note", "at"},
+                                 set(e))
 
     def test_credits_purchase_refusals(self):
         self.assertEqual(self.app.credits_purchase({}, {})[0], 401)
