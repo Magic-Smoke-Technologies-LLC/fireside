@@ -23,11 +23,18 @@ class TestThemeOnTheDoor(BrowserTest):
         return self.page.evaluate(
             "() => document.documentElement.getAttribute('data-theme')")
 
+    def _choose_on_door(self, theme):
+        """The door carries the same gear as the bar: open it and pick."""
+        self.page.click("#thememountdoor .themebtn")
+        wait_visible(self.page, "#thememountdoor .thememenu")
+        self.page.click("#thememountdoor .thememenu button[data-theme='%s']" % theme)
+        wait_until(self.page, "() => true")
+
     def test_a_stranger_can_choose_before_an_account(self):
         self.open_site()
         self.wait_door_rendered()
-        wait_visible(self.page, "#doortheme")
-        self.page.select_option("#doortheme", "cvd")
+        wait_visible(self.page, "#thememountdoor .themebtn")
+        self._choose_on_door("cvd")
         # no reload: the attribute is the theme
         self.assertEqual(self._picked(), "cvd")
         self.assertEqual(self.page.evaluate("() => localStorage.getItem('fs.theme')"),
@@ -38,13 +45,13 @@ class TestThemeOnTheDoor(BrowserTest):
         # to it, which is the reason the door carries its own.
         self.open_site()
         self.wait_door_rendered()
-        self.assertTrue(self.page.is_visible("#doortheme"))
+        self.assertTrue(self.page.is_visible("#thememountdoor .themebtn"))
         self.assert_no_page_errors()
 
     def test_signing_up_keeps_the_choice_and_makes_it_the_accounts(self):
         self.open_site()
         self.wait_door_rendered()
-        self.page.select_option("#doortheme", "cvd")
+        self._choose_on_door("cvd")
         self.page.fill("#lockuser", "cvd_reader")
         self.page.fill("#lockemail", "cvd_reader@example.test")
         self.page.fill("#lockpass", "bench-correction-1")

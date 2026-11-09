@@ -28,7 +28,7 @@ class TestWelcomeDoor(BrowserTest):
         headline = self.page.text_content("#lockwel .welh").strip()
         self.assertTrue(headline, "the welcome pane needs a headline, not just a form")
         # the price list was reachable only from a tab a stranger never saw
-        link = self.page.query_selector("#lockwel .wellinks a[href='/pricing']")
+        link = self.page.query_selector("#lockwel .welactions a[href='/pricing']")
         self.assertIsNotNone(link, "the welcome copy has to point at the prices")
         self.assertTrue(link.is_visible())
         self.assertIn("pricing", link.text_content().lower())

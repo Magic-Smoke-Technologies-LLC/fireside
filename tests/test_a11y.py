@@ -85,6 +85,48 @@ THEME_SELECTORS = [":root", '[data-theme="light"]', '[data-theme="hc"]',
                   '[data-theme="cvd"]']
 
 
+def _cascade(theme):
+    """What a token actually resolves to for a theme, by walking the stylesheet.
+
+    Reading one block is not the same as reading the page. The palette is
+    declared twice in this file (a base :root at the top and the built design
+    further down), and a plain :root further down ties with [data-theme="cvd"]
+    on specificity and wins on order. That shipped for weeks: the colour-vision
+    theme and high contrast both rendered with the default warm dark palette,
+    so high contrast was white-on-black in name only and cvd changed 0% of the
+    screen. Every block-level test passed, because every block-level test read
+    the block. This one reads the cascade, in source order, and lets the last
+    equally-specific declaration win the way a browser does.
+    """
+    css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", _page(), re.S))
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    effective, seen = {}, {}
+    for index, (selector, body) in enumerate(re.findall(r"([^{}]+)\{([^{}]*)\}", css)):
+        if "--" not in body:
+            continue
+        for sel in (x.strip() for x in selector.split(",")):
+            sel = re.sub(r"\s+", " ", sel)
+            weight = None
+            if ":not([data-theme])" in sel:
+                # Inside @media (prefers-color-scheme / prefers-contrast). A
+                # static walk cannot know what the machine prefers, so these are
+                # skipped: what is asserted here is the theme a reader chose.
+                continue
+            if sel == ":root":
+                weight = 1 if theme == "" else None
+            elif sel == '[data-theme="%s"]' % theme:
+                weight = 1
+            elif sel == ':root[data-theme="%s"]' % theme:
+                weight = 2
+            if weight is None:
+                continue
+            key = (weight, index)
+            for k, v in _tokens(body).items():
+                if k not in seen or key >= seen[k]:
+                    effective[k], seen[k] = v, key
+    return effective
+
+
 class TestContrast(unittest.TestCase):
 
     def test_every_theme_defines_the_whole_palette(self):
@@ -210,12 +252,42 @@ class TestColourBlindness(unittest.TestCase):
         d = _delta_e(_resolve(tokens, "ready"), _resolve(tokens, "warn"), PROTANOPIA)
         assert d < CVD_SEPARATION, "default now separates: dE = %.1f" % d
 
-    def test_the_colour_vision_theme_only_moves_colour(self):
-        # It is the dark neutrals with different meaning colours. A different
-        # background would make it a second design to keep accessible.
+    def test_the_colour_vision_theme_visibly_changes_something(self):
+        # This test used to assert the opposite, that cvd moved only the three
+        # meaning colours and left every neutral alone. That rule sounded
+        # principled and shipped a control that did nothing: on a shelf with no
+        # status marks the page changed on 1.3% of the screen, and a reader who
+        # picked it saw no change at all. A preference has to be observable, so
+        # the neutrals are a cool set now. What still has to hold is that it is
+        # not a second design: the surfaces keep the same roles and the same
+        # text/background pairing, and only the tone moves.
         root, cvd = _tokens(_block(":root")), _tokens(_block('[data-theme="cvd"]'))
-        for key in ("bg", "surface", "raise", "line", "text", "soft", "faint"):
-            assert cvd.get(key, root.get(key)) == root[key], key
+        moved = [k for k in ("bg", "surface", "raise", "line", "text", "soft", "faint")
+                 if cvd.get(k) != root.get(k)]
+        assert moved, "cvd changes nothing a reader can see"
+        assert "bg" in moved and "text" in moved, moved
+        # the page still reads as dark: text stays light on a dark ground
+        assert _lum(cvd["text"]) > _lum(cvd["bg"]) + 0.5, (cvd["text"], cvd["bg"])
+
+
+class TestTheCascadeNotTheBlocks(unittest.TestCase):
+    """A theme is what the browser resolves, not what one rule says."""
+
+    def test_each_theme_reaches_the_page(self):
+        dark = _cascade("")
+        light, hc, cvd = _cascade("light"), _cascade("hc"), _cascade("cvd")
+        for name, got in (("light", light), ("hc", hc), ("cvd", cvd)):
+            assert got.get("bg"), "%s resolves no background at all" % name
+            assert got["bg"] != dark["bg"], (
+                "%s ships the default dark background: the theme block is "
+                "overridden later in the stylesheet" % name)
+        assert len({dark["bg"], light["bg"], hc["bg"], cvd["bg"]}) == 4, (
+            "two themes share a background: %r" % [dark["bg"], light["bg"], hc["bg"], cvd["bg"]])
+
+    def test_high_contrast_is_actually_high_contrast(self):
+        dark, hc = _cascade(""), _cascade("hc")
+        assert _contrast(hc["text"], hc["bg"]) > _contrast(dark["text"], dark["bg"])
+        assert _lum(hc["bg"]) < _lum(dark["bg"])
 
 
 class TestStatusIsNotHueOnly(unittest.TestCase):
