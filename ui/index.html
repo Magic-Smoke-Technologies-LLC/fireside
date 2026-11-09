@@ -973,7 +973,7 @@
   </nav>
   <div class="topright" id="who">
       <button class="btn quiet" id="publicsignin" type="button" hidden>Sign in</button>
-      <button class="balchip" id="balchip" type="button" title="Characters left" data-t-title="Characters left" hidden>—</button>
+      <button class="balchip" id="balchip" type="button" title="Credit left" data-t-title="Credit left" hidden>—</button>
       <button class="bell" id="bell" type="button" aria-label="Alerts" data-t-aria="Alerts">🔔<span class="dot"></span></button>
       <button class="avatar" id="avatar" type="button" aria-label="Account menu" data-t-aria="Account menu">?</button>
       <div class="menu" id="usermenu" hidden>
@@ -1222,7 +1222,7 @@
     <div class="setpanel" data-p="plan">
       <h3 style="margin-top:24px" data-t="Characters">Characters</h3>
       <p class="sub" data-t="A metered voice charges by the character. Voices you connect yourself are not metered and do not touch this number.">A metered voice charges by the character. Voices you connect yourself are not metered and do not touch this number.</p>
-      <div id="creditsbox" class="small" style="margin-top:8px" data-t="Checking your character balance…">Checking your character balance…</div>
+      <div id="creditsbox" class="small" style="margin-top:8px" data-t="Checking your balance…">Checking your balance…</div>
       <div id="creditsrate" class="sub" style="margin-top:6px"></div>
       <div id="creditsbuy" style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"></div>
       <div id="creditsmsg" class="sub" style="margin-top:8px"></div>
@@ -2834,10 +2834,19 @@ const WKIND = { topup: 'Added', charge: 'Narration', release: 'Released',
                 refund: 'Refund', grant: 'Included with your plan' };
 const TOPUPS = [5, 10, 25, 50];
 let WUNIT = 'USD';
+let WRATE = null;      // dollars per million characters, from the sale connection
 function wamount(n) {
   if (n == null) return '\u2014';
-  if (WUNIT !== 'USD') return nchar(n) + ' chars';
-  const v = Math.round(Number(n) * 100) / 100;
+  let v = Number(n);
+  // A balance that still counts characters is shown in dollars at today's
+  // voice rate. The ledger keeps counting what it counts; the person adding
+  // money pays in dollars, and a wallet answering in a unit you cannot pay in
+  // is the copy Chris asked to be rid of (11-09).
+  if (WUNIT !== 'USD') {
+    if (!(WRATE > 0)) return nchar(v) + ' chars';   // no rate, no honest dollar figure
+    v = v / 1e6 * WRATE;
+  }
+  v = Math.round(v * 100) / 100;
   return (v < 0 ? '\u2212' : '') + '$' + Math.abs(v).toFixed(2);
 }
 async function loadWallet() {
@@ -2856,12 +2865,13 @@ async function loadWallet() {
     return;
   }
   WUNIT = d.unit || 'USD';
+  WRATE = d.sale && d.sale.rate_per_1m_chars > 0 ? d.sale.rate_per_1m_chars : null;
   const avail = d.available || 0;
   bal.textContent = wamount(avail);
   bal.classList.toggle('neg', avail < 0);
   if (note) note.textContent = WUNIT === 'USD'
     ? T('Money in your wallet pays for narration. It stays yours until you spend it.')
-    : T('This account still holds characters from before the switch to dollars. They work exactly as before.');
+    : T('You were granted credit as characters before we priced things in dollars. It is shown here in dollars at today\u2019s voice rate, and it works exactly as before.');
   const held = d.reserved || 0;
   const wh = $('#wheld');
   if (wh) {
@@ -2913,7 +2923,11 @@ function drawRate(d) {
   cap.textContent = T('At today\u2019s voice price, each top-up buys about this much:');
   tbl.append(cap);
   const head = document.createElement('tr');
-  [T('Add'), T('Characters'), T('Listening at normal speed')].forEach((label, i) => {
+  // The wallet is a money screen, so the table is in money and in what money
+  // buys. A "Characters" column was the old unit wearing a conversion's
+  // clothes: the person about to pay in dollars had to divide by a rate that
+  // the footnote underneath already states.
+  [T('Add'), T('Listening at normal speed')].forEach((label, i) => {
     const th = document.createElement('th');
     th.textContent = label; if (i) th.className = 'num';
     head.append(th);
@@ -2925,11 +2939,9 @@ function drawRate(d) {
     const tr = document.createElement('tr');
     const pay = document.createElement('td');
     pay.className = 'pay'; pay.textContent = money(usd);
-    const ch = document.createElement('td');
-    ch.className = 'num'; ch.textContent = wchars(chars);
     const hr = document.createElement('td');
     hr.className = 'num'; hr.textContent = whours(chars);
-    tr.append(pay, ch, hr); body.append(tr);
+    tr.append(pay, hr); body.append(tr);
   });
   tbl.append(body);
   if (fine) {
@@ -3001,16 +3013,16 @@ function money(n) { return '$' + (Math.round(n * 100) / 100).toFixed(2); }
 async function loadCredits() {
   const box = $('#creditsbox'); if (!box) return;
   if (!USER) {
-    box.textContent = T('Sign in to see your character balance.');
+    box.textContent = T('Sign in to see your balance.');
     clearCredits(); $('#creditsrate').textContent = ''; return;
   }
-  box.textContent = T('Checking your character balance\u2026');
+  box.textContent = T('Checking your balance\u2026');
   let d;
   try { d = await api('/credits'); }
   catch (e) {
     CREDITS = null;
     box.textContent = e.status === 401
-      ? 'Sign in to see your character balance.'
+      ? T('Sign in to see your balance.')
       : 'Couldn\u2019t reach the server. The number below may be out of date.';
     $('#creditsrate').textContent = '';
     clearCredits();
@@ -3023,11 +3035,13 @@ async function loadCredits() {
     return;
   }
   CREDITS = d;
+  WUNIT = d.unit || 'USD';
+  WRATE = d.sale && d.sale.rate_per_1m_chars > 0 ? d.sale.rate_per_1m_chars : null;
   const avail = d.available || 0, held = d.reserved || 0;
   box.textContent = avail > 0
-    ? T('{n} characters left.', { n: nchar(avail) })
-    : T('0 characters. A render through the metered voice will be refused until you buy capacity.');
-  if (held > 0) box.textContent += ' \u00b7 ' + T('{n} held by a run in progress.', { n: nchar(held) });
+    ? T('{n} left.', { n: wamount(avail) })
+    : T('No credit. A metered render will be refused until you add funds.');
+  if (held > 0) box.textContent += ' \u00b7 ' + T('{n} held by a run in progress.', { n: wamount(held) });
   const sale = d.sale;
   // The sentence follows the shape the server actually sent. A null rate used to
   // mean "price unknown" even when priced buttons sat right underneath it; now a
@@ -3055,15 +3069,19 @@ function drawChip(d) {
   const c = $('#balchip'); if (!c) return;
   if (!USER) { c.hidden = true; return; }
   c.hidden = false;
-  if (!d) { c.textContent = '\u2014 chars'; c.classList.remove('zero'); return; }
+  if (!d) { c.textContent = '\u2014'; c.classList.remove('zero'); return; }
+  // The chip had one unit hardcoded into it: a dollar account with $1.00 in it
+  // read "1 chars". It is handed the unit; it should not be inventing one.
+  WUNIT = d.unit || 'USD';
+  WRATE = d.sale && d.sale.rate_per_1m_chars > 0 ? d.sale.rate_per_1m_chars : null;
   const avail = d.available || 0;
-  c.textContent = nchar(avail) + ' chars';
-  // Red only when characters are the currency here: nobody is selling and you
-  // still have none is not a problem, a metered voice is just not an option yet.
+  c.textContent = wamount(avail);
+  // Red only when voice is for sale here: nobody is selling and you still have
+  // none is not a problem, a metered voice is just not an option yet.
   c.classList.toggle('zero', avail <= 0 && !!d.sale);
-  c.title = avail > 0 ? 'Characters left \u00b7 opens Plan & storage'
-    : d.sale ? 'No characters left \u00b7 a metered render will be refused'
-    : 'No characters here \u00b7 nothing is being sold, and your own voice servers are not metered';
+  c.title = avail > 0 ? 'Credit left \u00b7 opens Plan & storage'
+    : d.sale ? 'No credit left \u00b7 a metered render will be refused'
+    : 'No credit here \u00b7 nothing is being sold, and your own voice servers are not metered';
 }
 let _balAt = 0;
 async function refreshBalance() {
