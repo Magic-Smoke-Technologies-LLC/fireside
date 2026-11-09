@@ -589,8 +589,11 @@ class TestPricingPageWiring(unittest.TestCase):
 
     def test_the_yearly_cycle_is_reachable(self):
         # It lived only on the static page, so the app could not sell a year.
-        self.assertIn("buyPlan(t.id, cycle)", self.page)
-        self.assertIn("'year'", self.page)
+        # The cycle is now a choice above one Subscribe button rather than a
+        # second button under it; what has to hold is that the card can still
+        # start a yearly purchase.
+        self.assertIn("buyPlan(t.id, pick.c)", self.page)
+        self.assertIn("c: 'year'", self.page)
 
 
 class TestSignatureHeader(unittest.TestCase):

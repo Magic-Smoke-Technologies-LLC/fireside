@@ -539,6 +539,14 @@ class App:
         account, which is the same reason the price list is public."""
         return self._legal("about.html")
 
+    def kokoro(self, q, body):
+        """How to run your own voice server, and connect it here.
+
+        Public, because the person deciding whether fireside is worth paying
+        for is the person who needs to know they can run it for nothing. The
+        commands are the upstream projects' own; the page says so."""
+        return self._legal("kokoro.html")
+
     def contact(self, q, body):
         """The one address, on a page rather than only at the bottom of a
         policy. Public because the people who need it most are the ones who
@@ -3133,7 +3141,7 @@ GET_ROUTES = {
     "/icon-192.png": "icon192", "/icon-512.png": "icon512",
     "/icon-maskable-512.png": "icon_maskable",
     "/privacy": "privacy", "/terms": "terms", "/delete-account": "delete_account",
-    "/about": "about", "/contact": "contact",
+    "/about": "about", "/contact": "contact", "/kokoro": "kokoro",
     "/pricing": "pricing", "/checkout": "checkout",
     "/health": "health", "/plugins": "plugins", "/library": "library_list",
     "/series": "series_list", "/tags": "tags_get",
@@ -3221,7 +3229,7 @@ def signature_header(headers, provider_id="stripe"):
 PUBLIC_ROUTES = {"/", "/index.html", "/i18n.js", "/favicon.ico", "/health", "/auth/providers",
                  "/auth/policy", "/auth/forgot", "/auth/reset", "/me", "/plans",
                  "/privacy", "/terms", "/delete-account", "/pricing", "/checkout",
-                 "/about", "/contact",
+                 "/about", "/contact", "/kokoro",
                  # The door's fire sits behind a signed-out visitor's first
                  # screen, so it has to load before there is a session.
                  "/hearth.mp4", "/hearth-poster.jpg", "/loader.svg",
