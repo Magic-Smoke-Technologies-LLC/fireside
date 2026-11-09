@@ -1,7 +1,9 @@
-"""The platform tier's monthly character allowance.
+"""The monthly grant a paid plan carries.
 
-Checks the three things that make it safe: it lands once per period, it does not
-land for a tier that is not paid, and a reload cannot stack it.
+Checks the things that make it safe: it lands once per period, it does not land
+for a tier that is not paid, a reload cannot stack it, and the unit follows the
+account (dollars for a dollar wallet, characters for an account that still holds
+characters).
 """
 
 import time
@@ -27,13 +29,14 @@ class AllowanceTest(unittest.TestCase):
     def test_grants_once_per_period(self):
         self._sub()
         first = allowance.due(self.conn, self.uid)
-        self.assertEqual(first, quota.PLATFORM_MONTH_CHARS)
+        self.assertEqual(first, quota.PLATFORM_MONTH_GRANT)
         self.assertEqual(accounting.balance(self.conn, self.uid),
-                         quota.PLATFORM_MONTH_CHARS)
+                         quota.PLATFORM_MONTH_GRANT)
+        self.assertEqual(accounting.currency(self.conn, self.uid), "USD")
         # a reload is not a second grant
         self.assertEqual(allowance.due(self.conn, self.uid), 0)
         self.assertEqual(accounting.balance(self.conn, self.uid),
-                         quota.PLATFORM_MONTH_CHARS)
+                         quota.PLATFORM_MONTH_GRANT)
 
     def test_new_period_grants_again(self):
         self._sub(days=20)
@@ -41,9 +44,34 @@ class AllowanceTest(unittest.TestCase):
         # the provider's renewal moves the period end
         self._sub(days=50)
         self.assertEqual(allowance.due(self.conn, self.uid),
-                         quota.PLATFORM_MONTH_CHARS)
+                         quota.PLATFORM_MONTH_GRANT)
         self.assertEqual(accounting.balance(self.conn, self.uid),
-                         2 * quota.PLATFORM_MONTH_CHARS)
+                         2 * quota.PLATFORM_MONTH_GRANT)
+
+    def test_grant_is_dollars_for_a_dollar_wallet_and_chars_for_a_chars_wallet(self):
+        # The cutover is per account: an old account must not be handed dollars
+        # it cannot spend on a character meter, and a new one must not be handed
+        # characters it has no meter for.
+        self._sub()
+        allowance.due(self.conn, self.uid)
+        self.assertEqual(accounting.balance(self.conn, self.uid), 1.0)
+        self.assertEqual(accounting.currency(self.conn, self.uid), "USD")
+
+        old = "u_old"
+        self.conn.execute("INSERT INTO users(id,name,created_at) VALUES(?,?,?)",
+                          (old, "old", "0"))
+        self.conn.commit()
+        accounting.topup(self.conn, old, 1000, currency="chars")
+        billing.upsert(self.conn, old, quota.PLATFORM_PLAN, "active",
+                       current_period_end=int(time.time()) + 20 * 86400)
+        self.assertEqual(allowance.due(self.conn, old), quota.PLATFORM_MONTH_CHARS)
+        self.assertEqual(accounting.balance(self.conn, old),
+                         1000 + quota.PLATFORM_MONTH_CHARS)
+        self.assertEqual(accounting.currency(self.conn, old), "chars")
+
+    def test_studio_gets_fifteen(self):
+        self._sub(plan=quota.STUDIO_PLAN)
+        self.assertEqual(allowance.due(self.conn, self.uid), 15.0)
 
     def test_free_tier_gets_nothing(self):
         self._sub(plan=quota.FREE_PLAN)

@@ -60,8 +60,10 @@ class TestPolicy(unittest.TestCase):
                          [quota.PLATFORM_ALLOWANCE_BYTES,
                           quota.LISTENER_ALLOWANCE_BYTES,
                           quota.STUDIO_ALLOWANCE_BYTES])
-        self.assertEqual([t["included_chars"] for t in cat["tiers"]],
-                         [0, 50_000, 250_000, 1_000_000])
+        # the grant is dollars into the wallet (2026-11-09), not a character
+        # allowance: $1 / $3 / $15, and it rolls instead of expiring
+        self.assertEqual([t["included_usd"] for t in cat["tiers"]],
+                         [0.0, 1.0, 3.0, 15.0])
         for t in cat["tiers"][1:]:
             self.assertIsNone(t["amount_cents"])
         # our published list price rides along even with no provider, so a card

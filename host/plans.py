@@ -73,7 +73,10 @@ def catalog(provider=None):
         tiers.append({"id": pid, "label": label,
                       "amount_cents": cents, "currency": cur,
                       "list_amount_cents": list_m, "list_annual_cents": list_y,
-                      "included_chars": quota.PLAN_CHARS.get(pid, 0),
+                      # A dollar amount, because the wallet is the unit now;
+                      # a card that printed characters would be quoting a
+                      # number the reader cannot spend.
+                      "included_usd": quota.PLAN_GRANT.get(pid, 0.0),
                       "interval": interval or (None if pid == quota.FREE_PLAN else "month"),
                       "included_bytes": quota.PLAN_ALLOWANCE.get(pid, 0),
                       "description": description})
