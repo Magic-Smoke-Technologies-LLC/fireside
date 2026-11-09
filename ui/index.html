@@ -95,11 +95,11 @@
   #who{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--faint)}
   /* the balance rides in the header so it is never a surprise: it is a button
      because the place it acts on is Settings > Plan, not a page of its own */
-  .balchip{background:none;border:1px solid var(--line);border-radius:999px;color:var(--soft);
-    font:12px/1 var(--ui);padding:6px 10px;cursor:pointer;white-space:nowrap;
-    font-variant-numeric:tabular-nums}
-  .balchip:hover{color:var(--text);border-color:var(--flame)}
-  .balchip.zero{color:var(--warn);border-color:var(--warn)}
+  .balchip{background:none;border:0;border-radius:8px;color:var(--faint);
+    font:11.5px/1 var(--ui);padding:6px 6px;cursor:pointer;white-space:nowrap;
+    font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  .balchip:hover{color:var(--text);background:var(--raise)}
+  .balchip.zero{color:var(--warn)}
   /* Two destinations, not six. Library is where the reading is and Account is
      everything about you; Now playing is the bar at the bottom, and Plans and
      Admin live inside Account. A tab per screen makes the app a menu; two
@@ -491,6 +491,167 @@
   .smeta{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
   .smeta .row{margin:4px 0}
   .smeta .desc{white-space:pre-wrap;margin-top:8px}
+  /* ===== direction A · lamplight ==========================================
+     The deck's direction A, built: one slim bar, two destinations, a library
+     that is a list of rows rather than a grid of cards, and a player that
+     stays at the bottom of every screen. The palette deepens by one stop so
+     the flame reads as a lamp in a dark room instead of an accent in a UI. */
+  :root{
+    --bg:#0f0c0a; --surface:#181310; --raise:#241c15; --line:#352c21;
+    --text:#f2e8d8; --soft:#b9ab95; --faint:#9c8f7b;
+    --flame:#e8b06a; --on-flame:#1d1305;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  }
+  [data-theme="light"]{
+    --bg:#f6f1e7; --surface:#fffcf5; --raise:#ece4d6; --line:#d5c8b2;
+    --text:#1f1a14; --soft:#544a3a; --faint:#6e6353;
+    --flame:#8a5a12; --on-flame:#fff8ec;
+  }
+  /* the room: one warm pool of light at the top, nothing else moving */
+  body{font:15px/1.55 var(--ui);background:var(--bg);-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0 0 auto 0;height:62vh;pointer-events:none;
+    background:radial-gradient(90% 120% at 22% -14%,rgba(232,176,106,.11),rgba(232,176,106,.035) 42%,transparent 72%);
+    z-index:0}
+  [data-theme="light"] body::before{background:radial-gradient(90% 120% at 22% -14%,rgba(138,90,18,.07),transparent 68%)}
+  [data-theme="hc"] body::before{display:none}
+  body > *{position:relative;z-index:1}
+
+  /* one bar, not a masthead. The wordmark is the way home. */
+  header{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:20px;
+    padding:0 26px;height:58px;border-bottom:1px solid var(--line);
+    background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px)}
+  h1.wordmark{margin:0;font:400 19px/1 var(--serif);letter-spacing:.14em}
+  h1.wordmark button{background:none;border:0;padding:6px 2px;cursor:pointer;
+    font:inherit;letter-spacing:inherit;color:var(--text)}
+  h1.wordmark button:hover{color:var(--flame)}
+  #ver{display:none}
+  nav.tabs{display:flex;gap:2px;margin:0}
+  nav.tabs button{background:none;border:0;border-radius:999px;padding:7px 14px;
+    color:var(--faint);font-size:13.5px;letter-spacing:.01em;cursor:pointer;white-space:nowrap;
+    transition:color .12s ease,background-color .12s ease}
+  nav.tabs button:hover{color:var(--soft)}
+  nav.tabs button.on{color:var(--text);background:var(--raise)}
+  #who{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--faint)}
+
+  /* the page: a readable column with room for rows, and space for the bar */
+  main{padding:34px 26px 132px;max-width:1040px;margin:0 auto}
+  h2{font:400 34px/1.15 var(--serif);letter-spacing:-.01em}
+  h3{font:600 16px var(--ui)}
+  .sub{color:var(--soft);font-size:15px;line-height:1.6}
+
+  /* the library heading carries the count, so the shelf does not have to */
+  .libhead{display:flex;align-items:baseline;gap:16px;margin:36px 0 0}
+  #shelflabel{font:400 30px/1.2 var(--serif);color:var(--text);margin:0}
+  .libhead .btn{margin-left:auto;padding:8px 16px;font-size:13.5px}
+  .libtools{margin-top:14px;gap:8px}
+  .libtools input[type=search]{background:transparent;border-radius:10px;padding:9px 13px;
+    font-size:14.5px;border-color:var(--line)}
+  .libtools input[type=search]::placeholder{color:var(--faint)}
+  .libtools select{background:transparent;border-radius:10px;font-size:13.5px;padding:9px 10px}
+
+  /* the shelf: rows. Density is the point, and the hairline under each row is
+     the plank. A cover is a 34 px thumbnail, not a poster. */
+  .shelf{display:flex;flex-direction:column;margin-top:12px;border-top:1px solid var(--line)}
+  #shelf .bk{display:grid;grid-template-columns:34px minmax(0,1fr) auto;
+    column-gap:15px;align-items:center;max-width:none;padding:9px 8px;
+    border-bottom:1px solid var(--line);border-radius:8px;transition:background-color .1s ease}
+  #shelf .bk:hover{background:var(--surface)}
+  #shelf .bk .cover{width:34px;height:48px;aspect-ratio:auto;max-width:none;margin:0;
+    padding:3px;font:600 7.5px/1.15 var(--serif);border-radius:3px;overflow:hidden;
+    letter-spacing:0;word-break:break-word;align-self:center}
+  #shelf .bk .cover img.coverimg{border-radius:2px;width:100%;height:100%;object-fit:cover}
+  #shelf .bk .cover.thumb{display:flex;align-items:center;justify-content:center;
+    font:400 15px/1 var(--serif);color:rgba(243,231,207,.85);letter-spacing:0}
+  .bktext{display:block;min-width:0}
+  .bktitle{font:400 16.5px/1.25 var(--serif);color:var(--text);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  #shelf .bk.isread .bktitle{color:var(--soft)}
+  .bkauthor{margin-top:0;font-size:12.5px;line-height:1.35;color:var(--faint)}
+  #shelf .bktags{margin-top:4px}
+  #shelf .bktags span{font-size:10px;padding:0 6px;line-height:1.6}
+  .bkstate{display:flex;align-items:center;gap:14px;justify-self:end}
+
+  .bkbar{width:68px;height:3px;border-radius:2px;background:var(--raise);overflow:hidden;flex:none}
+  .bkbar.wide{width:min(320px,100%);height:4px;margin:14px 0 16px}
+  .bkbar i{display:block;height:100%;background:var(--flame);border-radius:2px}
+  #shelf .bk .small{font-size:12px;color:var(--faint);white-space:nowrap;
+    font-variant-numeric:tabular-nums;margin:0;min-width:96px;text-align:right}
+  #shelf .bkread{position:static;transform:none;width:26px;height:26px;flex:none;
+    border:1px solid transparent;background:none;color:var(--faint)}
+  #shelf .bkread:hover{border-color:var(--line);color:var(--text)}
+  #shelf .bk.isread .bkread{color:var(--flame);border-color:transparent}
+  #shelf .bksel{position:static;transform:none;width:22px;height:22px}
+  #shelf .bk.ispicked{background:var(--surface)}
+  #shelf .bk.ispicked .bktitle{color:var(--text)}
+  #shelf .bk.ispicked .cover{outline:2px solid var(--flame);outline-offset:1px}
+
+  /* the compact variant stays a card: it is the horizontal recent strip */
+  .recent .bk.compact,#recent .bk{display:block;flex:0 0 118px;max-width:118px;padding:0;border:0}
+  #recent .bk .cover{width:100%;height:auto;aspect-ratio:2/3;font-size:11px;padding:9px;
+    margin-bottom:7px;border-radius:5px}
+
+  /* a series heading is a quiet rule, not a section title */
+  .serieshd{border-bottom:0;padding:18px 8px 6px;margin:0}
+  .serieshd .sname{font:400 16px/1.2 var(--serif);color:var(--soft)}
+  .serieshd .small{font-size:12px;color:var(--faint)}
+  .libauth{font:400 17px/1.2 var(--serif);color:var(--soft);margin:26px 0 0;
+    padding:0 8px 6px;border-bottom:0}
+
+  /* continue listening: one card, one action, serif title */
+  .resume{display:flex;gap:22px;align-items:center;padding:4px 0 6px}
+  .resume .cover{width:96px;border-radius:5px}
+  .resume h2{font-size:28px}
+
+  /* the player bar: a lit shelf at the bottom of the room */
+  #transport{left:18px;right:18px;bottom:16px;border:1px solid var(--line);
+    border-radius:14px;padding:8px 14px;gap:8px;
+    background:color-mix(in srgb,var(--surface) 92%,transparent);
+    backdrop-filter:blur(18px);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+  #transport .tplay{width:36px;height:36px;font-size:14px}
+  #transport .tnow{font:400 15px/1.3 var(--serif);color:var(--text)}
+  #transport .ttime{font-size:11.5px}
+  #transport .tnav,#transport .tq{border-color:transparent;color:var(--soft)}
+  #transport .tnav:hover,#transport .tq:hover{border-color:var(--line);color:var(--text)}
+  #queuedrawer{bottom:76px;left:18px;right:18px;border-radius:14px}
+
+
+  /* Account: the same bar language as the top nav, so the app has one control
+     shape. Panels sit on the surface with air above them, no card-in-card. */
+  h2{font:400 34px/1.15 var(--serif)}
+  .view > .sub{margin-top:8px;max-width:60ch}
+  .settabs{border-bottom:0;margin-top:22px;gap:2px}
+  .settabs button{border:0;border-radius:999px;padding:8px 14px;font-size:13.5px;
+    color:var(--faint);background:none}
+  .settabs button:hover{color:var(--soft)}
+  .settabs button.on{color:var(--text);background:var(--raise)}
+  .setpanel{margin-top:26px}
+  .setpanel .row{border-bottom:1px solid var(--line)}
+  .walletbal{font:400 40px/1.1 var(--serif)}
+  .wratetbl th{letter-spacing:.02em}
+
+  @media(max-width:760px){
+    header{padding:0 14px;gap:12px;height:56px}
+    h1.wordmark{font-size:17px;letter-spacing:.1em}
+    main{padding:22px 14px 120px}
+    h2{font-size:27px}
+    .libhead{margin-top:26px}
+    #shelflabel{font-size:23px}
+    /* two destinations still fit a phone: the wordmark shrinks, the nav tightens,
+       and the balance chip steps out because Account is one tap away */
+    .brand{margin-right:0}
+    nav.tabs{gap:0}
+    nav.tabs button{padding:7px 10px;font-size:13px}
+    #who{gap:4px}
+    #who #balchip,#who #bell{display:none}
+    .bktext .bktags{display:none}
+    #shelf .bk{grid-template-columns:30px minmax(0,1fr) auto;column-gap:11px;padding:10px 4px}
+    #shelf .bk .cover{width:30px;height:42px}
+    .bkbar{width:44px}
+    #shelf .bk .small{min-width:0;text-align:right;font-size:11px}
+    .bktitle{font-size:15.5px}
+    .bkstate{gap:8px}
+    #transport{left:8px;right:8px;bottom:8px;border-radius:12px}
+  }
 </style>
 <script>
 /* Theme, before first paint. A theme applied after the page renders is a flash of
@@ -562,9 +723,16 @@
 </div>
 <header>
   <div class="brand">
-    <h1 data-t="fireside">fireside</h1>
-    <p>Books and web stories, voiced. <span id="ver">v__HOST_VERSION__</span></p>
-    <div class="topright" id="who">
+    <h1 class="wordmark"><button type="button" id="brandhome" data-t="fireside">fireside</button></h1>
+    <span id="ver">v__HOST_VERSION__</span>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Sections" data-t-aria="Sections">
+    <button data-v="lib" class="on" aria-current="page" data-t="Library">Library</button>
+    <button data-v="set" data-t="Account">Account</button>
+    <button data-v="plans" id="navplans" hidden data-t="Plans">Plans</button>
+    <button data-v="adm" id="navadmin" hidden data-t="Admin">Admin</button>
+  </nav>
+  <div class="topright" id="who">
       <button class="balchip" id="balchip" type="button" title="Characters left" data-t-title="Characters left" hidden>—</button>
       <button class="bell" id="bell" type="button" aria-label="Alerts" data-t-aria="Alerts">🔔<span class="dot"></span></button>
       <button class="avatar" id="avatar" type="button" aria-label="Account menu" data-t-aria="Account menu">?</button>
@@ -576,14 +744,7 @@
         <button id="signout" type="button" data-t="Sign out">Sign out</button>
       </div>
       <div class="menu" id="alertmenu" hidden></div>
-    </div>
   </div>
-  <nav class="tabs" id="tabs" aria-label="Sections" data-t-aria="Sections">
-    <button data-v="lib" class="on" aria-current="page" data-t="Library">Library</button>
-    <button data-v="set" data-t="Account">Account</button>
-    <button data-v="plans" id="navplans" hidden data-t="Plans">Plans</button>
-    <button data-v="adm" id="navadmin" hidden data-t="Admin">Admin</button>
-  </nav>
 </header>
 <main id="main" tabindex="-1">
   <!-- library -->
@@ -619,7 +780,10 @@
       <button class="btn quiet" id="libselcancel" type="button" data-t="Cancel">Cancel</button>
     </div>
     <div class="chips" id="libchips" role="group" aria-label="Filter the shelf" data-t-aria="Filter the shelf" hidden></div>
-    <div style="margin-top:28px"><button class="btn" id="addbtn" type="button" data-t="＋ Add a book">＋ Add a book</button></div>
+    <div class="libhead">
+      <h2 id="shelflabel" data-t="My library">My library</h2>
+      <button class="btn quiet" id="addbtn" type="button" data-t="＋ Add a book">＋ Add a book</button>
+    </div>
     <div class="addpanel" id="addpanel" hidden>
       <p class="sub" data-t="Drop an EPUB or paste a story link. Fireside reads it, breaks it into chapters, and voices each one.">Drop an EPUB or paste a story link. Fireside reads it, breaks it into chapters, and voices each one.</p>
       <div class="drop" id="drop" style="margin-top:14px">Drop an <b data-t=".epub">.epub</b> here<br><span class="small" data-t="or click to choose">or click to choose</span>
@@ -647,7 +811,6 @@
       <p class="hint" data-t="A locked AO3 work needs your cookie under Settings, or drop the work&#x27;s EPUB.">A locked AO3 work needs your cookie under Settings, or drop the work's EPUB.</p>
       <p class="hint" style="margin-top:14px">New here? <button class="btn quiet" id="exbtn" type="button" data-t="Add the free example book">Add the free example book</button></p>
     </div>
-    <p class="small" id="shelflabel" style="margin:34px 0 0;display:none" data-t="On your shelf">On your shelf</p>
     <div class="shelf" id="shelf"></div>
     <button class="btn quiet libmore" id="libmore" type="button" data-t="Show more" hidden>Show more</button>
     <p class="libnone" id="libnone" hidden></p>
@@ -1408,6 +1571,7 @@ function show(v, mode) {
   if (v === 'lib') renderActiveJobs();
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => show(b.dataset.v));
+const brandhome = $('#brandhome'); if (brandhome) brandhome.onclick = () => show('lib');
 
 // --- settings page tabs -----------------------------------------------------
 // The settings page holds unrelated jobs (voices, words, plan, account, admin),
@@ -3585,13 +3749,33 @@ function shelfCell(b, compact) {
   const picking = libPicking();
   const cell = document.createElement('div');
   cell.className = 'bk' + (b.read ? ' isread' : '') + (picking ? ' picking' : '')
-    + (picking && LIB_SEL.has(b.id) ? ' ispicked' : '');
+    + (picking && LIB_SEL.has(b.id) ? ' ispicked' : '') + (compact ? ' compact' : '');
   cell.onclick = () => {
     if (picking) libSelToggle(b);
     else { openBook(b.id); show('play'); }
   };
-  const cover = document.createElement('div'); cover.className = 'cover'; fillCover(cover, b.id, b.title, b.cover);
-  const t = document.createElement('div'); t.style.cssText = 'font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; t.textContent = b.title;
+  // In a row the cover is a 34px chip, so it shows a monogram or the real art,
+  // never a clipped paragraph of the title.
+  const cover = document.createElement('div'); cover.className = 'cover' + (compact ? '' : ' thumb');
+  if (compact) fillCover(cover, b.id, b.title, b.cover);
+  else if (b.cover) fillCover(cover, b.id, b.title, b.cover);
+  else { cover.textContent = (b.title || '?').replace(/^[^\p{L}\p{N}]+/u, '').charAt(0).toUpperCase(); }
+  // direction A: a row is a title, an author and where you are in it. The
+  // cover is a 34px thumbnail because a 1,800-book shelf is scanned, not
+  // browsed; the progress ticks carry the state the poster used to.
+  // a span, not a div: the test harness reads a cell's title by class first but
+  // falls back to `div:nth-child(2)`, and a wrapping div would answer that first
+  const text = document.createElement('span'); text.className = 'bktext';
+  const t = document.createElement('div'); t.className = 'bktitle'; t.textContent = b.title;
+  text.append(t);
+  if (b.author) { const a = document.createElement('div'); a.className = 'bkauthor'; a.textContent = b.author; text.append(a); }
+  const tags = shelfTags(b);
+  if (tags.length && !compact) {
+    const row = document.createElement('div'); row.className = 'bktags';
+    tags.slice(0, 3).forEach(x => { const i = document.createElement('span'); i.textContent = x; row.append(i); });
+    text.append(row);
+  }
+  const state = document.createElement('div'); state.className = 'bkstate';
   if (picking) {
     const tick = document.createElement('span'); tick.className = 'bksel';
     tick.textContent = LIB_SEL.has(b.id) ? '\u2713' : '';
@@ -3599,8 +3783,8 @@ function shelfCell(b, compact) {
     cell.setAttribute('role', 'checkbox');
     cell.setAttribute('aria-checked', LIB_SEL.has(b.id) ? 'true' : 'false');
     cell.setAttribute('aria-label', b.title || '');
-    cell.append(cover, t, tick);
-    if (b.author) { const a = document.createElement('div'); a.className = 'bkauthor'; a.textContent = b.author; cell.append(a); }
+    state.append(tick);
+    cell.append(cover, text, state);
     return cell;
   }
   const rm = document.createElement('button');
@@ -3610,21 +3794,21 @@ function shelfCell(b, compact) {
   rm.setAttribute('aria-label', rlabel);
   rm.textContent = b.read ? '\u2713' : '';
   rm.onclick = (ev) => { ev.stopPropagation(); setRead(b, !b.read); };
-  cell.append(cover, t, rm);
-  if (b.author) { const a = document.createElement('div'); a.className = 'bkauthor'; a.textContent = b.author; cell.append(a); }
-  if (compact) return cell;
-  const states = Array.from({ length: b.chapters }, (_, i) => i < b.rendered ? 'avail' : 'todo');
-  const sp = spineEl(states, -1);
-  const s = document.createElement('div'); s.className = 'small'; s.textContent = b.rendered + ' of ' + b.chapters + ' voiced';
-  cell.append(sp, s);
-  // Two tags is what a 170px card can say without becoming a paragraph. The
-  // filter chips are the full list.
-  const tags = shelfTags(b);
-  if (tags.length) {
-    const row = document.createElement('div'); row.className = 'bktags';
-    tags.slice(0, 2).forEach(x => { const i = document.createElement('span'); i.textContent = x; row.append(i); });
-    cell.append(row);
+  if (!compact) {
+    // One meter, not one tick per chapter: at 48 chapters a tick row became a
+    // comb nobody could read. The count stays as the exact number.
+    const meter = document.createElement('div'); meter.className = 'bkbar';
+    const fill = document.createElement('i');
+    fill.style.width = Math.round(100 * (b.chapters ? b.rendered / b.chapters : 0)) + '%';
+    meter.append(fill);
+    meter.setAttribute('role', 'img');
+    meter.setAttribute('aria-label', b.rendered + ' of ' + b.chapters + ' chapters voiced');
+    const s = document.createElement('div'); s.className = 'small';
+    s.textContent = b.rendered + ' of ' + b.chapters + ' voiced';
+    state.append(meter, s);
   }
+  state.append(rm);
+  cell.append(cover, text, state);
   return cell;
 }
 // A series you can see, not just a field in one book's settings: its name over
@@ -4046,11 +4230,15 @@ function renderResume() {
   if (RESUME && RESUME.book_id === b.id && RESUME.updated_at)
     mt += ' · ch ' + ((RESUME.chapter_index || 0) + 1) + ' at ' + mmss(RESUME.offset_seconds || 0) + ' · ' + ago(RESUME.updated_at);
   meta.textContent = mt;
-  const states = Array.from({ length: b.chapters }, (_, i) => i < b.rendered ? 'avail' : 'todo');
-  const sp = spineEl(states, -1); sp.style.margin = '12px 0';
+  const meter = document.createElement('div'); meter.className = 'bkbar wide';
+  const fill = document.createElement('i');
+  fill.style.width = Math.round(100 * (b.chapters ? b.rendered / b.chapters : 0)) + '%';
+  meter.append(fill);
+  meter.setAttribute('role', 'img');
+  meter.setAttribute('aria-label', b.rendered + ' of ' + b.chapters + ' chapters voiced');
   const go = document.createElement('button'); go.className = 'btn'; go.textContent = T('Continue listening');
   go.onclick = () => loadBook(b.id);
-  col.append(kick, h, meta, sp, go);
+  col.append(kick, h, meta, meter, go);
   box.append(cover, col);
 }
 
