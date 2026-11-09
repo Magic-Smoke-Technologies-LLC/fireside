@@ -171,5 +171,50 @@ class TestReadStory(unittest.TestCase):
             qb.Quantumbang().read({"kind": "url", "url": url}, FakeFetch({url: thin}))
 
 
+# Cat pasted https://quantumbang.org/the-holmes-factor-by-proffrankly/ and got
+# the title page. The landing page's slug is typed by hand and carries a "by"
+# the part slugs do not, so the exact family key said the parts belonged to a
+# different story and the landing page read as one short chapter.
+HAND_TYPED_LANDING = """<html><head><title>The Holmes Factor by ProfFrankly &#8211; Quantum Bang</title></head>
+<body><div class="entry-content">%s
+<p>The Holmes Factor &#8211; 1/2 &#8211; ProfFrankly</p>
+<p><a href="https://quantumbang.org/the-holmes-factor-1-2-proffrankly/">1/2</a></p>
+<p><a href="https://quantumbang.org/the-holmes-factor-2-2-proffrankly/">2/2</a></p>
+</div></body></html>""" % HEADER
+
+
+class TestHandTypedLandingSlug(unittest.TestCase):
+    def pages(self):
+        return {
+            "https://quantumbang.org/the-holmes-factor-by-proffrankly/": HAND_TYPED_LANDING,
+            "https://quantumbang.org/the-holmes-factor-1-2-proffrankly/":
+                part(1, 2, "The story opens on Privet Drive. " * 5),
+            "https://quantumbang.org/the-holmes-factor-2-2-proffrankly/":
+                part(2, 2, "The story closes on Baker Street. " * 5),
+        }
+
+    def test_the_parts_are_found_through_the_extra_word(self):
+        found = qb.parts_in_page(HAND_TYPED_LANDING,
+                                 "https://quantumbang.org/the-holmes-factor-by-proffrankly/")
+        self.assertEqual(sorted(found), [(1, 2), (2, 2)])
+
+    def test_the_landing_page_becomes_the_whole_story(self):
+        book = qb.Quantumbang().read(
+            {"kind": "url", "url": "https://quantumbang.org/the-holmes-factor-by-proffrankly/"},
+            FakeFetch(self.pages()))
+        self.assertEqual(len(book.chapters), 2)
+        self.assertTrue(book.chapters[0].text.startswith("The story opens"))
+        self.assertTrue(book.chapters[1].text.startswith("The story closes"))
+
+    def test_re_importing_through_either_slug_is_the_same_story(self):
+        o = qb.Quantumbang()
+        self.assertTrue(o.same(
+            {"url": "https://quantumbang.org/the-holmes-factor-1-2-proffrankly/"},
+            {"url": "https://quantumbang.org/the-holmes-factor-by-proffrankly/"}))
+        self.assertFalse(o.same(
+            {"url": "https://quantumbang.org/hidden-resources-1-1-other/"},
+            {"url": "https://quantumbang.org/the-holmes-factor-by-proffrankly/"}))
+
+
 if __name__ == "__main__":
     unittest.main()
