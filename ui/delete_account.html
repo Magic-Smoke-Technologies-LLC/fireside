@@ -30,6 +30,10 @@
   .back:hover{color:var(--text);border-color:var(--flame)}
   code{background:var(--surface);padding:1px 5px;border-radius:5px;font-size:14px}
   ol{padding-left:20px}
+  .foot{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
+        display:flex;gap:18px;flex-wrap:wrap;font-size:14px}
+  .foot a{color:var(--faint);text-decoration:none}
+  .foot a:hover{color:var(--text)}
 </style>
 </head>
 <body>
@@ -87,6 +91,13 @@
   <h2>Contact</h2>
   <p>Questions, or a deletion request: <a href="mailto:__CONTACT__">__CONTACT__</a>.</p>
   <p class="meta">fireside is operated by __COMPANY__.</p>
+  <nav class="foot" aria-label="About fireside">
+    <a href="/about">About</a>
+    <a href="/contact">Contact us</a>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+  </nav>
+
 
   <a class="back" href="/">← Back to fireside</a>
 </main>

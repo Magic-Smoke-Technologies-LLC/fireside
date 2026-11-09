@@ -288,6 +288,32 @@
   .lock{position:fixed;inset:0;z-index:60;overflow:auto;display:grid;place-items:center;
     background:radial-gradient(120% 90% at 50% 0,#241c13 0,var(--bg) 62%);padding:24px}
   .lock[hidden]{display:none}
+  /* Two panes: what this is, then the way in. A door that shows a blank form
+     tells a stranger nothing and reads like a wall. */
+  .lockwrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:56px;
+    align-items:center;width:100%;max-width:1020px}
+  .lockwel{max-width:520px;min-width:0}
+  .lockwel .mark{margin:0}
+  .lockwel .welh{font:600 34px/1.2 var(--serif);margin:14px 0 12px;color:var(--text)}
+  .lockwel .welp{color:var(--soft);font-size:16px;line-height:1.6;margin:0}
+  .welsteps{list-style:none;padding:0;margin:22px 0 0;display:flex;flex-direction:column;gap:14px}
+  .welsteps li{color:var(--soft);font-size:14px;line-height:1.5;padding-left:22px;position:relative}
+  .welsteps li b{display:block;color:var(--text);font-weight:600}
+  .welsteps li::before{content:"";position:absolute;left:0;top:6px;width:8px;height:8px;
+    border-radius:50%;border:1px solid var(--flame)}
+  .lockwel .welcred{color:var(--flame);font-size:14px;margin:22px 0 0}
+  .lockwel .welcta{margin:18px 0 0;padding:11px 22px;border-radius:999px;border:1px solid var(--line);
+    background:transparent;color:var(--text);font:600 15px var(--ui);cursor:pointer}
+  .lockwel .welcta:hover{border-color:var(--flame)}
+  .lockwel .wellinks{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0 0;font-size:14px}
+  .lockwel .wellinks a{color:var(--soft)}
+  @media(max-width:880px){
+    .lockwrap{grid-template-columns:minmax(0,1fr);gap:26px;max-width:400px}
+    .lockwel .welh{font-size:26px;margin:10px 0 8px}
+    .welsteps{display:none}
+    .lockwel .welp{font-size:15px}
+    .lockwel .welcred{margin-top:14px}
+  }
   .lock .card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--line);
     border-radius:16px;padding:32px;box-shadow:0 12px 40px #0006}
   .lock .mark{font:600 20px/1 var(--serif);letter-spacing:.01em;color:var(--soft)}
@@ -311,6 +337,19 @@
   .lock .toggle[hidden]{display:none}
   .lock .sso{margin-top:20px;padding-top:20px;border-top:1px solid var(--line)}
   .lock .sso:empty{display:none}
+  /* --- the foot: who runs this and the papers, on every page -------------
+     It lives outside <main> so it survives the door, where <main> is hidden;
+     on the door the overlay is fixed and full-bleed, so the foot rides above
+     it rather than sitting behind it. */
+  .foot{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;align-items:center;
+    padding:26px 16px 30px;margin-top:28px;border-top:1px solid var(--line);font-size:13px}
+  .foot a{color:var(--faint);text-decoration:none}
+  .foot a:hover{color:var(--text)}
+  body.hastransport .foot{padding-bottom:96px}
+  body.locked .foot{position:fixed;left:0;right:0;bottom:0;z-index:70;margin:0;
+    padding:12px 16px;border-top:0;
+    background:linear-gradient(180deg,transparent,var(--bg) 40%)}
+  body.locked .lock{padding-bottom:72px}
   .whoChip{color:var(--soft)}
   /* --- top-right: the bell and the account menu (the whole user surface) -- */
   .topright{margin-left:auto;display:flex;align-items:center;gap:4px;position:relative}
@@ -738,9 +777,26 @@
 <body class="locked">
 <a class="skip" href="#main" data-t="Skip to content">Skip to content</a>
 <div class="lock" id="lock" hidden>
-  <form class="card" id="lockform" autocomplete="on" novalidate>
-    <div class="mark" data-t="fireside">fireside</div>
+ <div class="lockwrap">
+  <section class="lockwel" id="lockwel" aria-label="About fireside" data-t-aria="About fireside">
+    <p class="mark" data-t="fireside">fireside</p>
     <p class="tag" data-t="Books and web stories, voiced.">Books and web stories, voiced.</p>
+    <h2 class="welh" data-t="Your shelf, out loud.">Your shelf, out loud.</h2>
+    <p class="welp" data-t="Drop in an EPUB or paste a story link. Fireside splits it into chapters, reads each one in a voice you choose, and picks up where you stopped, on the phone in your pocket.">Drop in an EPUB or paste a story link. Fireside splits it into chapters, reads each one in a voice you choose, and picks up where you stopped, on the phone in your pocket.</p>
+    <ul class="welsteps">
+      <li><b data-t="Bring your books">Bring your books</b><span data-t="Your own EPUB, or a link to a story on the web. Both land on the same shelf.">Your own EPUB, or a link to a story on the web. Both land on the same shelf.</span></li>
+      <li><b data-t="Pick the voice">Pick the voice</b><span data-t="Bring your own speech key, or use ours at $19.63 per million characters, about 15 hours of listening.">Bring your own speech key, or use ours at $19.63 per million characters, about 15 hours of listening.</span></li>
+      <li><b data-t="Listen anywhere">Listen anywhere</b><span data-t="Chapters are voiced once and kept, so a second listen costs nothing. It resumes on any device you sign in from.">Chapters are voiced once and kept, so a second listen costs nothing. It resumes on any device you sign in from.</span></li>
+    </ul>
+    <p class="welcred" data-t="New accounts get $3 of narration credit when the first paid month begins.">New accounts get $3 of narration credit when the first paid month begins.</p>
+    <button class="welcta" id="welstart" type="button" data-t="Create a free account">Create a free account</button>
+    <p class="wellinks">
+      <a href="/pricing" data-t="Plans and pricing →">Plans and pricing →</a>
+      <a href="/privacy" target="_blank" rel="noopener" data-t="Privacy">Privacy</a>
+      <a href="/terms" target="_blank" rel="noopener" data-t="Terms">Terms</a>
+    </p>
+  </section>
+  <form class="card" id="lockform" autocomplete="on" novalidate>
     <h1 id="locktitle" data-t="sign in">sign in</h1>
     <p class="sub" id="locksub"></p>
     <div class="field">
@@ -768,6 +824,7 @@
     <a class="toggle" href="/terms" target="_blank" rel="noopener" style="text-decoration:none" data-t="Terms">Terms</a>
     <div id="lockproviders" class="sso"></div>
   </form>
+ </div>
 </div>
 <header>
   <div class="brand">
@@ -1249,6 +1306,12 @@
   <div class="err" id="err"></div>
   <audio id="audio" preload="metadata"></audio>
 </main>
+<footer class="foot" id="foot">
+  <a href="/about" data-t="About">About</a>
+  <a href="/contact" data-t="Contact us">Contact us</a>
+  <a href="/terms" data-t="Terms">Terms</a>
+  <a href="/privacy" data-t="Privacy">Privacy</a>
+</footer>
 <div id="ribbon" class="" role="status" aria-live="polite"><span class="spin" id="rspin" style="display:none"></span><span class="rtext" id="rtext"></span><span class="rtime" id="rtime"></span><span class="rprog" id="rprog"><i id="rprogfill"></i></span><button class="rbtn" id="rcancel" type="button" hidden data-t="Cancel">Cancel</button><button class="rbtn" id="rdismiss" type="button" hidden data-t="Dismiss">Dismiss</button></div>
 <div id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 <button id="selplay" type="button" hidden style="position:fixed;z-index:60;padding:8px 14px;border-radius:999px;border:1px solid #3a3f47;background:#191c22;color:#eceff3;font:inherit;font-size:13px;box-shadow:0 8px 22px rgba(0,0,0,.45);cursor:pointer" data-t="▶ Play from here">▶ Play from here</button>
@@ -3514,6 +3577,20 @@ function enterPublicPricing() {
 if (document.getElementById('publicsignin')) {
   document.getElementById('publicsignin').onclick =
     () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
+}
+// On a phone the welcome copy sits above the form, so the call to action has to
+// carry the reader down to it; on a wide screen the card is already in view.
+if (document.getElementById('welstart')) {
+  document.getElementById('welstart').onclick = () => {
+    openDoor('create');
+    const card = document.getElementById('lockform');
+    if (card) {
+      const r = card.getBoundingClientRect();
+      if (r.top > window.innerHeight * 0.4) card.scrollIntoView({ block: 'center' });
+    }
+    const u = document.getElementById('lockuser');
+    if (u) u.focus();
+  };
 }
 
 async function requireSession() {

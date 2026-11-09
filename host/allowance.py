@@ -21,6 +21,46 @@ def _entry_id(user_id, period_end):
     return "allowance:%s:%s" % (user_id, int(period_end or 0))
 
 
+def welcome(conn, user_id):
+    """The $3 a new subscriber starts with. Once per account, ever.
+
+    Nothing lands at sign-up. The free tier is free, and credit that arrives
+    before any money does is a thing to re-harvest with throwaway accounts. It
+    lands on the first period that has actually been charged, counted by status
+    "active" rather than by billing.active() (which also answers yes during a
+    trial). The ledger id carries the user and not the period, so a cancel and
+    a re-subscribe cannot collect it a second time.
+
+    Returns the amount added, 0 when nothing was owed.
+    """
+    if not user_id:
+        return 0.0
+    sub = billing.get(conn, user_id)
+    if not sub:
+        return 0.0
+    if (sub.get("plan") or "") == quota.FREE_PLAN:
+        return 0.0
+    if str(sub.get("status") or "") != "active":
+        return 0.0
+    # A legacy character wallet is an account from before the switch, and it is
+    # long past its first paid month. Never mix the two units.
+    if (accounting.currency(conn, user_id) or "USD") != "USD":
+        return 0.0
+    eid = "welcome:%s" % user_id
+    if conn.execute("SELECT id FROM ledger WHERE id=?", (eid,)).fetchone():
+        return 0.0
+    amount = float(quota.WELCOME_GRANT)
+    if amount <= 0:
+        return 0.0
+    try:
+        accounting.topup(conn, user_id, amount, currency="USD", entry_id=eid,
+                         note="welcome credit, once per account")
+    except Exception:
+        # A concurrent request won the same primary key; the ledger has it.
+        return 0.0
+    return amount
+
+
 def due(conn, user_id):
     """Grant this period's allowance if it is owed. Returns the amount added in
     the account's own unit (0 when nothing was owed). Safe to call as often as

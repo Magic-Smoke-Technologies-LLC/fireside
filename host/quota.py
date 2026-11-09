@@ -66,6 +66,13 @@ PLAN_GRANT = {FREE_PLAN: 0.0,
               LISTENER_PLAN: 3.0,
               STUDIO_PLAN: 15.0}
 PLATFORM_MONTH_GRANT = PLAN_GRANT[PLATFORM_PLAN]
+# The welcome credit: what a new subscriber starts with, once in the life of the
+# account. It is wallet dollars, so it buys narration at the published rate
+# instead of being a discount on it, and an unused grant costs us nothing. It is
+# deliberately not tied to a plan or a period: the point of a taste is that
+# someone finishes a book, and the first book is the same size whichever rung
+# they took.
+WELCOME_GRANT = 3.0
 # The character ladder an account created before the switch still holds. Read
 # it only for an account whose wallet is already in characters; never grant
 # characters to a dollar wallet, and never the reverse.
