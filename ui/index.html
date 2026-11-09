@@ -301,6 +301,18 @@
   .welsteps li b{display:block;color:var(--text);font-weight:600}
   .welsteps li::before{content:"";position:absolute;left:0;top:6px;width:8px;height:8px;
     border-radius:50%;border:1px solid var(--flame)}
+  /* The rates are a table, not a sentence: a rate inside prose goes stale
+     silently, and a reader comparing us to a competitor wants the number on
+     its own. */
+  .lockwel .welrates{border-collapse:collapse;margin:20px 0 0;width:100%;max-width:440px;font-size:14px}
+  .lockwel .welrates caption{text-align:left;color:var(--soft);font-size:12px;
+    letter-spacing:.08em;text-transform:uppercase;padding-bottom:6px}
+  .lockwel .welrates th{text-align:left;font-weight:400;color:var(--soft);
+    padding:6px 14px 6px 0;vertical-align:top;white-space:nowrap}
+  .lockwel .welrates td{color:var(--text);padding:6px 0;border-top:1px solid var(--line)}
+  .lockwel .welrates td b{font-weight:600}
+  .lockwel .welrates .ratefine{display:block;color:var(--faint);font-size:13px}
+  .lockwel .welrates .ratefine a{color:var(--soft)}
   .lockwel .welcred{color:var(--flame);font-size:14px;margin:22px 0 0}
   .lockwel .welcta{margin:18px 0 0;padding:11px 22px;border-radius:999px;border:1px solid var(--line);
     background:transparent;color:var(--text);font:600 15px var(--ui);cursor:pointer}
@@ -799,9 +811,18 @@
     <p class="welp" data-t="Drop in an EPUB or paste a story link. Fireside splits it into chapters, reads each one in a voice you choose, and picks up where you stopped, on the phone in your pocket.">Drop in an EPUB or paste a story link. Fireside splits it into chapters, reads each one in a voice you choose, and picks up where you stopped, on the phone in your pocket.</p>
     <ul class="welsteps">
       <li><b data-t="Bring your books">Bring your books</b><span data-t="Your own EPUB, or a link to a story on the web. Both land on the same shelf.">Your own EPUB, or a link to a story on the web. Both land on the same shelf.</span></li>
-      <li><b data-t="Pick the voice">Pick the voice</b><span data-t="Bring your own speech key, or use ours at $19.63 per million characters, about 15 hours of listening.">Bring your own speech key, or use ours at $19.63 per million characters, about 15 hours of listening.</span></li>
+      <li><b data-t="Pick the voice">Pick the voice</b><span data-t="Bring your own speech key, or use ours at the standard rate at the time, listed below.">Bring your own speech key, or use ours at the standard rate at the time, listed below.</span></li>
       <li><b data-t="Listen anywhere">Listen anywhere</b><span data-t="Chapters are voiced once and kept, so a second listen costs nothing. It resumes on any device you sign in from.">Chapters are voiced once and kept, so a second listen costs nothing. It resumes on any device you sign in from.</span></li>
     </ul>
+    <table class="welrates">
+      <caption data-t="What narration costs">What narration costs</caption>
+      <tr><th data-t="Our voice">Our voice</th><td><b class="rate" data-t="$19.63 per million characters">$19.63 per million characters</b>
+        <span class="ratefine" data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
+      <tr><th data-t="Your own speech key">Your own speech key</th><td><b data-t="Nothing to us">Nothing to us</b>
+        <span class="ratefine" data-t="you pay your provider directly">you pay your provider directly</span></td></tr>
+      <tr><th data-t="Paid plans">Paid plans</th><td><b data-t="Include wallet credit each month">Include wallet credit each month</b>
+        <span class="ratefine"><a href="/pricing" data-t="see the plans">see the plans</a></span></td></tr>
+    </table>
     <p class="welcred" data-t="New accounts get $3 of narration credit when the first paid month begins.">New accounts get $3 of narration credit when the first paid month begins.</p>
     <button class="welcta" id="welstart" type="button" data-t="Create a free account">Create a free account</button>
     <p class="wellinks">
