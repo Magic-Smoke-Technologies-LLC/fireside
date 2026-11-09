@@ -124,6 +124,15 @@ add bytes on top of whatever tier you are on; buying blocks never moves you off
 platform/free. `GET /plans` returns the tiers and the block for the screen;
 `GET /storage` reports `storage_blocks` and the summed `allowance_bytes`.
 
+**Free buys no blocks (Chris, 2026-11-09).** The room on the shelf is the whole
+reason to buy the platform, so it is not for sale as a block on free. A free
+account may put dollars in the wallet and spend them on narration; storage
+starts with the Reader plan, and blocks are then a mid-cycle top-up on a paid
+plan. `POST /billing/checkout` refuses a blocks-only order from a free account
+(`402`); a cart that also names a paid tier is allowed, because that buyer is
+upgrading in the same purchase. The screen hides the block button on free and
+shows the way to the plans instead.
+
 **A comp is a plan row with `provider='admin'`.** An admin sets an account's tier
 from the plans screen (`POST /admin/plan`); nothing downstream can tell a comped
 row from a paid one except that field.

@@ -1914,7 +1914,7 @@ function show(v, mode) {
      to work while a book is still opening, and a failed load still leaves the
      reader somewhere they can leave. */
   syncRoute(mode === 'replace' ? 'replace' : undefined);
-  if (v === 'set') { loadPron(); loadLinked(); loadSessions(); loadPlan(); loadPasswordPanel();
+  if (v === 'set') { loadPron(); loadLinked(); loadSessions(); loadPasswordPanel();
     loadDanger(); setSetTab(localStorage.getItem(SETTAB_KEY), 'replace'); }
   if (v === 'plans') loadPlansPage();
   if (v === 'adm') { if (AUTH.admin) loadAdmin(); else show('lib'); }
@@ -1944,7 +1944,6 @@ function setSetTab(p, mode) {
   document.querySelectorAll('#v-set .setpanel').forEach(el => el.classList.toggle('on', el.dataset.p === p));
   try { localStorage.setItem(SETTAB_KEY, p); } catch (_) {}
   if (p === 'wallet') loadWallet();
-  if (p === 'plan') loadCredits();
   if (p === 'account') loadTwofa();
   syncRoute(mode === 'replace' ? 'replace' : undefined);
 }
@@ -3099,69 +3098,15 @@ async function loadWalletList() {
   });
 }
 
-// --- characters: the balance, the rate, and the one buy button -------------
-// The server is the authority on what a character costs: /credits carries the
-// sale connection's own rate and bundles, and this panel formats what it is
-// handed. It computes nothing, so money has exactly one source of truth.
-// The states matter more than the happy path: nobody is selling, selling is off,
-// a run is holding part of the balance. Those are three different sentences.
-let CREDITS = null;
+// --- numbers: how a balance and a price are written -----------------------
+// The server is the authority on what a character costs and what the account
+// holds. These format what it is handed; they compute none of it, so money has
+// exactly one source of truth.
 function nchar(n) {
   if (n == null) return '\u2014';
   return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 function money(n) { return '$' + (Math.round(n * 100) / 100).toFixed(2); }
-async function loadCredits() {
-  const box = $('#creditsbox'); if (!box) return;
-  if (!USER) {
-    box.textContent = T('Sign in to see your balance.');
-    clearCredits(); $('#creditsrate').textContent = ''; return;
-  }
-  box.textContent = T('Checking your balance\u2026');
-  let d;
-  try { d = await api('/credits'); }
-  catch (e) {
-    CREDITS = null;
-    box.textContent = e.status === 401
-      ? T('Sign in to see your balance.')
-      : 'Couldn\u2019t reach the server. The number below may be out of date.';
-    $('#creditsrate').textContent = '';
-    clearCredits();
-    if (e.status !== 401) {
-      const again = document.createElement('button');
-      again.className = 'btn quiet'; again.type = 'button'; again.textContent = 'Retry';
-      again.onclick = loadCredits;
-      $('#creditsbuy').append(again);
-    }
-    return;
-  }
-  CREDITS = d;
-  WUNIT = d.unit || 'USD';
-  WRATE = d.sale && d.sale.rate_per_1m_chars > 0 ? d.sale.rate_per_1m_chars : null;
-  const avail = d.available || 0, held = d.reserved || 0;
-  box.textContent = avail > 0
-    ? T('{n} left.', { n: wamount(avail) })
-    : T('No credit. A metered render will be refused until you add funds.');
-  if (held > 0) box.textContent += ' \u00b7 ' + T('{n} held by a run in progress.', { n: wamount(held) });
-  const sale = d.sale;
-  // The sentence follows the shape the server actually sent. A null rate used to
-  // mean "price unknown" even when priced buttons sat right underneath it; now a
-  // server with only bundles says so instead of guessing about a missing field.
-  const priced = !!(sale && (sale.bundles || []).some(b => b && b.usd != null));
-  $('#creditsrate').textContent = !sale
-    ? 'No voice server is selling characters right now, so there is nothing to buy here. Your own connected voices still work.'
-    : (sale.rate_per_1m_chars != null
-      ? T('Characters cost {rate} per million.', { rate: money(sale.rate_per_1m_chars) })
-      : (priced
-        ? 'Characters are sold in the packages below.'
-        : 'This voice server is not selling characters right now.'));
-  drawCreditsBuy(d);
-  drawChip(d);
-}
-function clearCredits() {
-  const b = $('#creditsbuy'); if (b) b.innerHTML = '';
-  const m = $('#creditsmsg'); if (m) m.textContent = '';
-}
 // --- the balance in the header ---------------------------------------------
 // One number, always where the tabs are, because a refusal you did not see
 // coming is a worse product than a number you did. It formats; it does not
@@ -3180,7 +3125,7 @@ function drawChip(d) {
   // Red only when voice is for sale here: nobody is selling and you still have
   // none is not a problem, a metered voice is just not an option yet.
   c.classList.toggle('zero', avail <= 0 && !!d.sale);
-  c.title = avail > 0 ? 'Credit left \u00b7 opens Plan & storage'
+  c.title = avail > 0 ? 'Credit left \u00b7 opens your wallet'
     : d.sale ? 'No credit left \u00b7 a metered render will be refused'
     : 'No credit here \u00b7 nothing is being sold, and your own voice servers are not metered';
 }
@@ -3197,57 +3142,6 @@ if ($('#balchip')) $('#balchip').onclick = () => { show('set'); setSetTab('walle
 window.addEventListener('focus', () => {
   if (USER && Date.now() - _balAt > 60000) refreshBalance();
 });
-function drawCreditsBuy(d) {
-  const box = $('#creditsbuy'); if (!box) return;
-  box.innerHTML = '';
-  const sale = d.sale;
-  if (!sale) return;                  // never a button that can only 400
-  const can = !!d.payments_configured;
-  const msg = t => { const m = $('#creditsmsg'); if (m) m.textContent = t; };
-  const buy = usd => async () => {
-    msg(T('Opening the payment page\u2026'));
-    try {
-      const r = await jpostIdem('/credits/purchase', {
-        usd: Number(usd),
-        return_url: location.origin + location.pathname,
-      });
-      // The card is entered on the provider's page, never here. Coming back
-      // with ?checkout= is what confirms it (see confirmCheckout).
-      if (r.url) { location.href = r.url; return; }
-      msg('+' + nchar(r.chars) + ' characters. Reference ' + r.reference + '.');
-      await loadCredits();
-    } catch (e) {
-      if (e.status === 503) msg(T('Buying is not switched on yet, so nothing was charged.'));
-      else if (e.status === 402) msg('The payment was refused. Nothing was charged. ' + ((e.data || {}).detail || ''));
-      else if (e.status === 400) msg(T('That amount does not buy any characters. Try a larger one.'));
-      else msg(e.message || 'could not buy characters');
-    }
-  };
-  const bundles = (sale.bundles || []).filter(b => b && b.usd != null);
-  if (bundles.length) {
-    bundles.forEach(b => {
-      const btn = document.createElement('button');
-      btn.className = 'btn'; btn.type = 'button';
-      btn.textContent = money(b.usd) + (b.chars ? ' \u00b7 ' + nchar(b.chars) + ' chars' : '');
-      btn.disabled = !can; if (!can) btn.title = T('Not for sale yet');
-      btn.onclick = buy(b.usd);
-      box.append(btn);
-    });
-  } else {
-    const inp = document.createElement('input');
-    inp.type = 'number'; inp.min = '1'; inp.value = '5'; inp.style.maxWidth = '90px';
-    const btn = document.createElement('button');
-    btn.className = 'btn'; btn.type = 'button'; btn.textContent = T('Buy characters');
-    btn.disabled = !can; if (!can) btn.title = T('Not for sale yet');
-    btn.onclick = () => buy(Math.max(1, parseFloat(inp.value || '0')));
-    box.append(inp, btn);
-  }
-  if (!can) {
-    const note = document.createElement('span'); note.className = 'small';
-    note.textContent = T('Buying is not switched on yet, so nothing can be charged.');
-    box.append(note);
-  }
-}
 // --- plan & storage --------------------------------------------------------
 function fmtBytes(n) { n = n || 0;
   if (n >= 1e9) { const g = n / 1e9; return (g % 1 ? g.toFixed(1) : g) + ' GB'; }
@@ -3256,112 +3150,8 @@ function fmtBytes(n) { n = n || 0;
   return n + ' B'; }
 function usd(c) { return c == null ? '\u2014' : '$' + (c / 100).toFixed(2); }
 let PLAN_CAT = null;
-async function loadPlan() {
-  const usage = $('#planusage'); if (!usage) return;
-  let s = {}, cat = null, bill = null;
-  try { s = await api('/storage') || {}; } catch (e) {}
-  try { cat = await api('/plans'); } catch (e) {}
-  try { bill = await api('/billing'); } catch (e) {}
-  PLAN_CAT = cat;
-  const plan = s.plan || 'platform';
-  usage.textContent = s.unlimited
-    ? fmtBytes(s.own_bytes) + ' \u00b7 unlimited storage'
-    : fmtBytes(s.own_bytes) + ' of ' + fmtBytes(s.allowance_bytes) + ' used'
-    + (s.storage_blocks ? ' \u00b7 ' + s.storage_blocks + ' storage block' + (s.storage_blocks > 1 ? 's' : '') : '')
-    + (s.blobs ? ' \u00b7 ' + s.blobs + ' item' + (s.blobs > 1 ? 's' : '') : '');
-  const pct = s.unlimited ? 0
-    : (s.allowance_bytes ? Math.min(100, Math.round(100 * (s.own_bytes || 0) / s.allowance_bytes)) : 0);
-  const bar = $('#planbar');
-  if (bar) { bar.style.display = ''; $('#planbarfill').style.width = pct + '%'; }
-  const cards = $('#plancards');
-  if (cards) {
-    cards.innerHTML = '';
-    ((cat && cat.tiers) || []).forEach(t => {
-      const card = document.createElement('div');
-      card.className = 'addpanel'; card.style.cssText = 'flex:1 1 200px;margin:0';
-      // Same rule as the plans page: print the provider's price when there is
-      // one, otherwise the published list price, since "price not set" told a
-      // reader nothing and the rung is still 'not for sale'.
-      const shown = t.amount_cents != null ? t.amount_cents : t.list_amount_cents;
-      const h = document.createElement('div'); h.style.fontWeight = '600';
-      h.textContent = t.label + ' \u00b7 ' + (t.id === plan ? 'current'
-        : (shown ? usd(shown) + '/' + (t.interval || 'mo') : 'free'));
-      const p = document.createElement('p'); p.className = 'small'; p.style.margin = '6px 0';
-      p.textContent = [
-        fmtBytes(t.included_bytes) + ' included.',
-        t.included_usd ? money(t.included_usd) + ' of credit a month.'
-                       : 'No credit included.',
-        (t.description || '')
-      ].join(' ');
-      card.append(h, p);
-      if (t.id !== plan && t.id !== 'free') {
-        const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
-        b.textContent = (cat && cat.payments_configured && t.amount_cents != null)
-          ? ('Upgrade to ' + t.label) : T('Not for sale yet');
-        b.disabled = !(cat && cat.payments_configured && t.amount_cents != null);
-        b.onclick = () => startCheckout({ plan: t.id });
-        card.append(b);
-      }
-      cards.append(card);
-    });
-  }
-  // A paying reader could not stop the next charge anywhere in the app, and a
-  // failed card could not be replaced without asking us. Both now go through
-  // the provider, so no card detail passes through this server.
-  if (cards && bill && bill.subscription && bill.subscription.subscription_id) {
-    const sub = bill.subscription;
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap';
-    const note = document.createElement('span'); note.className = 'small';
-    note.textContent = 'Renews through ' + (sub.provider || 'the payment provider') + '.';
-    row.append(note);
-    const manage = document.createElement('button');
-    manage.className = 'btn'; manage.type = 'button'; manage.textContent = T('Change card');
-    manage.onclick = async () => {
-      try {
-        const d = await jpost('/billing/portal',
-          { return_url: location.origin + location.pathname });
-        if (d.url) { location.href = d.url; return; }
-        $('#planmsg').textContent = d.detail || 'the provider did not return a page';
-      } catch (e) { $('#planmsg').textContent = errorText(e); }
-    };
-    const cancel = document.createElement('button');
-    cancel.className = 'btn'; cancel.type = 'button'; cancel.textContent = T('Cancel renewal');
-    cancel.onclick = async () => {
-      if (!window.confirm('Stop the next charge? You keep what you already paid '
-        + 'for until the period ends.')) return;
-      try {
-        await jpost('/billing/cancel', {});
-        idle(T('Renewal cancelled. You keep access until the period ends.'));
-        loadPlan();
-      } catch (e) { $('#planmsg').textContent = errorText(e); }
-    };
-    row.append(manage, cancel);
-    cards.append(row);
-  }
-  const blocks = $('#planblocks');
-  if (blocks) {
-    blocks.innerHTML = '';
-    const st = cat && cat.storage;
-    if (st) {
-      const p = document.createElement('p'); p.className = 'sub'; p.style.margin = '0 0 8px';
-      p.textContent = 'Storage blocks: ' + fmtBytes(st.block_bytes) + ' each'
-        + (st.amount_cents != null ? ', ' + usd(st.amount_cents) + '/' + (st.interval || 'mo') : ', price not set yet')
-        + '. You have ' + (s.storage_blocks || 0) + '.';
-      const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;align-items:center';
-      const inp = document.createElement('input'); inp.type = 'number'; inp.min = '1'; inp.value = '1';
-      inp.style.maxWidth = '90px';
-      const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = T('Buy blocks');
-      b.disabled = !(cat && cat.payments_configured && st.amount_cents != null);
-      b.onclick = () => startCheckout({ plan: st.addon, quantity: Math.max(1, parseInt(inp.value || '1', 10)) });
-      row.append(inp, b); blocks.append(p, row);
-    }
-  }
-  $('#planmsg').textContent = (bill && bill.payments_configured) ? ''
-    : 'Payments are not configured on this server yet, so buying is off. The tiers and prices show the real shape.';
-}
 async function startCheckout(body, msgEl) {
-  const msg = msgEl || $('#planmsg');
+  const msg = msgEl || $('#pageplanmsg');
   try {
     body.return_url = location.origin + location.pathname;
     const d = await jpostIdem('/billing/checkout', body);
@@ -3386,7 +3176,6 @@ async function confirmCheckout(ref) {
     try {
       const c = await jpost('/credits/confirm', { reference: ref });
       idle('+' + nchar(c.chars) + ' characters added to your balance.');
-      await loadCredits();
       return;
     } catch (_) { fail(e); }
   }
@@ -3696,18 +3485,33 @@ function renderPageBuys(box, s, cat, cfg) {
     row.append(inp, b);
   }
 
+  // Storage is the one thing a plan buys and the wallet does not. Chris, 11-09:
+  // a free account may fund the wallet and spend it on narration, but room on
+  // the shelf is the reason to move up. So free gets a door to the plans and no
+  // block button at all, and the server refuses the same checkout.
+  const onFree = s.plan === 'free';
   const room = document.createElement('section');
-  const h2 = document.createElement('h3'); h2.style.marginTop = '28px'; h2.textContent = T('More storage');
+  const h2 = document.createElement('h3'); h2.style.marginTop = '28px';
+  h2.textContent = onFree ? T('Storage comes with a plan') : T('More storage');
   const st = cat && cat.storage;
   const p2 = document.createElement('p'); p2.className = 'sub';
-  p2.textContent = st
-    ? T('{b} per block, {p}. You have {n}. Storage counts once per book you hold; delete a book and its bytes come back.',
-        { b: fmtBytes(st.block_bytes), p: st.amount_cents != null ? usd(st.amount_cents) + ' a ' + (st.interval || 'month') : T('price not set yet'), n: (s.storage_blocks || 0) + ' block(s)' })
-    : T('Storage is not priced on this server yet.');
+  if (onFree) {
+    p2.textContent = T('Your wallet pays for narration. Room on the shelf starts with the Reader plan, and every plan includes some credit each month.');
+  } else {
+    p2.textContent = st
+      ? T('{b} per block, {p}. You have {n}. Storage counts once per book you hold; delete a book and its bytes come back.',
+          { b: fmtBytes(st.block_bytes), p: st.amount_cents != null ? usd(st.amount_cents) + ' a ' + (st.interval || 'month') : T('price not set yet'), n: (s.storage_blocks || 0) + ' block(s)' })
+      : T('Storage is not priced on this server yet.');
+  }
   const row2 = document.createElement('div');
   row2.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap';
   room.append(h2, p2, row2);
-  if (st) {
+  if (onFree) {
+    const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
+    b.textContent = T('See the plans');
+    b.onclick = () => { const p = $('#pageplans'); if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    row2.append(b);
+  } else if (st) {
     const inp = document.createElement('input'); inp.type = 'number'; inp.min = '1'; inp.value = '1';
     inp.style.maxWidth = '90px';
     const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
@@ -3758,7 +3562,7 @@ async function loadPlansPage() {
   }
 }
 if ($('#pagesignup')) $('#pagesignup').onclick = () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
-if ($('#gotoplans')) $('#gotoplans').onclick = () => show('plans');
+if ($('#gotopplans')) $('#gotopplans').onclick = () => show('plans');
 if ($('#gotosand')) $('#gotosand').onclick = () => show('sand');
 if ($('#tnowbook')) $('#tnowbook').onclick = () => { if (player.id) show('play'); };
 

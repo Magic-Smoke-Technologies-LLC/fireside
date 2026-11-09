@@ -889,8 +889,7 @@ class App:
             incoming = self._book_bytes(book)
             if not self._storage_ok(user, incoming):
                 return 507, {"error": "not enough storage",
-                             "detail": "the example needs about %d bytes and your "
-                                       "plan has no room for it" % incoming}
+                             "detail": self._no_room(user, "the example", incoming)}
             bid = library.add_book(self.conn, self.storage, user, book)
             self._fill_example_details(bid)
             self._maybe_cover(bid, book)
@@ -954,6 +953,15 @@ class App:
         return quota.check_room(self.conn, self.storage, user_id,
                                 self._plan(user_id), nbytes,
                                 billing.blocks(self.conn, user_id))
+
+    def _no_room(self, user_id, what, nbytes):
+        """The sentence a refused write gets. On free the honest next step is a
+        plan, not a block button, and the screen no longer offers one there."""
+        if self._plan(user_id) == quota.FREE_PLAN:
+            return ("%s needs about %d bytes and the free plan has no room for "
+                    "it. Storage comes with a plan; the wallet pays for "
+                    "narration." % (what, nbytes))
+        return "%s needs about %d bytes and your plan has no room for it" % (what, nbytes)
 
     # ---- cover art -----------------------------------------------------------
     # A book's cover is its own image when the reader handed one over (an epub
@@ -1045,7 +1053,7 @@ class App:
             data, mime = got
             if not self._storage_ok(owner, len(data)):
                 return 507, {"error": "not enough storage",
-                             "detail": "your plan has no room for this cover"}
+                             "detail": self._no_room(owner, "this cover", len(data))}
             library.set_cover(self.conn, self.storage, book_id, data, mime)
             return 200, {"ok": True, "cover": library.get_book(self.conn, book_id)["cover"]}
         raw = body.get("data_b64") or ""
@@ -1059,7 +1067,7 @@ class App:
             return 413, {"error": "image is too large"}
         if not self._storage_ok(owner, len(data)):
             return 507, {"error": "not enough storage",
-                         "detail": "your plan has no room for this cover"}
+                         "detail": self._no_room(owner, "this cover", len(data))}
         library.set_cover(self.conn, self.storage, book_id, data,
                           body.get("mime") or "image/jpeg")
         return 200, {"ok": True, "cover": library.get_book(self.conn, book_id)["cover"]}
@@ -1571,8 +1579,7 @@ class App:
         est_bytes = jobs.estimate(todo_chars, provider)["audio_bytes"]
         if not self._storage_ok(user, est_bytes):
             return 507, {"error": "not enough storage",
-                         "detail": "this render needs about %d bytes of audio and "
-                                   "your plan has no room for it" % est_bytes}
+                         "detail": self._no_room(user, "this render", est_bytes)}
         sale = accounting.sale_connection_matches(self.sale_connection, provider, voice,
                                                   model, cid)
         # What this run actually has to synthesise: a chapter already voiced in
@@ -1916,6 +1923,19 @@ class App:
             except (TypeError, ValueError):
                 quantity = 1
             meta["quantity"] = max(1, quantity)
+        # Storage is what a plan buys; the wallet does not. A free account may
+        # put dollars in the wallet and spend them on narration, but a block of
+        # room is not for sale on free, because that room is the reason to move
+        # up. Chris, 11-09. The screen hides the button too; this is the gate.
+        wanted = [it["plan"] for it in (meta.get("items") or [])] or [plan]
+        upgrades = [p for p in wanted if p not in (quota.STORAGE_ADDON, quota.FREE_PLAN)]
+        sub = billing.get(self.conn, uid) or {}
+        if (quota.STORAGE_ADDON in wanted and not upgrades
+                and sub.get("plan") == quota.FREE_PLAN):
+            return 402, {"error": "a plan is needed for storage",
+                         "detail": "Storage comes with a plan. The wallet pays for "
+                                   "narration on free; room on the shelf starts with "
+                                   "the Reader plan."}
         co = _with_idem(fn, plan, meta, idem=idem)
         if not getattr(co, "ok", False):
             return 402, {"error": "checkout refused",
