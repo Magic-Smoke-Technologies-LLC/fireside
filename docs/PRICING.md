@@ -124,6 +124,15 @@ add bytes on top of whatever tier you are on; buying blocks never moves you off
 platform/free. `GET /plans` returns the tiers and the block for the screen;
 `GET /storage` reports `storage_blocks` and the summed `allowance_bytes`.
 
+**Free buys no blocks (Chris, 2026-11-09).** The room on the shelf is the whole
+reason to buy the platform, so it is not for sale as a block on free. A free
+account may put dollars in the wallet and spend them on narration; storage
+starts with the Reader plan, and blocks are then a mid-cycle top-up on a paid
+plan. `POST /billing/checkout` refuses a blocks-only order from a free account
+(`402`); a cart that also names a paid tier is allowed, because that buyer is
+upgrading in the same purchase. The screen hides the block button on free and
+shows the way to the plans instead.
+
 **A comp is a plan row with `provider='admin'`.** An admin sets an account's tier
 from the plans screen (`POST /admin/plan`); nothing downstream can tell a comped
 row from a paid one except that field.
@@ -203,6 +212,17 @@ greedy. My own note at the time: $3 survives 50 subscribers (~$84/mo net) and it
 caps the slope at about half of what $6 would earn at the same headcount, so the
 tier's job is retention and the character line keeps the margin.
 
+### Revised 2026-11-09: monthly is dearer than a year
+
+Chris's call: **$5/$10/$22 a month, $36/$96/$240 a year** (which is $3/$8/$20 a
+month when the year is paid up front). The yearly price is unchanged and is now
+the only place a reader sees the old monthly figure; that is the point of it.
+
+Paddle cannot edit a price's amount, so this is three new monthly prices
+(500/1000/2200 cents) and three archived ones. A subscriber left on the old
+monthly price keeps paying $3 until their plan changes, which is the honest
+default: no silent increase mid-period.
+
 ## What $5 buys, said out loud (2026-11-09)
 
 Dollar credits removed the one number a buyer could reason with. The wallet now
@@ -232,3 +252,32 @@ Two lines that must be on the panel, not in a policy page:
   requires it or where we charged twice for the same thing.
 
 Minimum top-up is **$5**: Paddle's $0.50 fixed fee is 10% at $5 and 21.7% at $3.
+
+## Self-serve billing (settings > Plan & billing)
+
+A subscriber has one screen for what they pay and how to stop it. It shows the
+plan name, the next charge date, storage used against the allowance, and two
+controls: **Change card or billing details** (opens the provider's portal, so no
+card detail passes through this server) and **Cancel renewal**.
+
+Cancelling is scheduled, not immediate: Paddle keeps the subscription `active`
+and records a `scheduled_change` until the paid period ends. Status therefore
+cannot tell "renews on the 7th" from "stops on the 7th", which is why
+`subscriptions.cancel_at` exists and is written by `billing.project()` from
+`scheduled_change_at`. The screen says "Stops on ..." from that date, and hides
+the cancel button once it is set.
+
+Moving rung does not open a second subscription: `PATCH /subscriptions/{id}`
+with the complete item list and `proration_billing_mode:
+prorated_immediately` (Chris picked that mode, 11-09). The cycle stays what the
+subscriber bought, read back from the price id on the subscription because our
+own row does not store it. A change is refused while a cancel is scheduled:
+prorating onto a period that is about to end would charge for time they will not
+have.
+
+Resuming a scheduled cancel is `PATCH /subscriptions/{id}` with
+`scheduled_change: null`, which Paddle's update-subscription doc states is the
+only way to set that field and removes the change. Verified against the doc
+(fetched 11-10), not yet against a live sandbox subscription: no fake subscription
+in the sandbox has a pending cancel to clear. That is the one step here with an
+open receipt.

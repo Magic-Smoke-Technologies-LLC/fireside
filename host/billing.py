@@ -33,13 +33,14 @@ def get(conn, uid):
     return {"user_id": r["user_id"], "plan": r["plan"], "status": r["status"],
             "provider": r["provider"], "reference": r["reference"],
             "current_period_end": r["current_period_end"],
+            "cancel_at": _int(r["cancel_at"]),
             "customer": r["customer"] or "",
             "subscription_id": r["subscription_id"] or "",
             "updated_at": r["updated_at"]}
 
 
 def upsert(conn, uid, plan, status, provider="", reference="",
-           current_period_end=0, customer="", subscription_id=""):
+           current_period_end=0, customer="", subscription_id="", cancel_at=0):
     """Record what the provider said. Merges into the one row a user has.
 
     A lifecycle event often knows the status but not the checkout session, and a
@@ -49,18 +50,19 @@ def upsert(conn, uid, plan, status, provider="", reference="",
     """
     conn.execute(
         "INSERT INTO subscriptions (user_id, plan, status, provider, reference, "
-        "current_period_end, customer, subscription_id, updated_at, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?) "
+        "current_period_end, cancel_at, customer, subscription_id, updated_at, "
+        "created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(user_id) DO UPDATE SET plan=excluded.plan, "
         "status=excluded.status, provider=excluded.provider, "
         "reference=COALESCE(NULLIF(excluded.reference, ''), subscriptions.reference), "
         "current_period_end=excluded.current_period_end, "
+        "cancel_at=excluded.cancel_at, "
         "customer=COALESCE(NULLIF(excluded.customer, ''), subscriptions.customer), "
         "subscription_id=COALESCE(NULLIF(excluded.subscription_id, ''), "
         "subscriptions.subscription_id), "
         "updated_at=excluded.updated_at",
         (uid, plan, status, provider, reference, int(current_period_end or 0),
-         customer or "", subscription_id or "", now(), now()))
+         _int(cancel_at), customer or "", subscription_id or "", now(), now()))
     conn.commit()
     return get(conn, uid)
 
@@ -81,6 +83,14 @@ def by_subscription(conn, subscription_id):
         if r:
             return r["user_id"]
     return ""
+
+
+def _int(v):
+    """A stored epoch, as an int. Old rows and NULLs read as 0."""
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _lapsed(period_end, now_ts=None):
@@ -131,29 +141,32 @@ def addons(conn, uid):
                            "status": r["status"], "provider": r["provider"],
                            "reference": r["reference"],
                            "current_period_end": r["current_period_end"],
+                           "cancel_at": _int(r["cancel_at"]),
                            "customer": r["customer"] or "",
                            "subscription_id": r["subscription_id"] or ""}
     return out
 
 
 def upsert_addon(conn, uid, addon, quantity, status, provider="", reference="",
-                 current_period_end=0, customer="", subscription_id=""):
+                 current_period_end=0, customer="", subscription_id="",
+                 cancel_at=0):
     """Record how many of an add-on the provider says are paid for."""
     conn.execute(
         "INSERT INTO addons (user_id, addon, quantity, status, provider, "
-        "reference, current_period_end, customer, subscription_id, updated_at, "
-        "created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
+        "reference, current_period_end, cancel_at, customer, subscription_id, "
+        "updated_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(user_id, addon) DO UPDATE SET quantity=excluded.quantity, "
         "status=excluded.status, provider=excluded.provider, "
         "reference=COALESCE(NULLIF(excluded.reference, ''), addons.reference), "
         "current_period_end=excluded.current_period_end, "
+        "cancel_at=excluded.cancel_at, "
         "customer=COALESCE(NULLIF(excluded.customer, ''), addons.customer), "
         "subscription_id=COALESCE(NULLIF(excluded.subscription_id, ''), "
         "addons.subscription_id), "
         "updated_at=excluded.updated_at",
         (uid, addon, int(quantity or 0), status, provider, reference,
-         int(current_period_end or 0), customer or "", subscription_id or "",
-         now(), now()))
+         int(current_period_end or 0), _int(cancel_at), customer or "",
+         subscription_id or "", now(), now()))
     conn.commit()
     return addons(conn, uid).get(addon)
 
@@ -180,6 +193,7 @@ def list_all(conn):
                              "status": r["status"], "provider": r["provider"],
                              "reference": r["reference"],
                              "current_period_end": r["current_period_end"],
+                             "cancel_at": _int(r["cancel_at"]),
                              "customer": r["customer"] or "",
                              "subscription_id": r["subscription_id"] or ""}
     return out
@@ -376,11 +390,16 @@ def project(conn, uid):
     current = get(conn, uid)
     if current and current.get("provider") == "admin" and current.get("status") in ("active", "trialing"):
         return current                       # a hand-granted tier outranks a sale
+    # A scheduled cancel is the only way to tell "renews on the 7th" from
+    # "stops on the 7th": Paddle keeps the subscription active either way.
+    cancel_at = (int(pick.get("scheduled_change_at") or 0)
+                 if pick.get("scheduled_change_action") == "cancel" else 0)
     return upsert(conn, uid, pick["plan"], pick["status"], provider="paddle",
                   reference=pick["subscription_id"],
                   current_period_end=pick["current_period_end"] or 0,
                   customer=pick.get("customer_id") or "",
-                  subscription_id=pick["subscription_id"])
+                  subscription_id=pick["subscription_id"],
+                  cancel_at=cancel_at)
 
 
 def apply_event(conn, event):

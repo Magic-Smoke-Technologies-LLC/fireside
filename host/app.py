@@ -588,6 +588,15 @@ class App:
             return 404, {"error": "no %s in this build" % name}
         return 200, {"_raw": data, "_mime": mime, "_cache": "public, max-age=86400"}
 
+    def loader(self, q, body):
+        """The boot mark: a line-art fire, glasses and book that draw in.
+
+        Served as a file rather than inlined, because its own stylesheet uses
+        bare class names and would land in the page's global CSS if it were
+        pasted in. In an <img> the document is isolated and its
+        prefers-reduced-motion query still applies."""
+        return self._media("loader.svg", "image/svg+xml")
+
     def hearth(self, q, body):
         """The fireplace loop behind the door's welcome pane.
 
@@ -880,8 +889,7 @@ class App:
             incoming = self._book_bytes(book)
             if not self._storage_ok(user, incoming):
                 return 507, {"error": "not enough storage",
-                             "detail": "the example needs about %d bytes and your "
-                                       "plan has no room for it" % incoming}
+                             "detail": self._no_room(user, "the example", incoming)}
             bid = library.add_book(self.conn, self.storage, user, book)
             self._fill_example_details(bid)
             self._maybe_cover(bid, book)
@@ -945,6 +953,15 @@ class App:
         return quota.check_room(self.conn, self.storage, user_id,
                                 self._plan(user_id), nbytes,
                                 billing.blocks(self.conn, user_id))
+
+    def _no_room(self, user_id, what, nbytes):
+        """The sentence a refused write gets. On free the honest next step is a
+        plan, not a block button, and the screen no longer offers one there."""
+        if self._plan(user_id) == quota.FREE_PLAN:
+            return ("%s needs about %d bytes and the free plan has no room for "
+                    "it. Storage comes with a plan; the wallet pays for "
+                    "narration." % (what, nbytes))
+        return "%s needs about %d bytes and your plan has no room for it" % (what, nbytes)
 
     # ---- cover art -----------------------------------------------------------
     # A book's cover is its own image when the reader handed one over (an epub
@@ -1036,7 +1053,7 @@ class App:
             data, mime = got
             if not self._storage_ok(owner, len(data)):
                 return 507, {"error": "not enough storage",
-                             "detail": "your plan has no room for this cover"}
+                             "detail": self._no_room(owner, "this cover", len(data))}
             library.set_cover(self.conn, self.storage, book_id, data, mime)
             return 200, {"ok": True, "cover": library.get_book(self.conn, book_id)["cover"]}
         raw = body.get("data_b64") or ""
@@ -1050,7 +1067,7 @@ class App:
             return 413, {"error": "image is too large"}
         if not self._storage_ok(owner, len(data)):
             return 507, {"error": "not enough storage",
-                         "detail": "your plan has no room for this cover"}
+                         "detail": self._no_room(owner, "this cover", len(data))}
         library.set_cover(self.conn, self.storage, book_id, data,
                           body.get("mime") or "image/jpeg")
         return 200, {"ok": True, "cover": library.get_book(self.conn, book_id)["cover"]}
@@ -1562,8 +1579,7 @@ class App:
         est_bytes = jobs.estimate(todo_chars, provider)["audio_bytes"]
         if not self._storage_ok(user, est_bytes):
             return 507, {"error": "not enough storage",
-                         "detail": "this render needs about %d bytes of audio and "
-                                   "your plan has no room for it" % est_bytes}
+                         "detail": self._no_room(user, "this render", est_bytes)}
         sale = accounting.sale_connection_matches(self.sale_connection, provider, voice,
                                                   model, cid)
         # What this run actually has to synthesise: a chapter already voiced in
@@ -1907,6 +1923,19 @@ class App:
             except (TypeError, ValueError):
                 quantity = 1
             meta["quantity"] = max(1, quantity)
+        # Storage is what a plan buys; the wallet does not. A free account may
+        # put dollars in the wallet and spend them on narration, but a block of
+        # room is not for sale on free, because that room is the reason to move
+        # up. Chris, 11-09. The screen hides the button too; this is the gate.
+        wanted = [it["plan"] for it in (meta.get("items") or [])] or [plan]
+        upgrades = [p for p in wanted if p not in (quota.STORAGE_ADDON, quota.FREE_PLAN)]
+        sub = billing.get(self.conn, uid) or {}
+        if (quota.STORAGE_ADDON in wanted and not upgrades
+                and sub.get("plan") == quota.FREE_PLAN):
+            return 402, {"error": "a plan is needed for storage",
+                         "detail": "Storage comes with a plan. The wallet pays for "
+                                   "narration on free; room on the shelf starts with "
+                                   "the Reader plan."}
         co = _with_idem(fn, plan, meta, idem=idem)
         if not getattr(co, "ok", False):
             return 402, {"error": "checkout refused",
@@ -2005,12 +2034,16 @@ class App:
         if not res.get("ok"):
             return 402, {"error": "cancel refused", "detail": res.get("detail", "")}
         if sub:
+            end = res.get("current_period_end") or sub["current_period_end"]
+            # Paddle keeps the subscription active and schedules the change, so
+            # the row has to carry the date itself or the next load of the
+            # account screen would say "renews on ..." to someone who cancelled.
             billing.upsert(self.conn, uid, sub["plan"], sub["status"],
                            provider=sub["provider"], reference=sub["reference"],
-                           current_period_end=res.get("current_period_end")
-                           or sub["current_period_end"],
+                           current_period_end=end,
                            customer=sub.get("customer", ""),
-                           subscription_id=sid)
+                           subscription_id=sid,
+                           cancel_at=end)
         return 200, {"ok": True, "cancel_at_period_end":
                      bool(res.get("cancel_at_period_end")),
                      "current_period_end": res.get("current_period_end", 0),
@@ -2042,6 +2075,75 @@ class App:
             return 402, {"error": "portal refused", "detail": res.get("detail", "")}
         return 200, {"ok": True, "url": res.get("url", "")}
 
+    def billing_change(self, q, body):
+        """Move a paid subscription onto another tier, without a second one.
+
+        Buying a plan through checkout while already subscribed would open a
+        second subscription, which is two charges and two cancels to think
+        about. The provider changes the existing one, and the webhook it sends
+        back is what writes the new tier here.
+        """
+        uid = self._uid(q, body)
+        if not uid:
+            return 401, {"error": "auth required"}
+        if not self._limit(self.buy_limiter, uid):
+            return 429, {"error": "rate limited"}
+        pp = payments.get()
+        fn = getattr(pp, "change_plan", None)
+        if not callable(fn):
+            return 503, {"error": "payments not configured"}
+        sub = billing.get(self.conn, uid)
+        sid = (sub or {}).get("subscription_id") or ""
+        if not sid:
+            return 409, {"error": "no subscription to change",
+                         "detail": "pick a plan first; a change moves the one you have"}
+        plan = ((body or {}).get("plan") or "").strip()
+        if plan not in quota.PAID_TIERS:
+            return 400, {"error": "not a paid plan", "detail": plan}
+        if plan == sub["plan"]:
+            return 409, {"error": "already on that plan"}
+        if sub.get("cancel_at"):
+            # Changing items on a subscription that is scheduled to end would
+            # charge a prorated amount for a period it is not going to have.
+            return 409, {"error": "renewal is stopping",
+                         "detail": "keep the renewal going first, then change plan"}
+        res = fn(sid, plan, (body or {}).get("cycle") or "")
+        if not res.get("ok"):
+            return 402, {"error": "change refused",
+                         "detail": res.get("detail", "")}
+        return 200, {"ok": True, "plan": plan,
+                     "cycle": res.get("cycle", ""),
+                     "subscription": billing.get(self.conn, uid)}
+
+    def billing_resume(self, q, body):
+        """Put the next renewal back after a scheduled cancel."""
+        uid = self._uid(q, body)
+        if not uid:
+            return 401, {"error": "auth required"}
+        if not self._limit(self.buy_limiter, uid):
+            return 429, {"error": "rate limited"}
+        pp = payments.get()
+        fn = getattr(pp, "resume", None)
+        if not callable(fn):
+            return 503, {"error": "payments not configured"}
+        sub = billing.get(self.conn, uid)
+        sid = (sub or {}).get("subscription_id") or ""
+        if not sid:
+            return 409, {"error": "no subscription on file"}
+        if not sub.get("cancel_at"):
+            return 200, {"ok": True, "detail": "nothing was scheduled to stop"}
+        res = fn(sid)
+        if not res.get("ok"):
+            return 402, {"error": "resume refused",
+                         "detail": res.get("detail", "")}
+        # The provider said the scheduled change is gone, so record that.
+        billing.upsert(self.conn, uid, sub["plan"], sub["status"],
+                       provider=sub["provider"], reference=sub["reference"],
+                       current_period_end=sub["current_period_end"],
+                       customer=sub.get("customer", ""),
+                       subscription_id=sid, cancel_at=0)
+        return 200, {"ok": True, "subscription": billing.get(self.conn, uid)}
+
     def _apply_subscription_state(self, st, provider_id):
         """Apply a lifecycle event to the row that names that subscription.
 
@@ -2057,12 +2159,18 @@ class App:
                          "detail": "unknown subscription", "ignored": st.get("event", "")}
         status = st.get("status") or ""
         end = int(st.get("current_period_end") or 0)
+        # A scheduled cancel lives in the future while the row is still active.
+        # Read it from the event, so the screen can say the next charge is off
+        # without asking the provider anything.
+        cancel_at = (int(st.get("scheduled_change_at") or 0)
+                     if st.get("scheduled_change_action") == "cancel" else 0)
         row = billing.get(self.conn, uid)
         if row and row.get("subscription_id") == sid:
             billing.upsert(self.conn, uid, row["plan"], status or row["status"],
                            provider=provider_id, reference=row["reference"],
                            current_period_end=end or row["current_period_end"],
-                           customer=st.get("customer", ""), subscription_id=sid)
+                           customer=st.get("customer", ""), subscription_id=sid,
+                           cancel_at=cancel_at)
         addon = billing.addons(self.conn, uid).get(billing.STORAGE_ADDON)
         if addon and addon.get("subscription_id") == sid:
             billing.upsert_addon(self.conn, uid, billing.STORAGE_ADDON,
@@ -2071,7 +2179,7 @@ class App:
                                  reference=addon["reference"],
                                  current_period_end=end or addon["current_period_end"],
                                  customer=st.get("customer", ""),
-                                 subscription_id=sid)
+                                 subscription_id=sid, cancel_at=cancel_at)
         return 200, {"ok": True, "applied": True, "user": uid,
                      "status": status, "event": st.get("event", "")}
 
@@ -3127,6 +3235,7 @@ class App:
 GET_ROUTES = {
     "/": "ui", "/index.html": "ui", "/favicon.ico": "favicon", "/i18n.js": "i18n_js",
     "/hearth.mp4": "hearth", "/hearth-poster.jpg": "hearth_poster",
+    "/loader.svg": "loader",
     "/manifest.webmanifest": "manifest", "/sw.js": "service_worker",
     "/icon-192.png": "icon192", "/icon-512.png": "icon512",
     "/icon-maskable-512.png": "icon_maskable",
@@ -3187,6 +3296,7 @@ POST_ROUTES = {
     "/admin/account/delete": "admin_account_delete",
     "/billing/checkout": "billing_checkout", "/billing/confirm": "billing_confirm",
     "/billing/cancel": "billing_cancel", "/billing/portal": "billing_portal",
+    "/billing/change": "billing_change", "/billing/resume": "billing_resume",
     "/credits/confirm": "credits_confirm",
     "/2fa/enroll": "twofa_enroll", "/2fa/confirm": "twofa_confirm",
     "/2fa/verify": "twofa_verify", "/2fa/recovery": "twofa_recovery",
@@ -3222,7 +3332,7 @@ PUBLIC_ROUTES = {"/", "/index.html", "/i18n.js", "/favicon.ico", "/health", "/au
                  "/about", "/contact", "/kokoro",
                  # The door's fire sits behind a signed-out visitor's first
                  # screen, so it has to load before there is a session.
-                 "/hearth.mp4", "/hearth-poster.jpg",
+                 "/hearth.mp4", "/hearth-poster.jpg", "/loader.svg",
                  # A signed-out visitor sees prices before signing in, so the
                  # overlay's price ids have to be readable without a session.
                  "/billing/config",
