@@ -483,6 +483,9 @@ class TestTierRouting(Base):
         s, out = self.app.billing_cancel({}, {"user": "u1"})
         self.assertEqual(s, 200, out)
         self.assertEqual(self.fake.cancelled, ["sub_1"])
+        # Access runs to the period end and the next charge is off. Without the
+        # date stored, the next load of the account screen would say "renews on".
+        self.assertEqual(billing.get(self.conn, "u1")["cancel_at"], 2000000000)
 
     def test_cancel_with_nothing_on_file_says_so(self):
         s, out = self.app.billing_cancel({}, {"user": "u1"})

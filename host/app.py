@@ -2034,12 +2034,16 @@ class App:
         if not res.get("ok"):
             return 402, {"error": "cancel refused", "detail": res.get("detail", "")}
         if sub:
+            end = res.get("current_period_end") or sub["current_period_end"]
+            # Paddle keeps the subscription active and schedules the change, so
+            # the row has to carry the date itself or the next load of the
+            # account screen would say "renews on ..." to someone who cancelled.
             billing.upsert(self.conn, uid, sub["plan"], sub["status"],
                            provider=sub["provider"], reference=sub["reference"],
-                           current_period_end=res.get("current_period_end")
-                           or sub["current_period_end"],
+                           current_period_end=end,
                            customer=sub.get("customer", ""),
-                           subscription_id=sid)
+                           subscription_id=sid,
+                           cancel_at=end)
         return 200, {"ok": True, "cancel_at_period_end":
                      bool(res.get("cancel_at_period_end")),
                      "current_period_end": res.get("current_period_end", 0),
@@ -2086,12 +2090,18 @@ class App:
                          "detail": "unknown subscription", "ignored": st.get("event", "")}
         status = st.get("status") or ""
         end = int(st.get("current_period_end") or 0)
+        # A scheduled cancel lives in the future while the row is still active.
+        # Read it from the event, so the screen can say the next charge is off
+        # without asking the provider anything.
+        cancel_at = (int(st.get("scheduled_change_at") or 0)
+                     if st.get("scheduled_change_action") == "cancel" else 0)
         row = billing.get(self.conn, uid)
         if row and row.get("subscription_id") == sid:
             billing.upsert(self.conn, uid, row["plan"], status or row["status"],
                            provider=provider_id, reference=row["reference"],
                            current_period_end=end or row["current_period_end"],
-                           customer=st.get("customer", ""), subscription_id=sid)
+                           customer=st.get("customer", ""), subscription_id=sid,
+                           cancel_at=cancel_at)
         addon = billing.addons(self.conn, uid).get(billing.STORAGE_ADDON)
         if addon and addon.get("subscription_id") == sid:
             billing.upsert_addon(self.conn, uid, billing.STORAGE_ADDON,
@@ -2100,7 +2110,7 @@ class App:
                                  reference=addon["reference"],
                                  current_period_end=end or addon["current_period_end"],
                                  customer=st.get("customer", ""),
-                                 subscription_id=sid)
+                                 subscription_id=sid, cancel_at=cancel_at)
         return 200, {"ok": True, "applied": True, "user": uid,
                      "status": status, "event": st.get("event", "")}
 

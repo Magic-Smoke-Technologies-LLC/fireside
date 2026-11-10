@@ -133,6 +133,13 @@
   .wratetbl td.pay{color:var(--text);font-weight:600}
   .wratetbl td.num{text-align:right;padding-left:12px}
   .wratefine{margin-top:10px;line-height:1.55}
+  /* Plan and billing. The line a subscriber needs first is what they pay and
+     when the next charge lands, so the plan name is the heading and the money
+     is the second line, not a card with a price buried inside it. */
+  .billplan{font:600 22px/1.3 var(--serif);margin:2px 0 6px}
+  .billplan small{font:400 13px/1.4 var(--sans);color:var(--soft);margin-left:10px}
+  .billbar{height:6px;border-radius:3px;background:var(--raise);overflow:hidden;margin:10px 0 0}
+  .billbar i{display:block;height:100%;background:var(--flame);width:0;transition:width .3s}
   .walletlist{margin-top:26px;border-top:1px solid var(--line)}
   .walletlist .wr{display:flex;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--soft)}
   .walletlist .wr b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;min-width:74px}
@@ -1182,6 +1189,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
     <p class="sub" data-t="Your balance, your voices, and what this server knows about you.">Your balance, your voices, and what this server knows about you.</p>
     <nav class="tabs settabs" id="settabs" aria-label="Account sections" data-t-aria="Account sections">
       <button data-p="wallet" class="on" data-t="Wallet">Wallet</button>
+      <button data-p="billing" data-t="Plan &amp; billing">Plan &amp; billing</button>
       <button data-p="voice" data-t="Voice">Voice</button>
       <button data-p="reading" data-t="Reading">Reading</button>
       <button data-p="words" data-t="Words">Words</button>
@@ -1201,6 +1209,18 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       <p class="small wratefine" id="wnoexpire" data-t="Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.">Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.</p>
       <p class="small wratefine" id="wrefund" data-t="Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.">Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.</p>
       <div class="walletlist" id="wlist"></div>
+    </div>
+
+    <div class="setpanel" data-p="billing">
+      <h3 style="margin-top:24px" data-t="Your plan">Your plan</h3>
+      <div class="billplan"><span id="billname">&mdash;</span><small id="billstatus"></small></div>
+      <p class="small" id="billrenew"></p>
+      <p class="small" id="billusage"></p>
+      <div class="billbar" id="billbar" hidden><i id="billbarfill"></i></div>
+      <div class="walletrow" id="billacts"></div>
+      <p class="small" id="billmsg" role="status" aria-live="polite"></p>
+      <p class="small wratefine" data-t="The card is entered on the payment provider&#x27;s page, never here. Changing the card, moving to another plan, and downloading an invoice all happen there, opened from this screen.">The card is entered on the payment provider's page, never here. Changing the card, moving to another plan, and downloading an invoice all happen there, opened from this screen.</p>
+      <p class="small wratefine" data-t="Cancelling stops the next charge and nothing after it. What you already paid for keeps working until the period ends.">Cancelling stops the next charge and nothing after it. What you already paid for keeps working until the period ends.</p>
     </div>
 
     <div class="setpanel" data-p="voice">
@@ -1944,6 +1964,7 @@ function setSetTab(p, mode) {
   document.querySelectorAll('#v-set .setpanel').forEach(el => el.classList.toggle('on', el.dataset.p === p));
   try { localStorage.setItem(SETTAB_KEY, p); } catch (_) {}
   if (p === 'wallet') loadWallet();
+  if (p === 'billing') loadBilling();
   if (p === 'account') loadTwofa();
   syncRoute(mode === 'replace' ? 'replace' : undefined);
 }
@@ -3142,6 +3163,125 @@ if ($('#balchip')) $('#balchip').onclick = () => { show('set'); setSetTab('walle
 window.addEventListener('focus', () => {
   if (USER && Date.now() - _balAt > 60000) refreshBalance();
 });
+// --- plan and billing ------------------------------------------------------
+// One screen for the question a subscriber actually has: what am I paying,
+// when does it charge next, and how do I stop it. Everything that moves money
+// happens on the provider's page; this panel only reads our row and opens it.
+function billDay(ts) {
+  if (!ts) return '';
+  try {
+    return new Date(ts * 1000).toLocaleDateString(undefined,
+      { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch (_) { return ''; }
+}
+function planStatus(s) {
+  return ({ active: '', trialing: T('Trial'),
+            past_due: T('Payment did not go through'),
+            paused: T('Paused'), canceled: T('Cancelled') })[s] || '';
+}
+async function loadBilling() {
+  const name = $('#billname'); if (!name) return;
+  const status = $('#billstatus'), renew = $('#billrenew'),
+        usage = $('#billusage'), bar = $('#billbar'),
+        fill = $('#billbarfill'), acts = $('#billacts'), msg = $('#billmsg');
+  const setMsg = t => { if (msg) msg.textContent = t || ''; };
+  if (acts) acts.innerHTML = '';
+  if (bar) bar.hidden = true;
+  if (renew) renew.textContent = '';
+  if (usage) usage.textContent = '';
+  if (status) status.textContent = '';
+  if (!USER) {
+    name.textContent = '\u2014';
+    setMsg(T('Sign in to see your plan.'));
+    return;
+  }
+  name.textContent = '\u2026';
+  setMsg('');
+  let bill = {}, st = {}, cat = null;
+  try { bill = (await api('/billing')) || {}; }
+  catch (e) { setMsg(errorText(e)); }
+  try { st = (await api('/storage')) || {}; } catch (_) {}
+  try { cat = await api('/plans'); } catch (_) {}
+  const sub = bill.subscription || null;
+  const plan = (sub && sub.plan) || st.plan || '';
+  const tier = ((cat && cat.tiers) || []).find(t => t.id === plan) || {};
+  name.textContent = tier.label || plan || T('No plan on this account');
+  if (status) status.textContent = planStatus((sub && sub.status) || '');
+
+  // The next charge, in the reader's own words. A scheduled cancel is a date,
+  // not a status word: Paddle keeps the row active until that date, so status
+  // alone would tell a subscriber the opposite of the truth.
+  const end = sub ? billDay(sub.current_period_end) : '';
+  const cancelAt = sub ? billDay(sub.cancel_at) : '';
+  if (renew) {
+    if (sub && sub.subscription_id) {
+      renew.textContent = cancelAt
+        ? T('Stops on {date}. Nothing is charged after that.', { date: cancelAt })
+        : (end ? T('Renews on {date}.', { date: end }) : '');
+    } else if (plan === 'free' || !plan) {
+      renew.textContent = T('No recurring charge. Nothing is billed until you pick a plan.');
+    }
+  }
+
+  // Room on the shelf, because storage is the thing a plan buys.
+  const allow = st.allowance_bytes || 0, own = st.own_bytes || 0;
+  if (usage) {
+    if (st.unlimited) usage.textContent = T('{used} used, unlimited on this account.', { used: fmtBytes(own) });
+    else if (allow) usage.textContent = T('{used} of {allow} used', { used: fmtBytes(own), allow: fmtBytes(allow) })
+      + (st.storage_blocks ? T(', plus {n} storage block(s)', { n: st.storage_blocks }) : '');
+  }
+  if (bar && fill && allow && !st.unlimited) {
+    bar.hidden = false;
+    fill.style.width = Math.min(100, Math.round(100 * own / allow)) + '%';
+  }
+
+  if (!bill.payments_configured) {
+    setMsg(T('Billing is not switched on yet, so nothing can be charged.'));
+  }
+
+  if (!acts) return;
+  if (sub && sub.subscription_id) {
+    const card = document.createElement('button');
+    card.className = 'btn'; card.type = 'button';
+    card.textContent = T('Change card or billing details');
+    card.disabled = !bill.billing_account;
+    card.onclick = async () => {
+      setMsg(T('Opening the payment provider\u2026'));
+      try {
+        const d = await jpost('/billing/portal',
+          { return_url: location.origin + location.pathname });
+        if (d.url) { location.href = d.url; return; }
+        setMsg(d.detail || T('the provider did not return a page'));
+      } catch (e) { setMsg(errorText(e)); }
+    };
+    acts.append(card);
+    if (!sub.cancel_at) {
+      const stop = document.createElement('button');
+      stop.className = 'btn quiet'; stop.type = 'button';
+      stop.textContent = T('Cancel renewal');
+      stop.onclick = async () => {
+        if (!window.confirm(T('Stop the next charge? What you already paid for keeps working until the period ends.'))) return;
+        stop.disabled = true;
+        try {
+          await jpost('/billing/cancel', {});
+          setMsg(T('Renewal cancelled.'));
+          await loadBilling();
+        } catch (e) {
+          stop.disabled = false;
+          setMsg(errorText(e));
+        }
+      };
+      acts.append(stop);
+    }
+  } else {
+    const plans = document.createElement('button');
+    plans.className = 'btn'; plans.type = 'button';
+    plans.textContent = T('See the plans');
+    plans.onclick = () => show('plans');
+    acts.append(plans);
+  }
+}
+
 // --- plan & storage --------------------------------------------------------
 function fmtBytes(n) { n = n || 0;
   if (n >= 1e9) { const g = n / 1e9; return (g % 1 ? g.toFixed(1) : g) + ' GB'; }

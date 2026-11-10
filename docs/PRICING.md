@@ -252,3 +252,21 @@ Two lines that must be on the panel, not in a policy page:
   requires it or where we charged twice for the same thing.
 
 Minimum top-up is **$5**: Paddle's $0.50 fixed fee is 10% at $5 and 21.7% at $3.
+
+## Self-serve billing (settings > Plan & billing)
+
+A subscriber has one screen for what they pay and how to stop it. It shows the
+plan name, the next charge date, storage used against the allowance, and two
+controls: **Change card or billing details** (opens the provider's portal, so no
+card detail passes through this server) and **Cancel renewal**.
+
+Cancelling is scheduled, not immediate: Paddle keeps the subscription `active`
+and records a `scheduled_change` until the paid period ends. Status therefore
+cannot tell "renews on the 7th" from "stops on the 7th", which is why
+`subscriptions.cancel_at` exists and is written by `billing.project()` from
+`scheduled_change_at`. The screen says "Stops on ..." from that date, and hides
+the cancel button once it is set.
+
+Not built yet: resuming a scheduled cancel in-app (Paddle's `PATCH
+/subscriptions/{id}` with `scheduled_change: null` is the unverified path), so
+the screen makes no promise about it.

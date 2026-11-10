@@ -231,6 +231,21 @@ class TestMirror(unittest.TestCase):
         self.assertTrue(billing.active(self.conn, "user_1"))
         mirrored = billing.subscription_rows(self.conn, "user_1")[0]
         self.assertEqual(mirrored["scheduled_change_action"], "cancel")
+        # The account screen has to be able to say "stops on" rather than
+        # "renews on", and status is active for both, so the date is the only
+        # way to tell them apart.
+        self.assertEqual(row["cancel_at"], 1796644800)
+
+    def test_a_resumed_subscription_clears_the_scheduled_cancel(self):
+        self.apply(sub_event("subscription.created"))
+        self.apply(sub_event("subscription.updated", status="active",
+                             change={"action": "cancel",
+                                     "effective_at": "2026-12-07T12:00:00Z"},
+                             occurred="2026-11-20T12:00:00Z", eid="ntf_r1"))
+        self.assertTrue(billing.get(self.conn, "user_1")["cancel_at"])
+        self.apply(sub_event("subscription.updated", status="active",
+                             occurred="2026-11-21T12:00:00Z", eid="ntf_r2"))
+        self.assertEqual(billing.get(self.conn, "user_1")["cancel_at"], 0)
 
     def test_past_due_does_not_grant(self):
         self.apply(sub_event("subscription.created"))
