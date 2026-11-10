@@ -3594,8 +3594,13 @@ function planCard(t, plan, cat, cfg) {
       const go = document.createElement('button');
       go.className = 'btn'; go.type = 'button';
       const paint = () => { go.textContent = pick.btn; go.onclick = () => buyPlan(t.id, pick.c); };
+      // Declared outside the branch: the current-plan path below disables the
+      // cycle buttons, and a const scoped to the if-statement is not there to
+      // reach. It threw for the signed-in plan's own card, which killed the
+      // forEach in loadPlansPage, so that card and every card after it vanished.
+      let bar = null;
       if (offer.length > 1) {
-        const bar = document.createElement('div'); bar.className = 'cycle';
+        bar = document.createElement('div'); bar.className = 'cycle';
         bar.setAttribute('role', 'group');
         bar.setAttribute('aria-label', T('How you pay'));
         offer.forEach(o => {
