@@ -41,7 +41,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from host.host import Host
 import inspect
 
-from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, draft as drafts, erase, example, grants, i18n, jobs, library, mailer, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
+from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, draft as drafts, erase, example, grants, i18n, jobs, library, mailer, notices, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
 from host.egress import fetch as _fetch
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1638,11 +1638,59 @@ class App:
                     rep = speech.report({"chars_actual": actual, "cred": cred,
                                          "job_id": jid, "sale": True})
                     accounting.settle(c, res_id, rep)
+                self._notice_run(c, user, book_id, jid)
             finally:
                 c.close()
 
         threading.Thread(target=_work, daemon=True).start()
         return 200, {"job_id": jid, "total": len(todo)}
+
+    def _notice_run(self, c, user, book_id, jid):
+        """Tell the bell how a run ended. The job row is the record; this reads
+        it back rather than guessing, because render_book reports failure by
+        writing a status, not by raising. A cancelled run is the reader's own
+        doing and gets no notice."""
+        try:
+            j = jobs.job(c, jid) or {}
+            st = j.get("status")
+            if st not in ("done", "error"):
+                return
+            r = c.execute("SELECT title FROM books WHERE id=?", (book_id,)).fetchone()
+            title = ((r["title"] if r else "") or "").strip() or "your book"
+            route = "#/play/" + str(book_id)
+            if st == "done":
+                notices.notify(c, user, "job", "%s is ready to play." % title,
+                               route=route, key="run:" + jid)
+            else:
+                notices.notify(c, user, "job", "Could not convert %s. %s"
+                               % (title, (j.get("error") or "").strip()[:240]),
+                               route=route, key="run:" + jid)
+        except Exception:                  # a notice never costs a finished run
+            pass
+
+    # ---- notifications: what happened while you were elsewhere ---------------
+    def notices_list(self, q, body):
+        """This user's notices, newest first. The unread count travels with the
+        list so the bell can badge itself without a second request."""
+        uid = self._uid(q, body)
+        if not uid:
+            return 401, {"error": "auth required"}
+        try:
+            n = max(1, min(50, int(((q or {}).get("n") or ["20"])[0])))
+        except (TypeError, ValueError):
+            n = 20
+        return 200, {"items": notices.list_for(self.conn, uid, n),
+                     "unread": notices.unread(self.conn, uid)}
+
+    def notices_read(self, q, body):
+        """Mark notices read: the listed ids, or all of them."""
+        uid = self._uid(q, body)
+        if not uid:
+            return 401, {"error": "auth required"}
+        body = body or {}
+        ids = body.get("ids")
+        unread = notices.mark_read(self.conn, uid, ids if isinstance(ids, list) else None)
+        return 200, {"ok": True, "unread": unread}
 
     # ---- credits (resold speech capacity, counted in characters) -------------
     # The sale connection's plugin is the authority on the rate and on how many
@@ -2044,6 +2092,9 @@ class App:
                            customer=sub.get("customer", ""),
                            subscription_id=sid,
                            cancel_at=end)
+            notices.notify(self.conn, uid, "billing",
+                           "Renewal is stopping. You keep everything until this period ends.",
+                           route="#/settings/billing")
         return 200, {"ok": True, "cancel_at_period_end":
                      bool(res.get("cancel_at_period_end")),
                      "current_period_end": res.get("current_period_end", 0),
@@ -2111,6 +2162,9 @@ class App:
         if not res.get("ok"):
             return 402, {"error": "change refused",
                          "detail": res.get("detail", "")}
+        notices.notify(self.conn, uid, "billing",
+                       "Your plan is now %s. The difference was prorated today." % plan,
+                       route="#/settings/billing")
         return 200, {"ok": True, "plan": plan,
                      "cycle": res.get("cycle", ""),
                      "subscription": billing.get(self.conn, uid)}
@@ -2142,6 +2196,8 @@ class App:
                        current_period_end=sub["current_period_end"],
                        customer=sub.get("customer", ""),
                        subscription_id=sid, cancel_at=0)
+        notices.notify(self.conn, uid, "billing", "Your plan keeps renewing.",
+                       route="#/settings/billing")
         return 200, {"ok": True, "subscription": billing.get(self.conn, uid)}
 
     def _apply_subscription_state(self, st, provider_id):
@@ -3261,6 +3317,7 @@ GET_ROUTES = {
     "/admin/plans": "plans_admin",
     "/admin/accounts": "admin_accounts",
     "/billing": "billing_get",
+    "/notifications": "notices_list",
     # A GET: the page asks for its price ids on load, before anyone clicks.
     "/billing/config": "billing_config",
     "/plans": "plans_get",
@@ -3297,6 +3354,7 @@ POST_ROUTES = {
     "/billing/checkout": "billing_checkout", "/billing/confirm": "billing_confirm",
     "/billing/cancel": "billing_cancel", "/billing/portal": "billing_portal",
     "/billing/change": "billing_change", "/billing/resume": "billing_resume",
+    "/notifications/read": "notices_read",
     "/credits/confirm": "credits_confirm",
     "/2fa/enroll": "twofa_enroll", "/2fa/confirm": "twofa_confirm",
     "/2fa/verify": "twofa_verify", "/2fa/recovery": "twofa_recovery",
