@@ -19,7 +19,7 @@ says what it does.
 
 import unittest
 
-from tests_ui.support import BrowserTest, wait_until, wait_visible
+from tests_ui.support import BrowserTest, cookie_jar, wait_until, wait_visible
 
 GOOGLE_ID = {"FIRESIDE_OAUTH_GOOGLE_CLIENT_ID": "test-id",
              "FIRESIDE_OAUTH_GOOGLE_SECRET": "test-secret"}
@@ -78,5 +78,46 @@ class TestWalletPromiseIsVisible(BrowserTest):
         wait_visible(self.page, "#walletpromise")
         text = self.page.text_content("#walletpromise")
         self.assertIn("never expire", text)
-        self.assertIn("once per chapter", text)
+        self.assertIn("pay for services on the platform", text)
         self.assertIn("provider", text)
+
+
+class TestRoomIsWhatAPlanBuys(BrowserTest):
+    """Chris, 11-09: an incentive to buy the platform, and the wallet is the one
+    door that stays open on free. So the free reader may put dollars in the
+    wallet, and the room on the shelf is what a plan sells: no block button on
+    free, and the server refuses the same order even if the button came back.
+
+    The paid case is the positive control for the same screen: the block button
+    has to still be there for a plan, or the test would pass by hiding it from
+    everyone."""
+
+    def _buys(self):
+        self.page.goto(self.host.url("/pricing"))
+        wait_visible(self.page, "#pagebuys")
+        wait_until(self.page, "() => document.querySelectorAll('#pagebuys h3').length >= 2")
+        return (self.page.text_content("#pagebuys"),
+                [b.inner_text().strip() for b in
+                 self.page.query_selector_all("#pagebuys section button")])
+
+    def test_free_funds_the_wallet_and_is_sent_to_the_plans(self):
+        self.register("freebuyer")
+        text, labels = self._buys()
+        self.assertIn("Add funds", text, "the wallet is the door that stays open")
+        self.assertIn("Storage comes with a plan", text)
+        self.assertIn("See the plans", labels)
+        self.assertNotIn("Buy blocks", labels, "room is not for sale on free")
+        self.assert_no_page_errors()
+
+    def test_a_plan_still_sells_blocks(self):
+        self.register("paidbuyer")   # the first account on this host is the admin
+        _status, me = self.host.request("/me", cookies=cookie_jar(self.context))
+        uid = (me or {}).get("user")
+        self.assertTrue(uid, "the browser has no session, so /me answered nothing")
+        status, _ = self.host.request(
+            "/admin/plan", cookies=cookie_jar(self.context), method="POST",
+            body={"user": uid, "plan": "platform"})
+        self.assertEqual(status, 200, "the comp has to land before the page is read")
+        text, labels = self._buys()
+        self.assertIn("More storage", text)
+        self.assertIn("Buy blocks", labels, "a paid plan still buys a mid-cycle block")

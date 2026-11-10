@@ -70,7 +70,7 @@ class TestPolicy(unittest.TestCase):
         # can print what the rung costs instead of "price not set"; the charged
         # amount stays None until a provider supplies it.
         self.assertEqual([t["list_amount_cents"] for t in cat["tiers"]],
-                         [None, 300, 800, 2000])
+                         [None, 500, 1000, 2200])
         self.assertEqual([t["list_annual_cents"] for t in cat["tiers"]],
                          [None, 3600, 9600, 24000])
         self.assertEqual(cat["storage"]["block_bytes"], quota.STORAGE_BLOCK_BYTES)
@@ -87,7 +87,7 @@ class TestPolicy(unittest.TestCase):
         self.assertEqual(plat["amount_cents"], 300)
         # a provider price wins over the list; the list is still reported, so a
         # screen that shows "our price" cannot silently drift from the charge
-        self.assertEqual(plat["list_amount_cents"], 300)
+        self.assertEqual(plat["list_amount_cents"], 500)
         self.assertEqual(cat["storage"]["amount_cents"], 100)
 
 
@@ -144,6 +144,28 @@ class TestRoutes(unittest.TestCase):
         self.assertEqual(out["storage_blocks"], 2)
         self.assertEqual(out["allowance_bytes"],
                          quota.PLATFORM_ALLOWANCE_BYTES + 2 * quota.STORAGE_BLOCK_BYTES)
+
+    def test_a_free_account_cannot_buy_storage_blocks(self):
+        # Storage is what a plan buys. The wallet pays for narration on free;
+        # room on the shelf is not for sale there (Chris, 2026-11-09).
+        self.app.plans_admin_set({"_user": "admin1"}, {"user": "u1", "plan": "free"})
+        code, out = self.app.billing_checkout({"user": "u1"},
+                                              {"plan": "storage", "quantity": 1})
+        self.assertEqual(code, 402)
+        self.assertIn("plan", out["error"])
+        # a tier is still for sale, and a cart that names a tier may carry blocks,
+        # because that buyer is upgrading in the same purchase
+        code, _ = self.app.billing_checkout({"user": "u1"}, {"plan": "platform"})
+        self.assertEqual(code, 200)
+        code, _ = self.app.billing_checkout({"user": "u1"}, {"items": [
+            {"plan": "platform", "quantity": 1},
+            {"plan": "storage", "quantity": 1}]})
+        self.assertEqual(code, 200)
+        # an account with no plan row fails open to platform, and keeps its
+        # ability to buy blocks (the legacy accounts before the free tier)
+        code, _ = self.app.billing_checkout({"user": "admin1"},
+                                            {"plan": "storage", "quantity": 1})
+        self.assertEqual(code, 200)
 
     def test_storage_checkout_confirm_lands_as_an_addon_not_a_tier(self):
         code, out = self.app.billing_checkout({"user": "u1"}, {"plan": "storage",
