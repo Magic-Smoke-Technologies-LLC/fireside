@@ -183,6 +183,34 @@ def _sale_connection_from_env():
     return spec if isinstance(spec, dict) and spec else None
 
 
+def _ledger_row(r):
+    """One ledger row as the wallet screen reads it.
+
+    A plan allowance is stored as a `topup` because it moves the balance the
+    same way money does, so kind alone made an included grant and a card
+    payment the same row. The id already says which is which (allowance:<u>:<p>,
+    welcome:<u>), so the wallet gets a kind it can style without parsing prose.
+    Chris, 2026-11-10, on his own wallet: the list had "no visual distinction"
+    and one row read "platform allowance for period ending 0".
+
+    The stale note is corrected here too: rows written before the period end
+    was formatted still sit in the ledger, and re-reading the ledger must not
+    resurrect a number the reader cannot use."""
+    rid = str(r.get("id") or "")
+    kind = r.get("kind")
+    included = False
+    if rid.startswith("allowance:"):
+        kind, included = "grant", True
+    elif rid.startswith("welcome:"):
+        kind, included = "welcome", True
+    note = r.get("note") or ""
+    if included and "period ending 0" in note:
+        note = "included with your plan"
+    return {"kind": kind, "delta": r.get("delta"),
+            "currency": r.get("currency"), "note": note,
+            "included": included, "at": r.get("created_at")}
+
+
 class App:
     def __init__(self, plugins_root=None, db_path=None, storage_id=None,
                  sale_connection=None, rate_limiter=None, hosted=False,
@@ -1755,9 +1783,7 @@ class App:
         rows.reverse()
         return 200, {
             "unit": accounting.currency(self.conn, uid) or "USD",
-            "entries": [{"kind": r["kind"], "delta": r["delta"],
-                         "currency": r["currency"], "note": r["note"],
-                         "at": r["created_at"]} for r in rows],
+            "entries": [_ledger_row(r) for r in rows],
         }
 
     def credits_purchase(self, q, body):

@@ -582,7 +582,19 @@
     "＋ Add a voice server": "＋ Añadir un servidor de voz",
     "＋ Add a word": "＋ Añadir una palabra",
     "＋ Create series…": "＋ Crear serie…",
-    "＋ Queue": "＋ Añadir a la cola"
+    "＋ Queue": "＋ Añadir a la cola",
+    "Wallet activity": "Actividad del monedero",
+    "Rows tagged Plan are the narration your plan includes. Nothing was charged for them. Card rows are money you added.": "Las filas marcadas Plan son la narración que incluye tu plan. No se te cobró nada por ellas. Las filas marcadas Tarjeta son dinero que agregaste.",
+    "Included with your plan": "Incluido en tu plan",
+    "Welcome credit": "Crédito de bienvenida",
+    "Change": "Movimiento",
+    "Card": "Tarjeta",
+    "Spent": "Gastado",
+    "Hold": "Retenido",
+    "Refund": "Reembolso",
+    "Narration": "Narración",
+    "Narration, over the estimate we held": "Narración, por encima del estimado que retuvimos",
+    "estimate {e}, final {f}": "estimado {e}, final {f}"
   },
   "name": "Español"
 }

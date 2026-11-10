@@ -140,12 +140,23 @@
   .billplan small{font:400 13px/1.4 var(--sans);color:var(--soft);margin-left:10px}
   .billbar{height:6px;border-radius:3px;background:var(--raise);overflow:hidden;margin:10px 0 0}
   .billbar i{display:block;height:100%;background:var(--flame);width:0;transition:width .3s}
-  .walletlist{margin-top:26px;border-top:1px solid var(--line)}
-  .walletlist .wr{display:flex;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--soft)}
-  .walletlist .wr b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;min-width:74px}
+  .walletlist{margin-top:26px;border-top:1px solid var(--line);padding-top:16px}
+  .walletlist .whead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 2px}
+  .walletlist .whead h3{font:600 15px var(--ui)}
+  .walletlist .wlegend{font-size:12px;color:var(--faint);margin:0 0 6px;max-width:60ch}
+  .walletlist .wr{display:grid;grid-template-columns:84px 1fr;column-gap:12px;align-items:start;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--soft)}
+  .walletlist .wr b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .walletlist .wr .wt{display:block;color:var(--text)}
+  .walletlist .wmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:3px;font-size:12px;color:var(--faint)}
+  .walletlist .wmeta .wd{margin-left:auto;white-space:nowrap}
+  .walletlist .wk{font-style:normal;font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:1px 7px;color:var(--faint)}
   .walletlist .wr.neg b{color:var(--warn)}
-  .walletlist .wr .wn{flex:1;min-width:0}
-  .walletlist .wr .wd{margin-left:auto;font-size:12px;color:var(--faint);white-space:nowrap}
+  /* A plan allowance moves the balance like money and is not a payment: it
+     gets a rule down its left edge, a dashed tag, and a quiet amount, so the
+     list reads as two kinds of row without relying on colour (Chris, 11-10). */
+  .walletlist .wr.included{padding-left:12px;border-left:2px solid var(--line)}
+  .walletlist .wr.included b{color:var(--faint);font-weight:500}
+  .walletlist .wr.included .wk{border-style:dashed;color:var(--soft)}
   main{padding:30px 40px 80px;max-width:960px;margin:0 auto}
   .view{display:none}.view.on{display:block}
   .settabs{margin-top:16px;border-bottom:1px solid var(--line)}
@@ -3039,8 +3050,9 @@ async function bootEveryone() {
 // holds (an old account still holds characters, a new one holds dollars) and
 // /credits/history is the ledger itself, so an absorbed overage shows up here
 // as a row with estimate against final instead of hiding in a support log.
-const WKIND = { topup: 'Added', charge: 'Narration', release: 'Released',
-                refund: 'Refund', grant: 'Included with your plan' };
+const WKIND = { topup: 'Money added', charge: 'Narration', release: 'Hold released',
+                refund: 'Refund', grant: 'Included with your plan',
+                welcome: 'Welcome credit' };
 const TOPUPS = [5, 10, 25, 50];
 let WUNIT = 'USD';
 let WRATE = null;      // dollars per million characters, from the sale connection
@@ -3176,6 +3188,39 @@ async function buyTopup(usd) {
     else msg(e.message || T('could not add money'));
   }
 }
+// The chip. A reader should not have to tell a card payment from a plan
+// allowance by reading the sentence underneath it (Chris, 11-10). Written as a
+// switch so each label is a literal T() call the catalog extractor can see; a
+// T(variable) is invisible to it and ships untranslated.
+function wtag(kind) {
+  switch (kind) {
+    case 'topup': return T('Card');
+    case 'charge': return T('Spent');
+    case 'release': return T('Hold');
+    case 'refund': return T('Refund');
+    case 'grant':
+    case 'welcome': return T('Plan');
+    default: return T('Change');
+  }
+}
+// The one sentence in a note that is about the reader's money: a final cost
+// above the estimate we held, which we absorbed. It becomes a line a person can
+// read instead of the reservation id it was written as.
+function woverage(r) {
+  if ((r.kind || '') !== 'charge') return '';
+  const m = /estimate ([\d.]+) final ([\d.]+)/.exec(String(r.note || ''));
+  if (!m) return '';
+  return T('estimate {e}, final {f}', { e: money(Number(m[1])), f: money(Number(m[2])) });
+}
+function wtitle(r) {
+  const kind = r.kind || '';
+  if (kind === 'grant') return T('Included with your plan');
+  if (kind === 'welcome') return T('Welcome credit');
+  if (kind === 'charge') {
+    return woverage(r) ? T('Narration, over the estimate we held') : T('Narration');
+  }
+  return r.note || WKIND[kind] || T('Change');
+}
 async function loadWalletList() {
   const box = $('#wlist'); if (!box) return;
   box.innerHTML = '';
@@ -3183,6 +3228,18 @@ async function loadWalletList() {
   try { d = await api('/credits/history'); }
   catch (_) { return; }
   const rows = (d && d.entries) || [];
+  const head = document.createElement('div');
+  head.className = 'whead';
+  const title = document.createElement('h3');
+  title.textContent = T('Wallet activity');
+  head.append(title);
+  box.append(head);
+  if (rows.some(r => r.included || r.kind === 'grant' || r.kind === 'welcome')) {
+    const legend = document.createElement('p');
+    legend.className = 'wlegend';
+    legend.textContent = T('Rows tagged Plan are the narration your plan includes. Nothing was charged for them. Card rows are money you added.');
+    box.append(legend);
+  }
   if (!rows.length) {
     const p = document.createElement('p');
     p.className = 'small'; p.style.marginTop = '14px';
@@ -3190,19 +3247,40 @@ async function loadWalletList() {
     box.append(p); return;
   }
   rows.forEach(r => {
+    const kind = r.kind || '';
+    const included = !!r.included || kind === 'grant' || kind === 'welcome';
     const row = document.createElement('div');
-    row.className = 'wr' + ((r.delta || 0) < 0 ? ' neg' : '');
+    row.className = 'wr' + (included ? ' included' : '')
+                       + ((r.delta || 0) < 0 ? ' neg' : '');
     const amt = document.createElement('b');
     amt.textContent = (r.delta > 0 ? '+' : '') + wamount(r.delta);
     const what = document.createElement('span');
-    what.className = 'wn';
-    what.textContent = r.note || WKIND[r.kind] || r.kind;
+    const name = document.createElement('span');
+    name.className = 'wt';
+    // The row's sentence is built from its kind, never pasted from the note:
+    // the note is written for us, and "reservation 7f3a9c" is not something a
+    // reader can do anything with any more than "period ending 0" was.
+    name.textContent = wtitle(r);
+    what.append(name);
+    const meta = document.createElement('span');
+    meta.className = 'wmeta';
+    const tag = document.createElement('i');
+    tag.className = 'wk';
+    tag.textContent = wtag(kind);
+    // A real period end is worth keeping: it is the one thing that row tells
+    // you. Only the unstyled epoch is not, and the host already drops that.
+    const period = included ? (/(this period ends .+)$/i.exec(String(r.note || '')) || [])[1]
+                            : woverage(r);
     const when = document.createElement('span');
     when.className = 'wd';
     const at = String(r.at || '');
     if (at) { const dt = new Date(at.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(at) ? '' : 'Z'));
       when.textContent = isNaN(dt) ? at.slice(0, 10) : dt.toLocaleDateString(); }
-    row.append(amt, what, when);
+    meta.append(tag);
+    if (period) { const pw = document.createElement('span'); pw.textContent = period; meta.append(pw); }
+    meta.append(when);
+    what.append(meta);
+    row.append(amt, what);
     box.append(row);
   });
 }
