@@ -252,3 +252,32 @@ Two lines that must be on the panel, not in a policy page:
   requires it or where we charged twice for the same thing.
 
 Minimum top-up is **$5**: Paddle's $0.50 fixed fee is 10% at $5 and 21.7% at $3.
+
+## Self-serve billing (settings > Plan & billing)
+
+A subscriber has one screen for what they pay and how to stop it. It shows the
+plan name, the next charge date, storage used against the allowance, and two
+controls: **Change card or billing details** (opens the provider's portal, so no
+card detail passes through this server) and **Cancel renewal**.
+
+Cancelling is scheduled, not immediate: Paddle keeps the subscription `active`
+and records a `scheduled_change` until the paid period ends. Status therefore
+cannot tell "renews on the 7th" from "stops on the 7th", which is why
+`subscriptions.cancel_at` exists and is written by `billing.project()` from
+`scheduled_change_at`. The screen says "Stops on ..." from that date, and hides
+the cancel button once it is set.
+
+Moving rung does not open a second subscription: `PATCH /subscriptions/{id}`
+with the complete item list and `proration_billing_mode:
+prorated_immediately` (Chris picked that mode, 11-09). The cycle stays what the
+subscriber bought, read back from the price id on the subscription because our
+own row does not store it. A change is refused while a cancel is scheduled:
+prorating onto a period that is about to end would charge for time they will not
+have.
+
+Resuming a scheduled cancel is `PATCH /subscriptions/{id}` with
+`scheduled_change: null`, which Paddle's update-subscription doc states is the
+only way to set that field and removes the change. Verified against the doc
+(fetched 11-10), not yet against a live sandbox subscription: no fake subscription
+in the sandbox has a pending cancel to clear. That is the one step here with an
+open receipt.

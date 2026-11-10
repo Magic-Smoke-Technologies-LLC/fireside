@@ -153,11 +153,13 @@ CREATE TABLE IF NOT EXISTS user_prefs (
 CREATE TABLE IF NOT EXISTS subscriptions (
     user_id VARCHAR(128) PRIMARY KEY, plan VARCHAR(64), status VARCHAR(32),
     provider VARCHAR(32), reference VARCHAR(191), current_period_end BIGINT DEFAULT 0,
+    cancel_at BIGINT DEFAULT 0,
     updated_at VARCHAR(32), created_at VARCHAR(32));
 CREATE TABLE IF NOT EXISTS addons (
     user_id VARCHAR(128), addon VARCHAR(64), quantity INT DEFAULT 0,
     status VARCHAR(32), provider VARCHAR(32), reference VARCHAR(191),
-    current_period_end BIGINT DEFAULT 0, updated_at VARCHAR(32), created_at VARCHAR(32),
+    current_period_end BIGINT DEFAULT 0, cancel_at BIGINT DEFAULT 0,
+    updated_at VARCHAR(32), created_at VARCHAR(32),
     PRIMARY KEY (user_id, addon));
 CREATE TABLE IF NOT EXISTS payment_events (
     id VARCHAR(191) PRIMARY KEY, kind VARCHAR(32), user_id VARCHAR(128),
@@ -335,8 +337,14 @@ _ADDED_COLUMNS = [
     # cancel or a lifecycle event names; without it the host can only guess.
     ("subscriptions", "customer", "VARCHAR(64) DEFAULT ''"),
     ("subscriptions", "subscription_id", "VARCHAR(64) DEFAULT ''"),
+    # when a scheduled cancel takes effect, 0 while the row renews. Paddle keeps
+    # a cancelled subscription active and records the change in the future, so
+    # status alone cannot say whether the next charge is going to happen, and
+    # the account screen has to say it.
+    ("subscriptions", "cancel_at", "BIGINT DEFAULT 0"),
     ("addons", "customer", "VARCHAR(64) DEFAULT ''"),
     ("addons", "subscription_id", "VARCHAR(64) DEFAULT ''"),
+    ("addons", "cancel_at", "BIGINT DEFAULT 0"),
     # the series a book's own file claims (EPUB calibre:series) and where in it,
     # separate from the shelves a reader builds. A pronunciation dict can attach
     # to either name; this one arrives from the file, not from the reader.

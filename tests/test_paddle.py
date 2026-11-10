@@ -231,6 +231,21 @@ class TestMirror(unittest.TestCase):
         self.assertTrue(billing.active(self.conn, "user_1"))
         mirrored = billing.subscription_rows(self.conn, "user_1")[0]
         self.assertEqual(mirrored["scheduled_change_action"], "cancel")
+        # The account screen has to be able to say "stops on" rather than
+        # "renews on", and status is active for both, so the date is the only
+        # way to tell them apart.
+        self.assertEqual(row["cancel_at"], 1796644800)
+
+    def test_a_resumed_subscription_clears_the_scheduled_cancel(self):
+        self.apply(sub_event("subscription.created"))
+        self.apply(sub_event("subscription.updated", status="active",
+                             change={"action": "cancel",
+                                     "effective_at": "2026-12-07T12:00:00Z"},
+                             occurred="2026-11-20T12:00:00Z", eid="ntf_r1"))
+        self.assertTrue(billing.get(self.conn, "user_1")["cancel_at"])
+        self.apply(sub_event("subscription.updated", status="active",
+                             occurred="2026-11-21T12:00:00Z", eid="ntf_r2"))
+        self.assertEqual(billing.get(self.conn, "user_1")["cancel_at"], 0)
 
     def test_past_due_does_not_grant(self):
         self.apply(sub_event("subscription.created"))
@@ -356,6 +371,78 @@ class TestProvider(unittest.TestCase):
 
     def test_cancel_needs_an_id(self):
         self.assertFalse(Paddle("key", SECRET).cancel("")["ok"])
+
+    def test_change_plan_sends_the_full_item_list_and_proration(self):
+        p = Paddle("key", SECRET)
+        seen = {}
+
+        def fake(method, url, key, payload=None, timeout=15):
+            seen["method"], seen["url"], seen["payload"] = method, url, payload
+            return {"data": {"id": "sub_1"}}, ""
+
+        orig = paddle._call
+        paddle._call = fake
+        try:
+            res = p.change_plan("sub_1", "listener", "month")
+        finally:
+            paddle._call = orig
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(seen["method"], "PATCH")
+        self.assertTrue(seen["url"].endswith("/subscriptions/sub_1"))
+        items = seen["payload"]["items"]
+        self.assertEqual(len(items), 1, "Paddle takes the complete list, not a patch")
+        self.assertTrue(items[0]["price_id"].startswith("pri_"))
+        self.assertEqual(items[0]["quantity"], 1)
+        self.assertEqual(seen["payload"]["proration_billing_mode"],
+                         "prorated_immediately")
+
+    def test_change_plan_reads_the_cycle_off_the_subscription(self):
+        # A yearly subscriber moving up must stay yearly. Nothing on our row
+        # stores the cycle, so it comes from the price the provider has.
+        p = Paddle("key", SECRET)
+        calls = []
+
+        def fake(method, url, key, payload=None, timeout=15):
+            calls.append((method, payload))
+            if method == "GET":
+                return {"data": {"items": [
+                    {"price": {"id": READER_YEAR}, "quantity": 1}]}}, ""
+            return {"data": {"id": "sub_1"}}, ""
+
+        orig = paddle._call
+        paddle._call = fake
+        try:
+            res = p.change_plan("sub_1", "listener")
+        finally:
+            paddle._call = orig
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["cycle"], "year")
+        patched = [c for c in calls if c[0] == "PATCH"][0][1]
+        self.assertEqual(patched["items"][0]["price_id"], "pri_01m6szmx4a3cpnx4x8nt9g0gbr")
+
+    def test_change_plan_refuses_a_plan_we_do_not_sell(self):
+        res = Paddle("key", SECRET).change_plan("sub_1", "gold", "month")
+        self.assertFalse(res["ok"])
+
+    def test_resume_clears_the_scheduled_change(self):
+        p = Paddle("key", SECRET)
+        seen = {}
+
+        def fake(method, url, key, payload=None, timeout=15):
+            seen["method"], seen["url"], seen["payload"] = method, url, payload
+            return {"data": {"scheduled_change": None}}, ""
+
+        orig = paddle._call
+        paddle._call = fake
+        try:
+            res = p.resume("sub_1")
+        finally:
+            paddle._call = orig
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(seen["method"], "PATCH")
+        self.assertTrue(seen["url"].endswith("/subscriptions/sub_1"))
+        self.assertIn("scheduled_change", seen["payload"])
+        self.assertIsNone(seen["payload"]["scheduled_change"])
 
 
 class TestWebhookRoute(unittest.TestCase):
