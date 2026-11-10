@@ -336,5 +336,8 @@ class TestPricingIsTheApp(Base):
         # reviewer can see empty.
         body = self.get("/pricing").read().decode()
         self.assertIn("$19.63 per million characters", body)
-        self.assertIn("or $36 a year", body)
-        self.assertIn("or $240 a year", body)
+        # The monthly rungs are static so a crawler reads a price without a
+        # fetch. The yearly figure is painted from the catalog, because a
+        # typed "or $36 a year" is a fact about the day it was typed.
+        for cents in ("$5", "$10", "$22"):
+            self.assertIn('<div class="amount">%s</div>' % cents, body)
