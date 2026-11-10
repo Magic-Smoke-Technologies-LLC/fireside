@@ -5017,6 +5017,21 @@ function renderCover() {
   if (book && book.cover) { $('#npcoverimg').src = coverURL(book.id, book.cover); box.hidden = false; }
   else { $('#npcoverimg').removeAttribute('src'); box.hidden = true; }
 }
+// The shelf cells and the Continue card both print "N of M voiced" out of the
+// same copy of the shelf, and that copy is filled once, at boot. A conversion
+// changes what is voiced without touching it, so the count kept saying what it
+// said when the page opened: "0 of 5 voiced" over five voiced chapters. The
+// fresh chapter listing is the truth this page already has, so the count is
+// written back from it and both places repaint.
+function syncShelfCounts(id, chapters) {
+  const b = (books || []).find(x => x.id === id);
+  if (!b || !chapters) return;
+  b.chapters = chapters.length;
+  b.rendered = chapters.filter(c => c && c.rendered).length;
+  renderLibrary();
+  renderResume();
+  renderWelcome();
+}
 function renderResume() {
   const box = $('#resume'); box.innerHTML = '';
   const b = bookById(lastName) || (RESUME && bookById(RESUME.book_id)) || books[0];
@@ -5105,6 +5120,11 @@ async function openBook(id, jumpPlay) {
              url: bk.url || '', source: bk.source || '',
              tags: bk.tags || [], series: bk.series || [] };
     await syncBookAudio(id, prev, book.chapters);
+    // Opening a book is the one place the page holds a fresh chapter listing,
+    // so the shelf's count is corrected here whatever changed the audio: this
+    // page's conversion, another tab's, or one that finished while we were
+    // away. Without it the shelf keeps a number that stopped being true.
+    syncShelfCounts(id, book.chapters);
     SELECT.clear();
     selVoice = defaultVoiceKey();       // the newest voice, until the reader picks another
     refreshStates();
@@ -5701,6 +5721,7 @@ async function refreshChaptersDuringJob(id) {
     if (!book || book.id !== id) return;
     book.chapters = prog.chapters || book.chapters;
     if (player && player.id === id) player.chapters = book.chapters;
+    syncShelfCounts(id, book.chapters);
     refreshStates();
     renderPlay();
   } catch (_) { /* a refresh is never worth breaking the run for */ }
