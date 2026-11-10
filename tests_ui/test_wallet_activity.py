@@ -58,10 +58,47 @@ def open_wallet(page):
     wait_visible(page, "#v-set .setpanel[data-p='wallet']")
     wait_until(page, "() => document.getElementById('wbal')"
                      ".textContent.trim() !== '\\u2026'")
+
+
+def open_activity(page):
+    """The ledger is a tab on the wallet screen, not a block under the buttons."""
+    open_wallet(page)
+    page.click("#wsubtabs button[data-w='activity']")
+    wait_visible(page, "#v-set .wsub[data-w='activity']")
     wait_until(page, "() => document.querySelectorAll('#wlist .wr').length > 0")
 
 
 class TestWalletActivity(BrowserTest):
+
+    def test_the_wallet_opens_on_the_money_not_the_ledger(self):
+        """The balance is always visible; the list waits behind its own tab.
+
+        This is the layout half of Chris's report (11-10): the ledger sat under
+        the add buttons, so a row that needed explaining turned up before the
+        reader had asked for a history. A fix that hides the balance too would
+        pass any test about the list and lose the point of the screen."""
+        user = self.register("wallettabs")
+        seed_ledger(self.host, user, [
+            ("topup:local:%s:abc" % user, "topup", 5.0, "money added"),
+        ])
+        self.page.reload()
+        self.wait_in_app()
+        open_wallet(self.page)
+
+        self.assertEqual(self.page.inner_text("#wbal").strip(), "$5.00")
+        self.assertFalse(self.page.is_visible("#v-set .wsub[data-w='activity']"))
+        self.assertTrue(self.page.is_visible("#wtopup"))
+        tabs = self.page.inner_text("#wsubtabs")
+        self.assertIn("Add money", tabs)
+        self.assertIn("Wallet activity", tabs)
+
+        self.page.click("#wsubtabs button[data-w='activity']")
+        wait_visible(self.page, "#v-set .wsub[data-w='activity']")
+        wait_until(self.page, "() => document.querySelectorAll('#wlist .wr')"
+                              ".length > 0")
+        # the balance does not move when the tab does
+        self.assertEqual(self.page.inner_text("#wbal").strip(), "$5.00")
+        self.assertFalse(self.page.is_visible("#wtopup"))
 
     def test_a_plan_allowance_is_not_a_card_payment(self):
         user = self.register("walletledger")
@@ -74,7 +111,7 @@ class TestWalletActivity(BrowserTest):
         ])
         self.page.reload()
         self.wait_in_app()
-        open_wallet(self.page)
+        open_activity(self.page)
 
         rows = self.page.evaluate(
             "() => Array.from(document.querySelectorAll('#wlist .wr'))"
@@ -92,8 +129,9 @@ class TestWalletActivity(BrowserTest):
         self.assertNotIn("period ending 0", whole)
         self.assertIn("Included with your plan", whole)
 
-        # and the list is a named section, not a mystery block under the buttons
-        self.assertIn("Wallet activity", whole)
+        # and the list is a named tab, not a mystery block under the buttons
+        page_text = self.page.inner_text("#wsubtabs")
+        self.assertIn("Wallet activity", page_text)
 
     def test_the_grant_keeps_its_date_once_the_period_end_is_real(self):
         """The honest case still names a period, and the date is not a number.
@@ -109,7 +147,7 @@ class TestWalletActivity(BrowserTest):
         ])
         self.page.reload()
         self.wait_in_app()
-        open_wallet(self.page)
+        open_activity(self.page)
         whole = self.page.inner_text("#wlist")
         self.assertIn("Included with your plan", whole)
         self.assertIn("this period ends 06 Nov 2026", whole)

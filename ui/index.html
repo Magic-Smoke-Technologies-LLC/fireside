@@ -140,10 +140,14 @@
   .billplan small{font:400 13px/1.4 var(--sans);color:var(--soft);margin-left:10px}
   .billbar{height:6px;border-radius:3px;background:var(--raise);overflow:hidden;margin:10px 0 0}
   .billbar i{display:block;height:100%;background:var(--flame);width:0;transition:width .3s}
-  .walletlist{margin-top:26px;border-top:1px solid var(--line);padding-top:16px}
-  .walletlist .whead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 2px}
-  .walletlist .whead h3{font:600 15px var(--ui)}
+  /* The wallet's two jobs, as tabs: adding money and seeing where it went.
+     The list used to open under the add buttons and read as one more block of
+     fine print (Chris, 11-10). The balance stays above the tabs, always. */
+  .wsubtabs{margin-top:22px;border-bottom:1px solid var(--line)}
+  .wsub{display:none}.wsub.on{display:block}
+  .walletlist{margin-top:18px}
   .walletlist .wlegend{font-size:12px;color:var(--faint);margin:0 0 6px;max-width:60ch}
+  .walletlist .wempty{margin-top:14px}
   .walletlist .wr{display:grid;grid-template-columns:84px 1fr;column-gap:12px;align-items:start;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--soft)}
   .walletlist .wr b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
   .walletlist .wr .wt{display:block;color:var(--text)}
@@ -1250,25 +1254,42 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       <div class="walletbal" id="wbal" aria-live="polite">—</div>
       <p class="small" id="wnote" data-t="Money in your wallet pays for narration. It stays yours until you spend it.">Money in your wallet pays for narration. It stays yours until you spend it.</p>
       <p class="small" id="wheld" hidden></p>
-      <div class="walletrow" id="wtopup"></div>
-      <p class="small" id="wmsg" role="status" aria-live="polite" style="margin-top:12px"></p>
-      <div id="wrate" hidden>
-        <table class="wratetbl" id="wratetbl"></table>
-        <p class="small wratefine" id="wratefine"></p>
-      </div>
-      <p class="small wratefine" id="wnoexpire" data-t="Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.">Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.</p>
-      <p class="small wratefine" id="wrefund" data-t="Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.">Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.</p>
-      <div class="walletlist" id="wlist"></div>
 
-      <!-- Two screens that are places to go rather than settings: plans is a
-           purchase, the voice sandbox is a toy. They live on the wallet screen
-           as rows so the top bar can stay two destinations wide. This is a
-           footer of the wallet panel, NOT a second wallet panel: two panels
-           sharing data-p="wallet" both took grid-row 3 and drew over each
-           other (UX review 1.1). -->
-      <div class="placesrow">
-        <button class="btn quiet" id="gotopplans" type="button" data-t="Plans &amp; storage →">Plans &amp; storage →</button>
-        <button class="btn quiet" id="gotosand" type="button" data-t="Try a voice →">Try a voice →</button>
+      <!-- Adding money and what happened to it were one long column, so the
+           ledger sat under the buttons like a mystery block and its rows
+           needed explaining (Chris, 11-10). They are two jobs now: the
+           balance stays at the top, and the list is its own tab. The balance
+           does not go inside a tab, because the number is what the screen is
+           for. -->
+      <nav class="tabs wsubtabs" id="wsubtabs" aria-label="Wallet sections" data-t-aria="Wallet sections">
+        <button data-w="money" class="on" data-t="Add money">Add money</button>
+        <button data-w="activity" data-t="Wallet activity">Wallet activity</button>
+      </nav>
+
+      <div class="wsub on" data-w="money">
+        <div class="walletrow" id="wtopup"></div>
+        <p class="small" id="wmsg" role="status" aria-live="polite" style="margin-top:12px"></p>
+        <div id="wrate" hidden>
+          <table class="wratetbl" id="wratetbl"></table>
+          <p class="small wratefine" id="wratefine"></p>
+        </div>
+        <p class="small wratefine" id="wnoexpire" data-t="Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.">Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.</p>
+        <p class="small wratefine" id="wrefund" data-t="Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.">Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.</p>
+
+        <!-- Two screens that are places to go rather than settings: plans is a
+             purchase, the voice sandbox is a toy. They live on the wallet screen
+             as rows so the top bar can stay two destinations wide. This is a
+             footer of the wallet panel, NOT a second wallet panel: two panels
+             sharing data-p="wallet" both took grid-row 3 and drew over each
+             other (UX review 1.1). -->
+        <div class="placesrow">
+          <button class="btn quiet" id="gotopplans" type="button" data-t="Plans &amp; storage →">Plans &amp; storage →</button>
+          <button class="btn quiet" id="gotosand" type="button" data-t="Try a voice →">Try a voice →</button>
+        </div>
+      </div>
+
+      <div class="wsub" data-w="activity">
+        <div class="walletlist" id="wlist"></div>
       </div>
     </div>
 
@@ -2068,6 +2089,21 @@ function setSetTab(p, mode) {
   syncRoute(mode === 'replace' ? 'replace' : undefined);
 }
 if ($('#settabs')) document.querySelectorAll('#settabs button').forEach(b => b.onclick = () => setSetTab(b.dataset.p));
+// The wallet's own two tabs, inside the wallet screen. Kept apart from
+// #settabs because they move within one screen: the outer bar is a place, this
+// one is a question about the place. Opening the wallet lands on Add money, so
+// the balance and the buttons are what a reader sees first.
+function setWalletTab(w) {
+  const bar = $('#wsubtabs'); if (!bar) return;
+  let btn = w ? bar.querySelector(`button[data-w="${w}"]`) : null;
+  if (!btn) { w = 'money'; btn = bar.querySelector('button[data-w="money"]'); }
+  bar.querySelectorAll('button').forEach(b => { const on = b === btn;
+    b.classList.toggle('on', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  document.querySelectorAll('#v-set .wsub').forEach(el => el.classList.toggle('on', el.dataset.w === w));
+  if (w === 'activity') loadWalletList();
+}
+if ($('#wsubtabs')) document.querySelectorAll('#wsubtabs button').forEach(b => b.onclick = () => setWalletTab(b.dataset.w));
 /* Language: the list comes from the server (one JSON catalog per language in
    ui/i18n), so adding a translation ships a language and needs no code here.
    The choice is a cookie because the server has to pick the catalog before it
@@ -3101,7 +3137,11 @@ async function loadWallet() {
   }
   drawTopups(d);
   drawRate(d);
-  loadWalletList();
+  // The ledger is a tab, so it is only fetched when that tab is open: a wallet
+  // screen should not ask the server for a list nobody is looking at. The tab
+  // keeps whichever side it was on when the balance refreshed underneath it.
+  const wbtn = $('#wsubtabs button.on');
+  if (wbtn && wbtn.dataset.w === 'activity') loadWalletList();
 }
 function drawTopups(d) {
   const box = $('#wtopup'); if (!box) return;
@@ -3228,12 +3268,6 @@ async function loadWalletList() {
   try { d = await api('/credits/history'); }
   catch (_) { return; }
   const rows = (d && d.entries) || [];
-  const head = document.createElement('div');
-  head.className = 'whead';
-  const title = document.createElement('h3');
-  title.textContent = T('Wallet activity');
-  head.append(title);
-  box.append(head);
   if (rows.some(r => r.included || r.kind === 'grant' || r.kind === 'welcome')) {
     const legend = document.createElement('p');
     legend.className = 'wlegend';
@@ -3242,7 +3276,7 @@ async function loadWalletList() {
   }
   if (!rows.length) {
     const p = document.createElement('p');
-    p.className = 'small'; p.style.marginTop = '14px';
+    p.className = 'small wempty';
     p.textContent = T('Nothing has moved yet. Your first top-up or voiced chapter shows up here.');
     box.append(p); return;
   }
