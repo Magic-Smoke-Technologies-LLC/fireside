@@ -121,3 +121,84 @@ class TestRoomIsWhatAPlanBuys(BrowserTest):
         text, labels = self._buys()
         self.assertIn("More storage", text)
         self.assertIn("Buy blocks", labels, "a paid plan still buys a mid-cycle block")
+
+
+class TestSignedInPlansPage(BrowserTest):
+    """Chris, 11-10: signed in on /pricing he did not see all the plans.
+
+    The page builds one card per tier from the catalog. The current tier took
+    the branch that disables its cycle buttons, and the reference it disabled
+    with was a `const` scoped to an if-block above it in the same function. That
+    threw on the holder's own card, and because the cards are appended inside a
+    forEach, the throw also dropped that card and every card after it. Signed
+    out nothing is current, so the bug only appeared for a paying reader: the
+    one person who might buy again.
+
+    Two controls: the page a comped paid plan sees, and planCard itself against
+    a provider config with prices. The host runs with a fake Paddle key so the
+    page takes the same branch a real deployment does (a registered provider
+    with prices is what puts the cycle bar on the card).
+    """
+
+    host_env = {"FIRESIDE_PAYMENT_PROVIDER": "host.payments_paddle",
+                "FIRESIDE_PADDLE_API_KEY": "test_api_key",
+                "FIRESIDE_PADDLE_WEBHOOK_SECRET": "whsec_test",
+                "FIRESIDE_PADDLE_ENV": "sandbox"}
+
+    def _paid(self, user):
+        self.register(user)
+        _status, me = self.host.request("/me", cookies=cookie_jar(self.context))
+        uid = (me or {}).get("user")
+        self.assertTrue(uid, "the browser has no session")
+        status, _ = self.host.request(
+            "/admin/plan", cookies=cookie_jar(self.context), method="POST",
+            body={"user": uid, "plan": "platform"})
+        self.assertEqual(status, 200, "the comp has to land before the page is read")
+
+    def test_a_paid_reader_sees_every_plan_including_their_own(self):
+        self._paid("planbuyer")
+        self.page.goto(self.host.url("/pricing"))
+        wait_until(self.page, "() => !!document.querySelector('#v-plans.on')")
+        # The static markup holds the same four cards as a no-JS fallback, so
+        # the count alone is green before the host has answered. The buy row is
+        # built only by planCard, so it is the receipt that the dynamic render
+        # ran, which is the render this test is about.
+        wait_until(self.page, "() => document.querySelector('#pageplans .prcard .buy')"
+                              " !== null")
+        labels = [c.inner_text().split("\n")[0].strip() for c in
+                  self.page.query_selector_all("#pageplans .prcard .rung")]
+        self.assertEqual(labels, ["Free", "Reader", "Listener", "Studio"],
+                         "a signed-in plan dropped its own card and the ones after it")
+        current = self.page.query_selector_all("#pageplans .prcard.current")
+        self.assertEqual(len(current), 1, "exactly the plan they hold is current")
+        self.assertIn("Reader", current[0].inner_text())
+        self.assertEqual(self.page.evaluate(
+            "() => Array.from(document.querySelectorAll('#pageplans .prcard'))"
+            ".filter(c => c.getBoundingClientRect().width < 50).length"), 0,
+            "every card has to have width, not just exist in the DOM")
+        self.assert_no_page_errors()
+
+    def test_the_current_card_disables_its_cycle_without_throwing(self):
+        # Positive control for the crash the page above can only reach with a
+        # provider configured: give planCard prices for both cycles and ask it
+        # for the plan the reader already holds.
+        self.page.goto(self.host.url("/pricing"))
+        wait_until(self.page, "() => !!document.querySelector('#v-plans.on')")
+        out = self.page.evaluate("""() => {
+            const t = {id: 'platform', label: 'Reader', amount_cents: null,
+                       list_amount_cents: 500, list_annual_cents: 3600,
+                       included_usd: 1.0, included_bytes: 2000000000};
+            const cat = {payments_configured: true,
+                         tiers: [{id: 'free', label: 'Free'}, t]};
+            const cfg = {prices: {platform: {month: 'pri_m', year: 'pri_y'}}};
+            const card = planCard(t, 'platform', cat, cfg);
+            const cyc = Array.from(card.querySelectorAll('.cycle button'));
+            return {cycle: cyc.length,
+                    cycleDisabled: cyc.every(b => b.disabled),
+                    goDisabled: Array.from(card.querySelectorAll('.btn'))
+                                  .every(b => b.disabled)};
+        }""")
+        self.assertEqual(out["cycle"], 2, "both cycles are offered")
+        self.assertTrue(out["cycleDisabled"], "a held plan cannot be bought again")
+        self.assertTrue(out["goDisabled"])
+        self.assert_no_page_errors()
