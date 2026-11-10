@@ -3677,7 +3677,9 @@ async function openPaddle(cfg, priceId) {
 // The door over the app, used by the price list when a visitor has no account
 // yet. It is the same screen a first visit gets, not a second sign-up form.
 function openDoor(mode) {
-  AUTH.mode = mode || 'sign';
+  // An unreachable host is not a door problem: keep saying that until the
+  // connection is back, whatever the caller wanted the door in.
+  AUTH.mode = AUTH.reachable === false ? 'unreachable' : (mode || 'sign');
   document.body.classList.add('locked');
   $('#lock').hidden = false;
   renderAuth();
@@ -4019,12 +4021,42 @@ if ($('#delbtn')) $('#delbtn').onclick = async () => {
   }
 };
 // --- the door: the whole app is behind a session ---------------------------
-let AUTH = { user: '', admin: false, hasAccounts: false, registrationOpen: true,
-             hasPassword: false, providers: [], mode: 'sign', resetToken: '' };
+// `hasAccounts` is only true or false once the host has said so. When the host
+// never answers it stays null, and nothing may read null as "a fresh server":
+// with no network the app used to offer the visitor an admin account.
+let AUTH = { user: '', admin: false, hasAccounts: null, registrationOpen: true,
+             reachable: true, hasPassword: false, providers: [], mode: 'sign',
+             resetToken: '' };
 
 function authMsg(t) { $('#autherr').textContent = t || ''; }
 
+// The one door that is not a door: the host never answered. Say that plainly.
+// The alternative, and what shipped until 11-10, was to draw the form from the
+// client's own defaults, which with no network read as "no accounts here yet"
+// and offered the visitor the admin account of a server that has several.
+function renderUnreachable() {
+  const offline = AUTH.unreachable !== 'error';
+  $('#locktitle').textContent = "can't reach fireside";
+  $('#locksub').textContent = offline
+    ? 'no connection to the server. your library is still on it; nothing was lost.'
+    : 'the server answered with an error. this is not your account, and nothing was lost.';
+  ['#lockuser', '#lockpass', '#lockpass2', '#lockemail'].forEach((sel) => {
+    const el = $(sel);
+    if (el) { el.value = ''; el.closest('.field').hidden = true; }
+  });
+  $('#lockconfirm').hidden = true;
+  $('#lockemailwrap').hidden = true;
+  $('#lockforgot').hidden = true;
+  $('#locktoggle').hidden = true;
+  const provs = $('#lockproviders');
+  if (provs) { provs.innerHTML = ''; provs.hidden = true; }
+  $('#lockgo').textContent = 'Try again';
+  $('#lockgo').disabled = false;
+  $('#lockgo').hidden = false;
+  authMsg(offline ? 'network unreachable' : 'the host said ' + (AUTH.unreachableStatus || 'error'));
+}
 function renderAuth() {
+  if (AUTH.mode === 'unreachable') return renderUnreachable();
   const create = AUTH.mode === 'create';
   const forgot = AUTH.mode === 'forgot';
   const reset = AUTH.mode === 'reset';
@@ -4066,6 +4098,10 @@ async function authSubmit() {
   const em = $('#lockemail').value.trim();
   const create = AUTH.mode === 'create';
   if (AUTH.mode === 'claim') return claimSubmit();
+  // The button says Try again rather than Sign in: there is nothing to submit.
+  // A reload asks the host again, and the online listener does it for you when
+  // the connection comes back on its own.
+  if (AUTH.mode === 'unreachable') { location.reload(); return; }
 
   if (AUTH.mode === 'forgot') {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return authMsg('enter your email address');
@@ -4162,6 +4198,18 @@ if (document.getElementById('welstart')) {
   };
 }
 
+// One place decides what an unanswered host looks like, because a boot, a nav
+// click and a retry can all end up here.
+function showUnreachable(err) {
+  AUTH.reachable = false;
+  AUTH.unreachable = (err && err.status) ? 'error' : 'offline';
+  AUTH.unreachableStatus = (err && err.status) || '';
+  AUTH.mode = 'unreachable';
+  document.body.classList.add('locked');
+  $('#lock').hidden = false;
+  renderUnreachable();
+  return false;
+}
 async function requireSession() {
   // A half-session is signed in and one factor short. Ask before anything
   // else: every other call answers 401 with a twofa field, which without this
@@ -4179,12 +4227,21 @@ async function requireSession() {
     }
     return false;
   }
-  let pol = {}, me = { authenticated: false, user: '' };
-  try { pol = await api('/auth/policy'); } catch (_) {}
+  // What the host says is the only source for these three. If it never answers
+  // (no network: the service worker serves the cached shell) do not fall back
+  // to the defaults above, which claim there is no account on this server and
+  // point the door at "create the first account, it will be the admin". Say the
+  // host is unreachable and offer a retry instead. An answer that is an HTTP
+  // error is a different sentence: the host is up, it just did not say.
+  let pol = null, me = null, polErr = null, meErr = null;
+  try { pol = await api('/auth/policy'); } catch (e) { polErr = e; }
+  if (!pol) return showUnreachable(polErr);
+  try { me = await api('/me'); } catch (e) { meErr = e; }
+  if (!me) return showUnreachable(meErr);
+  AUTH.reachable = true;
   AUTH.providers = pol.providers || [];
   AUTH.hasAccounts = !!pol.has_accounts;
   AUTH.registrationOpen = pol.registration_open !== false;
-  try { me = await api('/me'); } catch (_) {}
   const who = $('#auth'); who.innerHTML = '';
   if (me.authenticated) {
     USER = me.user; AUTH.user = me.user; AUTH.admin = !!me.admin;
