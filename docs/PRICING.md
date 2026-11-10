@@ -267,6 +267,17 @@ cannot tell "renews on the 7th" from "stops on the 7th", which is why
 `scheduled_change_at`. The screen says "Stops on ..." from that date, and hides
 the cancel button once it is set.
 
-Not built yet: resuming a scheduled cancel in-app (Paddle's `PATCH
-/subscriptions/{id}` with `scheduled_change: null` is the unverified path), so
-the screen makes no promise about it.
+Moving rung does not open a second subscription: `PATCH /subscriptions/{id}`
+with the complete item list and `proration_billing_mode:
+prorated_immediately` (Chris picked that mode, 11-09). The cycle stays what the
+subscriber bought, read back from the price id on the subscription because our
+own row does not store it. A change is refused while a cancel is scheduled:
+prorating onto a period that is about to end would charge for time they will not
+have.
+
+Resuming a scheduled cancel is `PATCH /subscriptions/{id}` with
+`scheduled_change: null`, which Paddle's update-subscription doc states is the
+only way to set that field and removes the change. Verified against the doc
+(fetched 11-10), not yet against a live sandbox subscription: no fake subscription
+in the sandbox has a pending cancel to clear. That is the one step here with an
+open receipt.

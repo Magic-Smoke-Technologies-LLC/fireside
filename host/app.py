@@ -2075,6 +2075,75 @@ class App:
             return 402, {"error": "portal refused", "detail": res.get("detail", "")}
         return 200, {"ok": True, "url": res.get("url", "")}
 
+    def billing_change(self, q, body):
+        """Move a paid subscription onto another tier, without a second one.
+
+        Buying a plan through checkout while already subscribed would open a
+        second subscription, which is two charges and two cancels to think
+        about. The provider changes the existing one, and the webhook it sends
+        back is what writes the new tier here.
+        """
+        uid = self._uid(q, body)
+        if not uid:
+            return 401, {"error": "auth required"}
+        if not self._limit(self.buy_limiter, uid):
+            return 429, {"error": "rate limited"}
+        pp = payments.get()
+        fn = getattr(pp, "change_plan", None)
+        if not callable(fn):
+            return 503, {"error": "payments not configured"}
+        sub = billing.get(self.conn, uid)
+        sid = (sub or {}).get("subscription_id") or ""
+        if not sid:
+            return 409, {"error": "no subscription to change",
+                         "detail": "pick a plan first; a change moves the one you have"}
+        plan = ((body or {}).get("plan") or "").strip()
+        if plan not in quota.PAID_TIERS:
+            return 400, {"error": "not a paid plan", "detail": plan}
+        if plan == sub["plan"]:
+            return 409, {"error": "already on that plan"}
+        if sub.get("cancel_at"):
+            # Changing items on a subscription that is scheduled to end would
+            # charge a prorated amount for a period it is not going to have.
+            return 409, {"error": "renewal is stopping",
+                         "detail": "keep the renewal going first, then change plan"}
+        res = fn(sid, plan, (body or {}).get("cycle") or "")
+        if not res.get("ok"):
+            return 402, {"error": "change refused",
+                         "detail": res.get("detail", "")}
+        return 200, {"ok": True, "plan": plan,
+                     "cycle": res.get("cycle", ""),
+                     "subscription": billing.get(self.conn, uid)}
+
+    def billing_resume(self, q, body):
+        """Put the next renewal back after a scheduled cancel."""
+        uid = self._uid(q, body)
+        if not uid:
+            return 401, {"error": "auth required"}
+        if not self._limit(self.buy_limiter, uid):
+            return 429, {"error": "rate limited"}
+        pp = payments.get()
+        fn = getattr(pp, "resume", None)
+        if not callable(fn):
+            return 503, {"error": "payments not configured"}
+        sub = billing.get(self.conn, uid)
+        sid = (sub or {}).get("subscription_id") or ""
+        if not sid:
+            return 409, {"error": "no subscription on file"}
+        if not sub.get("cancel_at"):
+            return 200, {"ok": True, "detail": "nothing was scheduled to stop"}
+        res = fn(sid)
+        if not res.get("ok"):
+            return 402, {"error": "resume refused",
+                         "detail": res.get("detail", "")}
+        # The provider said the scheduled change is gone, so record that.
+        billing.upsert(self.conn, uid, sub["plan"], sub["status"],
+                       provider=sub["provider"], reference=sub["reference"],
+                       current_period_end=sub["current_period_end"],
+                       customer=sub.get("customer", ""),
+                       subscription_id=sid, cancel_at=0)
+        return 200, {"ok": True, "subscription": billing.get(self.conn, uid)}
+
     def _apply_subscription_state(self, st, provider_id):
         """Apply a lifecycle event to the row that names that subscription.
 
@@ -3227,6 +3296,7 @@ POST_ROUTES = {
     "/admin/account/delete": "admin_account_delete",
     "/billing/checkout": "billing_checkout", "/billing/confirm": "billing_confirm",
     "/billing/cancel": "billing_cancel", "/billing/portal": "billing_portal",
+    "/billing/change": "billing_change", "/billing/resume": "billing_resume",
     "/credits/confirm": "credits_confirm",
     "/2fa/enroll": "twofa_enroll", "/2fa/confirm": "twofa_confirm",
     "/2fa/verify": "twofa_verify", "/2fa/recovery": "twofa_recovery",

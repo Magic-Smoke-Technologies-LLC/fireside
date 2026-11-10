@@ -93,6 +93,38 @@ class TestBillingPanel(BrowserTest):
                          ["Change card or billing details", "Cancel renewal"])
         self.assert_no_page_errors()
 
+    def test_a_subscriber_can_move_plan_on_the_same_subscription(self):
+        user = self.register("billmove")
+        seed_subscription(self.host, user, plan="platform")
+        self.page.reload()
+        self.wait_in_app()
+        open_billing(self.page)
+        wait_visible(self.page, "#billchange .walletrow button")
+        moves = self.page.evaluate("""() => Array.from(
+            document.querySelectorAll('#billchange .walletrow button')).map(
+            b => b.textContent.trim())""")
+        self.assertEqual(len(moves), 2, moves)
+        self.assertTrue(moves[0].startswith("Move to Listener"), moves)
+        self.assertTrue(moves[1].startswith("Move to Studio"), moves)
+        # the current plan is not offered as a change, and free is not a change
+        self.assertFalse(any("Reader" in m or "Free" in m for m in moves), moves)
+        self.assert_no_page_errors()
+
+    def test_a_cancelled_subscriber_gets_a_way_back(self):
+        user = self.register("billback")
+        end = int(time.time() + 5 * DAY)
+        seed_subscription(self.host, user, period_end=end, cancel_at=end)
+        self.page.reload()
+        self.wait_in_app()
+        open_billing(self.page)
+        self.assertEqual(buttons(self.page),
+                         ["Change card or billing details", "Keep it renewing"])
+        # a plan change on a subscription that is ending would charge for a
+        # period it will not have, so the block is not offered
+        self.assertEqual(self.page.evaluate(
+            "() => document.querySelectorAll('#billchange .walletrow').length"), 0)
+        self.assert_no_page_errors()
+
     def test_a_cancelled_subscriber_is_told_when_it_stops(self):
         user = self.register("billstop")
         end = int(time.time() + 9 * DAY)
@@ -104,6 +136,7 @@ class TestBillingPanel(BrowserTest):
         renew = self.page.text_content("#billrenew")
         self.assertIn("Stops on", renew)
         self.assertNotIn("Renews on", renew)
-        # no second cancel on an already-cancelled row
-        self.assertEqual(buttons(self.page), ["Change card or billing details"])
+        # no second cancel on an already-cancelled row, and a way back instead
+        self.assertEqual(buttons(self.page),
+                         ["Change card or billing details", "Keep it renewing"])
         self.assert_no_page_errors()

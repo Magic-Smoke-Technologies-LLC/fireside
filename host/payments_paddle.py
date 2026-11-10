@@ -384,6 +384,79 @@ class Paddle:
         change = ((data or {}).get("data") or {}).get("scheduled_change") or {}
         return {"ok": True, "detail": change.get("action", "")}
 
+    # -- plan change and resume ----------------------------------------------
+    def change_plan(self, subscription_id, plan, cycle=""):
+        """Move an existing subscription onto another of our tiers.
+
+        Paddle takes the COMPLETE item list, so the body names the one price the
+        subscription should have, and proration is immediate because that is the
+        mode Chris picked (2026-11-09). The cycle stays what the subscriber
+        bought: a monthly subscriber moving up stays monthly. Checked against
+        Paddle's own update-subscription doc (11-10): items 1-100, each with
+        price_id and quantity, and proration_billing_mode is required whenever
+        items change.
+        """
+        sid = (subscription_id or "").strip()
+        if not sid:
+            return {"ok": False, "detail": "no subscription id"}
+        prices = known_plan_prices()
+        cycles = prices.get((plan or "").strip()) or {}
+        if not cycles:
+            return {"ok": False, "detail": "no price for that plan"}
+        want = (cycle or "").strip()
+        if not want:
+            # read the cycle off the subscription rather than assume monthly
+            data, err = _call("GET", "%s/subscriptions/%s" % (self.base_url, sid),
+                              self.api_key)
+            if err:
+                return {"ok": False, "detail": err}
+            items = ((data or {}).get("data") or {}).get("items") or []
+            cur = ""
+            if items and isinstance(items[0], dict):
+                cur = ((items[0].get("price") or {}).get("id")
+                       or items[0].get("price_id") or "")
+            want = cycle_of_price(cur, prices)
+        price_id = cycles.get(want) or cycles.get("month") or sorted(cycles.values())[0]
+        data, err = _call("PATCH", "%s/subscriptions/%s" % (self.base_url, sid),
+                          self.api_key,
+                          {"items": [{"price_id": price_id, "quantity": 1}],
+                           "proration_billing_mode": "prorated_immediately"})
+        if err:
+            return {"ok": False, "detail": err}
+        return {"ok": True, "price_id": price_id, "cycle": want,
+                "detail": ""}
+
+    def resume(self, subscription_id):
+        """Undo a scheduled cancel.
+
+        Paddle's update-subscription doc, read 2026-11-10: `scheduled_change`
+        may only be set to null when updating, and that removes the scheduled
+        change. So the next charge comes back.
+        """
+        sid = (subscription_id or "").strip()
+        if not sid:
+            return {"ok": False, "detail": "no subscription id"}
+        data, err = _call("PATCH", "%s/subscriptions/%s" % (self.base_url, sid),
+                          self.api_key, {"scheduled_change": None})
+        if err:
+            return {"ok": False, "detail": err}
+        return {"ok": True, "detail": ""}
+
+
+def cycle_of_price(price_id, prices=None):
+    """'month' or 'year' for one of our price ids, "" when we do not sell it.
+
+    A plan change must stay on the cycle the subscriber already bought. The
+    cycle is not stored on our row (the provider owns it), so it is read back
+    from the price id the provider has on the subscription.
+    """
+    table = known_plan_prices() if prices is None else prices
+    for cycles in (table or {}).values():
+        for name, pid in (cycles or {}).items():
+            if pid == price_id:
+                return name
+    return ""
+
 
 def known_plan_prices():
     """tier -> {"month": id, "year": id} for the page. $FIRESIDE_PADDLE_PLAN_PRICES

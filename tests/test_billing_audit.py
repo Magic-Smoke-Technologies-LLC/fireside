@@ -249,6 +249,8 @@ class FakeStripe:
         self.checkout_calls = []
         self.purchases = {}
         self.cancelled = []
+        self.changed = []
+        self.resumed = []
         self.credited_sessions = {}
 
     def plans(self):
@@ -281,6 +283,15 @@ class FakeStripe:
 
     def portal(self, customer, return_url=""):
         return {"ok": True, "url": "https://billing.example/cus_1"}
+
+    def change_plan(self, subscription_id, plan, cycle=""):
+        self.changed.append((subscription_id, plan, cycle))
+        return {"ok": True, "price_id": "pri_x", "cycle": cycle or "month",
+                "detail": ""}
+
+    def resume(self, subscription_id):
+        self.resumed.append(subscription_id)
+        return {"ok": True, "detail": ""}
 
     def verify_webhook(self, raw, sig):
         return json.loads(raw.decode("utf-8")), ""
@@ -486,6 +497,42 @@ class TestTierRouting(Base):
         # Access runs to the period end and the next charge is off. Without the
         # date stored, the next load of the account screen would say "renews on".
         self.assertEqual(billing.get(self.conn, "u1")["cancel_at"], 2000000000)
+
+    def test_change_moves_the_subscription_instead_of_opening_another(self):
+        billing.upsert(self.conn, "u1", "platform", "active", provider="stripe",
+                       reference="cs_1", current_period_end=2000000000,
+                       customer="cus_1", subscription_id="sub_1")
+        s, out = self.app.billing_change({}, {"user": "u1", "plan": "listener"})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(self.fake.changed, [("sub_1", "listener", "")])
+        self.assertEqual(self.fake.checkout_calls, [],
+                         "a plan change must not start a second checkout")
+
+    def test_change_refuses_a_free_or_unknown_target(self):
+        billing.upsert(self.conn, "u1", "platform", "active", provider="stripe",
+                       subscription_id="sub_1", customer="cus_1")
+        for plan in ("free", "gold", ""):
+            s, out = self.app.billing_change({}, {"user": "u1", "plan": plan})
+            self.assertEqual(s, 400, (plan, out))
+        self.assertEqual(self.fake.changed, [])
+
+    def test_change_is_refused_while_the_renewal_is_stopping(self):
+        billing.upsert(self.conn, "u1", "platform", "active", provider="stripe",
+                       subscription_id="sub_1", customer="cus_1",
+                       current_period_end=2000000000, cancel_at=2000000000)
+        s, out = self.app.billing_change({}, {"user": "u1", "plan": "studio"})
+        self.assertEqual(s, 409, out)
+        self.assertIn("renewal", out["error"])
+        self.assertEqual(self.fake.changed, [])
+
+    def test_resume_puts_the_next_charge_back(self):
+        billing.upsert(self.conn, "u1", "platform", "active", provider="stripe",
+                       subscription_id="sub_1", customer="cus_1",
+                       current_period_end=2000000000, cancel_at=2000000000)
+        s, out = self.app.billing_resume({}, {"user": "u1"})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(self.fake.resumed, ["sub_1"])
+        self.assertEqual(billing.get(self.conn, "u1")["cancel_at"], 0)
 
     def test_cancel_with_nothing_on_file_says_so(self):
         s, out = self.app.billing_cancel({}, {"user": "u1"})

@@ -1218,6 +1218,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       <p class="small" id="billusage"></p>
       <div class="billbar" id="billbar" hidden><i id="billbarfill"></i></div>
       <div class="walletrow" id="billacts"></div>
+      <div id="billchange"></div>
       <p class="small" id="billmsg" role="status" aria-live="polite"></p>
       <p class="small wratefine" data-t="The card is entered on the payment provider&#x27;s page, never here. Changing the card, moving to another plan, and downloading an invoice all happen there, opened from this screen.">The card is entered on the payment provider's page, never here. Changing the card, moving to another plan, and downloading an invoice all happen there, opened from this screen.</p>
       <p class="small wratefine" data-t="Cancelling stops the next charge and nothing after it. What you already paid for keeps working until the period ends.">Cancelling stops the next charge and nothing after it. What you already paid for keeps working until the period ends.</p>
@@ -3239,7 +3240,52 @@ async function loadBilling() {
     setMsg(T('Billing is not switched on yet, so nothing can be charged.'));
   }
 
+  const change = $('#billchange');
+  if (change) change.innerHTML = '';
   if (!acts) return;
+  if (sub && sub.subscription_id && change) {
+    // Moving rung on the subscription you already have, not a second one. The
+    // price is the provider's catalog price, and the cycle stays the one you
+    // bought, so a yearly subscriber does not get moved to monthly by accident.
+    // The provider reports a price when it knows one; until then the published
+    // list price is what the plans page prints, so the button quotes the same
+    // number the reader was already shown. The proration itself is the
+    // provider's arithmetic, which is why the confirm does not quote it.
+    const priceOf = t => t.amount_cents != null ? t.amount_cents : t.list_amount_cents;
+    const others = ((cat && cat.tiers) || []).filter(t =>
+      t.id !== plan && t.id !== 'free' && priceOf(t) != null);
+    if (others.length && !sub.cancel_at) {
+      const h = document.createElement('h3');
+      h.style.marginTop = '28px';
+      h.textContent = T('Move to another plan');
+      change.append(h);
+      const row = document.createElement('div');
+      row.className = 'walletrow';
+      others.forEach(t => {
+        const b = document.createElement('button');
+        b.className = 'btn quiet'; b.type = 'button';
+        b.textContent = T('Move to {name} · {price} a month',
+          { name: t.label, price: usd(priceOf(t)) });
+        b.onclick = async () => {
+          if (!window.confirm(T('Move this subscription to {name}? The difference is prorated today: you are charged or credited the part of the period you have not used.',
+              { name: t.label }))) return;
+          b.disabled = true;
+          try {
+            await jpost('/billing/change', { plan: t.id });
+            setMsg(T('Moved to {name}. This screen updates when the provider confirms it.',
+                     { name: t.label }));
+            setTimeout(loadBilling, 4000);
+          } catch (e) { b.disabled = false; setMsg(errorText(e)); }
+        };
+        row.append(b);
+      });
+      change.append(row);
+      const note = document.createElement('p');
+      note.className = 'small';
+      note.textContent = T('A plan change moves the subscription you have. It never starts a second one.');
+      change.append(note);
+    }
+  }
   if (sub && sub.subscription_id) {
     const card = document.createElement('button');
     card.className = 'btn'; card.type = 'button';
@@ -3255,7 +3301,20 @@ async function loadBilling() {
       } catch (e) { setMsg(errorText(e)); }
     };
     acts.append(card);
-    if (!sub.cancel_at) {
+    if (sub.cancel_at) {
+      const back = document.createElement('button');
+      back.className = 'btn'; back.type = 'button';
+      back.textContent = T('Keep it renewing');
+      back.onclick = async () => {
+        back.disabled = true;
+        try {
+          await jpost('/billing/resume', {});
+          setMsg(T('Renewal is back on.'));
+          await loadBilling();
+        } catch (e) { back.disabled = false; setMsg(errorText(e)); }
+      };
+      acts.append(back);
+    } else {
       const stop = document.createElement('button');
       stop.className = 'btn quiet'; stop.type = 'button';
       stop.textContent = T('Cancel renewal');
