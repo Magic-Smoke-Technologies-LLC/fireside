@@ -672,15 +672,16 @@ class TestPricingPageWiring(unittest.TestCase):
         # The page sells a cycle only when it has a price id for that cycle;
         # otherwise it says so instead of opening an overlay that cannot charge.
         self.assertIn("Not for sale yet", self.page)
-        self.assertIn("paddlePriceId(cfg, t.id, cycle)", self.page)
+        self.assertIn("paddlePriceId(cfg, t.id, c)", self.page)
 
     def test_the_yearly_cycle_is_reachable(self):
         # It lived only on the static page, so the app could not sell a year.
-        # The cycle is now a choice above one Subscribe button rather than a
-        # second button under it; what has to hold is that the card can still
-        # start a yearly purchase.
-        self.assertIn("buyPlan(t.id, pick.c)", self.page)
-        self.assertIn("c: 'year'", self.page)
+        # The cycle is now ONE control above the cards, read by every card; a
+        # card asks for the cycle it was drawn with, and the page can still
+        # start a yearly purchase through it.
+        self.assertIn("#cycyear", self.page)
+        self.assertIn("buyPlan(t.id, 'year')", self.page)
+        self.assertIn("let CURRENT_PLAN", self.page)
 
 
 class TestSignatureHeader(unittest.TestCase):

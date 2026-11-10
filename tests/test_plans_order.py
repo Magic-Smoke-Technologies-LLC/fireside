@@ -1,16 +1,16 @@
-"""What the price list says first.
+"""What the price list says first, and in what order.
 
-Chris, 11-09: "On the plans page I feel like 'On every plan' and 'Run it
-yourself, free' should also be promoted up in the page."
+Chris, 11-09 promoted "On every plan" and "Run it yourself" above the price
+cards. On 11-10 he read the rendered page again and re-cut the order, to:
 
-The order is the argument the page makes. Read top to bottom it should be:
-what the thing is, what every plan includes, the prices, then the free
-do-it-yourself path, then the narration rates. Rungs first would make the page
-a price table with the offer buried under it.
+    intro (two lines), billing control, plans, then "The voice is metered
+    separately" with the wallet callout and rate table, then "On every plan",
+    "Run it yourself," support.
 
-A source-order test, not a screenshot: the cards are replaced by the live
-catalog at load, but the section order around them is static, and that is the
-thing being fixed.
+The 11-09 promotion is superseded, not violated: what every plan includes is
+still a full section with its own heading, it just reads after the thing it is
+included in. This test is source order, not a screenshot: the cards are built
+from the live catalog at load, but the sections around them are static.
 """
 
 import io
@@ -29,30 +29,43 @@ def plans_section():
     return m.group(1)
 
 
+def at(body, needle):
+    i = body.find(needle)
+    assert i >= 0, "the plans page no longer has %r" % needle
+    return i
+
+
 class TestPlansOrder(unittest.TestCase):
 
-    def test_every_plan_comes_before_the_rungs(self):
+    def test_the_intro_and_the_control_come_before_the_cards(self):
         body = plans_section()
-        every = body.index('data-t="On every plan"')
-        grid = body.index('id="pageplans"')
-        self.assertLess(every, grid,
-                        "what every plan includes should not be buried under the prices")
+        self.assertLess(at(body, 'id="plansays"'), at(body, 'id="plancycle"'))
+        self.assertLess(at(body, 'id="plancycle"'), at(body, 'id="pageplans"'))
 
-    def test_run_it_yourself_comes_before_the_narration_rates(self):
+    def test_the_voice_sits_after_the_cards(self):
         body = plans_section()
-        self_ = body.index('data-t="Run it yourself, free"')
-        rates = body.index('data-t="Narration, bought on its own"')
-        self.assertLess(self_, rates)
+        self.assertLess(at(body, 'id="pageplans"'),
+                        at(body, 'data-t="The voice is metered separately"'))
 
-    def test_the_rungs_still_come_before_the_narration_rates(self):
-        # Promoted, not shuffled: the price ladder is still the middle of the page
+    def test_the_wallet_promise_is_read_before_the_rate_it_governs(self):
         body = plans_section()
-        self.assertLess(body.index('id="pageplans"'),
-                        body.index('data-t="Narration, bought on its own"'))
+        self.assertLess(at(body, 'id="walletpromise"'), at(body, 'id="pagerates"'))
 
-    def test_the_wallet_promise_still_sits_above_the_prices(self):
+    def test_on_every_plan_reads_after_the_prices(self):
         body = plans_section()
-        self.assertLess(body.index('id="walletpromise"'), body.index('id="pageplans"'))
+        self.assertLess(at(body, 'id="pageplans"'), at(body, 'data-t="On every plan"'))
+
+    def test_run_it_yourself_is_last_of_the_selling_sections(self):
+        body = plans_section()
+        self.assertLess(at(body, 'data-t="On every plan"'),
+                        at(body, 'data-t="Run it yourself, free"'))
+        self.assertLess(at(body, 'data-t="Run it yourself, free"'),
+                        at(body, 'data-t="Questions, refunds, cancellations"'))
+
+    def test_the_rate_table_is_the_only_one_on_the_page(self):
+        # Two tables held the same $19.63 and one of them was going to drift.
+        body = plans_section()
+        self.assertEqual(body.count('class="ratetable"'), 1)
 
 
 if __name__ == "__main__":

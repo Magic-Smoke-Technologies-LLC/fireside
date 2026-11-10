@@ -53,15 +53,20 @@ class TestProviderTiles(BrowserTest):
 
 class TestWalletPromiseIsVisible(BrowserTest):
 
-    def test_the_promise_comes_before_the_prices(self):
+    def test_the_promise_comes_before_the_rate_table(self):
+        # It used to be asserted against the price cards, because the callout sat
+        # above them. Chris re-ordered the page on 11-10: intro, control, plans,
+        # then the voice metered separately with the wallet and the rate. What
+        # still matters is that the promise is read before the number it governs.
         self.page.goto(self.host.url("/pricing"))
         wait_visible(self.page, "#walletpromise")
         order = self.page.evaluate("""() => {
             const w = document.querySelector('#walletpromise');
-            const p = document.querySelector('#pageplans');
-            return !!(w.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING);
+            const r = document.querySelector('#pagerates');
+            return !!(w && r && (w.compareDocumentPosition(r)
+                                 & Node.DOCUMENT_POSITION_FOLLOWING));
         }""")
-        self.assertTrue(order, "the promise has to be read before the price cards")
+        self.assertTrue(order, "the wallet promise has to be read before the rate")
 
     def test_its_lead_line_is_not_fine_print(self):
         self.page.goto(self.host.url("/pricing"))
@@ -95,18 +100,23 @@ class TestRoomIsWhatAPlanBuys(BrowserTest):
     def _buys(self):
         self.page.goto(self.host.url("/pricing"))
         wait_visible(self.page, "#pagebuys")
-        wait_until(self.page, "() => document.querySelectorAll('#pagebuys h3').length >= 2")
+        wait_until(self.page, "() => document.querySelector('#pagebuys h3') !== null")
+        # The top-up lives in the wallet callout now, not in a second panel
+        # further down: one callout that explains the wallet and can fill it.
+        topup = self.page.query_selector_all("#wpact button")
         return (self.page.text_content("#pagebuys"),
                 [b.inner_text().strip() for b in
-                 self.page.query_selector_all("#pagebuys section button")])
+                 self.page.query_selector_all("#pagebuys section button")],
+                [b.inner_text().strip() for b in topup])
 
     def test_free_funds_the_wallet_and_is_sent_to_the_plans(self):
         self.register("freebuyer")
-        text, labels = self._buys()
-        self.assertIn("Add funds", text, "the wallet is the door that stays open")
+        text, labels, topup = self._buys()
         self.assertIn("Storage comes with a plan", text)
         self.assertIn("See the plans", labels)
         self.assertNotIn("Buy blocks", labels, "room is not for sale on free")
+        self.assertTrue(topup, "the wallet callout has to be able to take money")
+        self.assertIn("5", topup[0], "the button names the minimum load")
         self.assert_no_page_errors()
 
     def test_a_plan_still_sells_blocks(self):
@@ -118,7 +128,7 @@ class TestRoomIsWhatAPlanBuys(BrowserTest):
             "/admin/plan", cookies=cookie_jar(self.context), method="POST",
             body={"user": uid, "plan": "platform"})
         self.assertEqual(status, 200, "the comp has to land before the page is read")
-        text, labels = self._buys()
+        text, labels, _topup = self._buys()
         self.assertIn("More storage", text)
         self.assertIn("Buy blocks", labels, "a paid plan still buys a mid-cycle block")
 
@@ -178,7 +188,7 @@ class TestSignedInPlansPage(BrowserTest):
             "every card has to have width, not just exist in the DOM")
         self.assert_no_page_errors()
 
-    def test_the_current_card_disables_its_cycle_without_throwing(self):
+    def test_the_current_card_offers_management_not_a_purchase(self):
         # Positive control for the crash the page above can only reach with a
         # provider configured: give planCard prices for both cycles and ask it
         # for the plan the reader already holds.
@@ -193,12 +203,137 @@ class TestSignedInPlansPage(BrowserTest):
             const cfg = {prices: {platform: {month: 'pri_m', year: 'pri_y'}}};
             const card = planCard(t, 'platform', cat, cfg);
             const cyc = Array.from(card.querySelectorAll('.cycle button'));
+            const go = Array.from(card.querySelectorAll('.buy .btn'));
             return {cycle: cyc.length,
                     cycleDisabled: cyc.every(b => b.disabled),
-                    goDisabled: Array.from(card.querySelectorAll('.btn'))
-                                  .every(b => b.disabled)};
+                    goDisabled: go.length === 0 || go.every(b => b.disabled),
+                    label: go.length ? go[0].innerText.trim() : ''};
         }""")
-        self.assertEqual(out["cycle"], 2, "both cycles are offered")
-        self.assertTrue(out["cycleDisabled"], "a held plan cannot be bought again")
-        self.assertTrue(out["goDisabled"])
+        self.assertEqual(out["cycle"], 0,
+                         "the cycle is one control above the cards, not one per card")
+        self.assertFalse(out["goDisabled"],
+                         "a held plan gets somewhere to manage it, not a dead button")
+        self.assertEqual(out["label"], "Manage your plan")
         self.assert_no_page_errors()
+
+
+class TestOneBillingControl(BrowserTest):
+    """The plans page as Chris read it on 11-10: three cards each had their own
+    Monthly/Yearly toggle, the yearly saving was never stated, and the page did
+    not remember the answer it had already been given three times.
+
+    What is asserted: exactly one control, above the cards; one press moves
+    every card; and the saving is arithmetic on the catalog's own two prices,
+    not a number someone typed next to a dollar sign.
+    """
+
+    def _open(self):
+        self.page.goto(self.host.url("/pricing"))
+        wait_until(self.page, "() => !!document.querySelector('#v-plans.on')")
+        wait_until(self.page, "() => document.querySelector('#pageplans .prcard .buy')"
+                              " !== null")
+
+    def _catalog(self):
+        return self.page.evaluate("""() => ((PLAN_CAT && PLAN_CAT.tiers) || []).map(t => (
+            {id: t.id, label: t.label || t.id,
+             month: t.list_amount_cents, year: t.list_annual_cents}))""")
+
+    def test_the_control_is_above_the_cards_and_there_is_only_one(self):
+        self._open()
+        self.assertEqual(len(self.page.query_selector_all("#pageplans .cycle")), 0,
+                         "a per-card toggle asked the same question three times")
+        before = self.page.evaluate("""() => {
+            const c = document.querySelector('#plancycle');
+            const p = document.querySelector('#pageplans');
+            return !!(c && p && (c.compareDocumentPosition(p)
+                                 & Node.DOCUMENT_POSITION_FOLLOWING));
+        }""")
+        self.assertTrue(before, "one control, above the cards it sets")
+        self.assertEqual(len(self.page.query_selector_all("#plancycle button")), 2)
+
+    def test_one_press_moves_every_card_and_the_saving_is_computed(self):
+        self._open()
+        cats = {t["label"]: t for t in self._catalog()}
+        self.page.click("#cycyear")
+        wait_until(self.page, "() => Array.from("
+                              "document.querySelectorAll('#pageplans .prcard .billed'))"
+                              ".some(b => b.innerText.trim().startsWith('billed'))")
+        seen = 0
+        for card in self.page.query_selector_all("#pageplans .prcard"):
+            label = card.query_selector(".rung").inner_text().strip()
+            tier = cats.get(label)
+            billed = card.query_selector(".billed").inner_text().strip()
+            if not tier or not tier.get("year"):
+                self.assertEqual(billed, "", "a rung with no yearly price says nothing")
+                continue
+            m, y = tier["month"], tier["year"]
+            self.assertIn("billed ${:,.2f} a year".format(y / 100), billed,
+                          "the charge in words comes from the catalog")
+            self.assertIn("Save ${:,.2f}".format((m * 12 - y) / 100),
+                          card.query_selector(".amount").inner_text(),
+                          "the saving is month*12 minus the yearly price")
+            seen += 1
+        self.assertEqual(seen, 3, "every paid rung was checked")
+
+    def test_the_choice_is_remembered_between_visits(self):
+        self._open()
+        self.page.click("#cycyear")
+        self.page.reload()
+        wait_until(self.page, "() => document.querySelector('#pageplans .prcard .billed')"
+                              " !== null")
+        self.assertEqual(self.page.get_attribute("#cycyear", "aria-pressed"), "true",
+                         "the page comes back set to what was chosen")
+        self.page.click("#cycmonth")
+        self.page.reload()
+        wait_until(self.page, "() => document.querySelector('#pageplans .prcard .billed')"
+                              " !== null")
+        self.assertEqual(self.page.get_attribute("#cycmonth", "aria-pressed"), "true")
+
+
+class TestThePlansPageTellsTheTruth(BrowserTest):
+    """Four separate sentences that were wrong on the rendered page."""
+
+    def _open(self):
+        self.page.goto(self.host.url("/pricing"))
+        wait_until(self.page, "() => document.querySelector('#pageplans .prcard .buy')"
+                              " !== null")
+
+    def test_no_doubled_about_in_front_of_a_duration(self):
+        self._open()
+        text = self.page.text_content("#pageplans")
+        self.assertNotIn("about about", text,
+                         "the template added 'about' to a value that already had it")
+        self.assertIn("minutes", text)
+
+    def test_the_rate_under_the_wallet_is_one_number(self):
+        self._open()
+        rate = self.page.inner_text("#pageratevoice").strip()
+        self.assertRegex(rate, r"^\$\d+\.\d\d per million characters$",
+                         "the rate is painted from the sale connection, not typed")
+
+    def test_a_visitor_is_offered_an_account_and_a_reader_is_not(self):
+        self._open()
+        wait_visible(self.page, "#pagesignupline")
+        self.assertFalse(self.page.is_hidden("#pagesignupline"))
+        self.register("signupline")
+        self.page.goto(self.host.url("/pricing"))
+        wait_until(self.page, "() => !!document.querySelector('#v-plans.on')")
+        wait_until(self.page, "() => document.querySelector('#pageplans .buy') !== null")
+        self.assertTrue(self.page.is_hidden("#pagesignupline"),
+                        "a reader was told to create the account they were using")
+
+    def test_the_sections_are_in_the_order_he_asked_for(self):
+        self._open()
+        tops = self.page.evaluate("""() => {
+            const at = id => { const e = document.getElementById(id);
+                               return e ? Math.round(e.getBoundingClientRect().top) : -1; };
+            const every = Array.from(document.querySelectorAll('#v-plans h3'))
+              .find(h => h.textContent.trim() === 'On every plan');
+            return {say: at('plansays'), cyc: at('plancycle'), plans: at('pageplans'),
+                    wallet: at('walletpromise'), rates: at('pagerates'),
+                    every: every ? Math.round(every.getBoundingClientRect().top) : -1};
+        }""")
+        order = [tops[k] for k in ("say", "cyc", "plans", "wallet", "rates", "every")]
+        self.assertTrue(all(v > 0 for v in order), order)
+        self.assertEqual(order, sorted(order),
+                         "intro, control, plans, voice metered, then on every plan")

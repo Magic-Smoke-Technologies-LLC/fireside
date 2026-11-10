@@ -529,11 +529,32 @@
      serif, the amount is the serif, and the flame is only ever the action. */
   /* What you are buying, said before the prices rather than in a panel after
      them: the old panel contradicted the cards by arriving late and loud. */
-  .buywhat{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;
-    margin:20px 0 6px;padding:16px 18px;border:1px solid var(--line);border-radius:14px;
-    background:var(--surface)}
-  .buywhat h3{font:600 15px/1.3 var(--ui);margin:0 0 6px;color:var(--text)}
-  .buywhat p{margin:0;color:var(--soft);font-size:14px;line-height:1.55}
+  /* One column, one width, one panel shape: the callout was narrower than the
+     panel above it and the last sections left the right half of the page
+     empty. Chris, 11-10, reading the rendered page as a stranger. */
+  .planpage{max-width:980px}
+  .plansec{margin:20px 0 0;padding:16px 18px;border:1px solid var(--line);
+    border-radius:14px;background:var(--surface)}
+  .plansec > h3{margin:0 0 6px;font:600 15px/1.3 var(--ui);color:var(--text)}
+  .plansec > p{margin:0;color:var(--soft);font-size:14px;line-height:1.55;max-width:76ch}
+  /* A heading and its paragraph on one row, so a panel of two lines does not
+     sit in a narrow column with the other half of the page blank. */
+  .planpanel{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);
+    gap:10px 28px;align-items:start}
+  .planpanel > h3{margin:0}
+  .planpanel > p{margin:0;max-width:none}
+  @media(max-width:760px){.planpanel{grid-template-columns:1fr;gap:5px}}
+  /* One billing period for the whole page, above the cards. Three toggles, one
+     per card, asked the same question three times and remembered none. */
+  #plancycle{display:flex;gap:10px;align-items:center;margin:18px 0 0;flex-wrap:wrap}
+  .cycgrp{display:inline-flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:999px}
+  .cycgrp button{border:0;background:none;color:var(--soft);font:500 13px var(--ui);
+    padding:7px 14px;border-radius:999px;cursor:pointer}
+  .cycgrp button[aria-pressed="true"]{background:var(--flame);color:var(--on-flame)}
+  #plancycle .cycnote{color:var(--faint);font-size:13px}
+  .prcard .savebadge{display:inline-block;margin-left:7px;padding:2px 8px;border-radius:999px;
+    font:600 11.5px var(--ui);color:var(--flame);border:1px solid var(--flame);vertical-align:3px}
+  .prcard .billed{color:var(--faint);font-size:13px;margin-top:3px}
   /* A rate in a table, with its qualifier beside it, instead of a number buried
      inside a paragraph that has to be re-read to find it. */
   .ratetable{border-collapse:collapse;margin-top:14px;width:100%;max-width:620px;font-size:15px}
@@ -545,9 +566,11 @@
      not rot, it is charged once per chapter, and the rate is the provider's
      plus a tenth of a cent a thousand. It used to be fine print under the
      rate table, which is where a promise goes to be missed. */
-  .walletpromise{margin:20px 0 6px;padding:16px 20px 18px;max-width:720px;
+  .walletpromise{margin:20px 0 6px;padding:16px 20px 18px;
     border:1px solid var(--line);border-left:4px solid var(--flame);border-radius:12px;
     background:var(--surface)}
+  .walletpromise .wpact{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .walletpromise .wpact .hint{margin:0}
   .walletpromise .wpk{margin:0 0 7px;color:var(--flame);font:600 11.5px var(--ui);
     letter-spacing:.14em;text-transform:uppercase}
   .walletpromise .wplead{margin:0;color:var(--text);font:600 19px/1.4 var(--ui);letter-spacing:-.005em}
@@ -577,10 +600,6 @@
   .prcard .btn{width:100%;text-align:center;padding:10px 14px;font-size:14px}
   /* One thing to press. The yearly price used to be a second button under
      Subscribe, which read as two products instead of one plan sold two ways. */
-  .prcard .cycle{display:flex;gap:6px;margin-bottom:8px}
-  .prcard .cycle button{flex:1 1 0;padding:7px 8px;border:1px solid var(--line);border-radius:999px;
-    background:none;color:var(--soft);font:500 12.5px var(--ui);cursor:pointer;white-space:nowrap}
-  .prcard .cycle button[aria-pressed="true"]{border-color:var(--flame);color:var(--text)}
   .prlist{list-style:none;padding:0;margin:12px 0 0;color:var(--soft);font-size:14.5px;line-height:1.6}
   .prlist li{padding:9px 0;border-top:1px solid var(--line)}
   .prlist b{color:var(--text);font-weight:600}
@@ -1437,35 +1456,24 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
        script runs; loadPlansPage replaces them with the live catalog and the
        provider's own prices, so nothing here can drift from what charges. -->
   <section class="view" id="v-plans">
+   <div class="planpage">
     <h2 data-t="Pricing">Pricing</h2>
     <p class="sub" data-t="fireside turns the books and web stories you already have into audio you can listen to, in the browser or in the app. You bring the book; we render it and stream it back.">fireside turns the books and web stories you already have into audio you can listen to, in the browser or in the app. You bring the book; we render it and stream it back.</p>
-    <p class="sub" id="pagesignupline" style="margin-top:10px"><span data-t="New here?">New here?</span> <button class="btn quiet" id="pagesignup" type="button" data-t="Create a free account">Create a free account</button> <span data-t="No card needed.">No card needed.</span></p>
+    <p class="sub" id="pagesignupline" hidden style="margin-top:10px"><span data-t="New here?">New here?</span> <button class="btn quiet" id="pagesignup" type="button" data-t="Create a free account">Create a free account</button> <span data-t="No card needed.">No card needed.</span></p>
 
-    <div class="buywhat" id="buywhat">
-      <div>
-        <h3 data-t="A plan buys the reader">A plan buys the reader</h3>
-        <p data-t="This server, the app, your shelf and your storage. Import an EPUB or a story link, split it into chapters, follow along as it reads, resume on any device.">This server, the app, your shelf and your storage. Import an EPUB or a story link, split it into chapters, follow along as it reads, resume on any device.</p>
-      </div>
-      <div>
-        <h3 data-t="The voice is metered separately">The voice is metered separately</h3>
-        <p data-t="Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or add dollars to your wallet and our voice reads to you at the standard rate below. A paid plan already includes some wallet credit each month.">Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or add dollars to your wallet and our voice reads to you at the standard rate below. A paid plan already includes some wallet credit each month.</p>
-      </div>
+    <div class="plansec planpanel" id="plansays">
+      <h3 data-t="A plan buys the platform">A plan buys the platform</h3>
+      <p data-t="This server, the app, your shelf and your storage. Import an EPUB or a story link, split it into chapters, follow along as it reads, resume on any device.">This server, the app, your shelf and your storage. Import an EPUB or a story link, split it into chapters, follow along as it reads, resume on any device.</p>
     </div>
 
-    <div class="walletpromise" id="walletpromise">
-      <p class="wpk" data-t="Your wallet">Your wallet</p>
-      <p class="wplead" data-t="Wallet dollars never expire and are used to pay for services on the platform.">Wallet dollars never expire and are used to pay for services on the platform.</p>
-      <p class="wpbody" data-t="Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.">Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.</p>
+    <div id="plancycle">
+      <span class="cycnote" data-t="Pay">Pay</span>
+      <div class="cycgrp" role="group" aria-label="Billing period" data-t-aria="Billing period">
+        <button type="button" id="cycmonth" aria-pressed="true" data-t="Monthly">Monthly</button>
+        <button type="button" id="cycyear" aria-pressed="false" data-t="Yearly">Yearly</button>
+      </div>
+      <span class="cycnote" id="cycnote"></span>
     </div>
-
-    <h3 style="margin-top:8px" data-t="On every plan">On every plan</h3>
-    <ul class="prlist twocol">
-      <li data-t="Pay once per chapter, then listen for free, forever. A chapter you have already voiced stays voiced; replaying it next year costs no characters. You are charged for new text, not for listening.">Pay once per chapter, then listen for free, forever. A chapter you have already voiced stays voiced; replaying it next year costs no characters. You are charged for new text, not for listening.</li>
-      <li data-t="Import what you already have. An EPUB, or a link to a story page. Chapters split themselves and keep their order.">Import what you already have. An EPUB, or a link to a story page. Chapters split themselves and keep their order.</li>
-      <li data-t="Follow along. The page and the voice stay together, with the current sentence highlighted as it is read.">Follow along. The page and the voice stay together, with the current sentence highlighted as it is read.</li>
-      <li data-t="Say names right. A pronunciation dictionary per book or for your whole library.">Say names right. A pronunciation dictionary per book or for your whole library.</li>
-      <li data-t="Resume anywhere. Your position follows you between the browser and the installed app, per book.">Resume anywhere. Your position follows you between the browser and the installed app, per book.</li>
-    </ul>
 
     <div class="pricegrid" id="pageplans">
       <div class="prcard">
@@ -1480,8 +1488,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       </div>
       <div class="prcard">
         <div class="rung" data-t="Reader">Reader</div>
-        <div class="amount">$3</div>
-        <div class="yearly" data-t="a month, or $36 a year">a month, or $36 a year</div>
+        <div class="amount">$5</div>
         <ul>
           <li data-t="50,000 characters a month, about 45 minutes">50,000 characters a month, about 45 minutes</li>
           <li data-t="2 GB of storage">2 GB of storage</li>
@@ -1490,8 +1497,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       </div>
       <div class="prcard">
         <div class="rung" data-t="Listener">Listener</div>
-        <div class="amount">$8</div>
-        <div class="yearly" data-t="a month, or $96 a year">a month, or $96 a year</div>
+        <div class="amount">$10</div>
         <ul>
           <li data-t="250,000 characters a month, about 3 hours 45 minutes">250,000 characters a month, about 3 hours 45 minutes</li>
           <li data-t="5 GB of storage">5 GB of storage</li>
@@ -1500,8 +1506,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       </div>
       <div class="prcard">
         <div class="rung" data-t="Studio">Studio</div>
-        <div class="amount">$20</div>
-        <div class="yearly" data-t="a month, or $240 a year">a month, or $240 a year</div>
+        <div class="amount">$22</div>
         <ul>
           <li data-t="1,000,000 characters a month, about 15 hours">1,000,000 characters a month, about 15 hours</li>
           <li data-t="10 GB of storage">10 GB of storage</li>
@@ -1512,28 +1517,48 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
 
     <div id="pagebuys" hidden></div>
 
-    <h3 style="margin-top:34px" data-t="Run it yourself, free">Run it yourself, free</h3>
-    <p class="sub" data-t="fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.">fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.</p>
-    <p class="sub" style="margin-top:10px" data-t="Want a voice that costs nothing per character? Run Kokoro on your own machine and connect it. It takes one command, one certificate, and one field in Settings.">Want a voice that costs nothing per character? Run Kokoro on your own machine and connect it. It takes one command, one certificate, and one field in Settings.</p>
-    <p style="margin-top:10px"><a class="btn quiet" href="/kokoro" data-t="How to set up Kokoro →">How to set up Kokoro →</a></p>
+    <h3 style="margin-top:34px" data-t="The voice is metered separately">The voice is metered separately</h3>
+    <p class="sub" data-t="Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or add dollars to your wallet and our voice reads to you at the standard rate below. A paid plan already includes some wallet credit each month.">Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or add dollars to your wallet and our voice reads to you at the standard rate below. A paid plan already includes some wallet credit each month.</p>
 
-    <h3 style="margin-top:34px" data-t="Narration, bought on its own">Narration, bought on its own</h3>
-    <table class="ratetable">
-      <tr><th data-t="Our voice">Our voice</th><td><b data-t="$19.63 per million characters">$19.63 per million characters</b>
-        <span data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
+    <div class="walletpromise" id="walletpromise">
+      <p class="wpk" data-t="Your wallet">Your wallet</p>
+      <p class="wplead" data-t="Wallet dollars never expire and are used to pay for services on the platform.">Wallet dollars never expire and are used to pay for services on the platform.</p>
+      <p class="wpbody" data-t="Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.">Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.</p>
+      <div class="wpact" id="wpact"></div>
+    </div>
+
+    <table class="ratetable" id="pagerates">
+      <tr><th data-t="Our voice">Our voice</th><td><b id="pageratevoice" data-t="$19.63 per million characters">$19.63 per million characters</b>
+        <span id="pageratehours" data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
       <tr><th data-t="Your own Azure key">Your own Azure key</th><td><b data-t="No platform cost">No platform cost</b>
         <span data-t="your text goes to Microsoft under your account and Azure bills you">your text goes to Microsoft under your account and Azure bills you</span></td></tr>
       <tr><th data-t="Your own voice server">Your own voice server</th><td><b data-t="No platform cost, on hardware you already own">No platform cost, on hardware you already own</b>
         <span data-t="run Kokoro or any OpenAI-compatible speech server on your own machine and connect it under Settings, Voice servers. Your hardware, your electricity.">run Kokoro or any OpenAI-compatible speech server on your own machine and connect it under Settings, Voice servers. Your hardware, your electricity.</span></td></tr>
     </table>
 
+    <div class="plansec planpanel" style="margin-top:34px">
+      <h3 data-t="On every plan">On every plan</h3>
+      <ul class="prlist twocol">
+        <li data-t="Pay once per chapter, then listen for free, forever. A chapter you have already voiced stays voiced; replaying it next year costs no characters. You are charged for new text, not for listening.">Pay once per chapter, then listen for free, forever. A chapter you have already voiced stays voiced; replaying it next year costs no characters. You are charged for new text, not for listening.</li>
+        <li data-t="Import what you already have. An EPUB, or a link to a story page. Chapters split themselves and keep their order.">Import what you already have. An EPUB, or a link to a story page. Chapters split themselves and keep their order.</li>
+        <li data-t="Follow along. The page and the voice stay together, with the current sentence highlighted as it is read.">Follow along. The page and the voice stay together, with the current sentence highlighted as it is read.</li>
+        <li data-t="Say names right. A pronunciation dictionary per book or for your whole library.">Say names right. A pronunciation dictionary per book or for your whole library.</li>
+        <li data-t="Resume anywhere. Your position follows you between the browser and the installed app, per book.">Resume anywhere. Your position follows you between the browser and the installed app, per book.</li>
+      </ul>
+    </div>
 
+    <h3 style="margin-top:34px" data-t="Run it yourself, free">Run it yourself, free</h3>
+    <p class="sub" data-t="fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.">fireside is open-source software. Run the server on your own machine, point it at your own speech provider key, and you pay nobody for the software.</p>
+    <p class="sub" style="margin-top:10px" data-t="Want a voice that costs nothing per character? Run Kokoro on your own machine and connect it. It takes one command, one certificate, and one field in Settings.">Want a voice that costs nothing per character? Run Kokoro on your own machine and connect it. It takes one command, one certificate, and one field in Settings.</p>
+    <p style="margin-top:10px"><a class="btn quiet" href="/kokoro" data-t="How to set up Kokoro →">How to set up Kokoro →</a></p>
 
     <h3 style="margin-top:34px" data-t="Questions, refunds, cancellations">Questions, refunds, cancellations</h3>
     <p class="sub">Write to <a href="mailto:__CONTACT__">__CONTACT__</a>. Refund and cancellation terms are in the <a href="/terms" data-t="terms of service">terms of service</a>; what we collect is in the <a href="/privacy" data-t="privacy policy">privacy policy</a>.</p>
     <p class="small">fireside is operated by __COMPANY__.</p>
 
     <p class="sub" id="pageplanmsg" style="margin-top:16px"></p>
+   </div>
+
   </section>
   <div class="err" id="err"></div>
   <audio id="audio" preload="metadata"></audio>
@@ -1961,6 +1986,13 @@ async function applyRoute() {
   APPLYING_ROUTE = true;
   try {
     const parts = decodeURIComponent((location.hash || '').replace(/^#\/?/, '')).split('/').filter(Boolean);
+    // /pricing is the canonical price list. A stranger who typed /#/plans got
+    // the door and the landing copy while /pricing showed them the actual
+    // prices, so the same page had two addresses that disagreed. Send them to
+    // the one a payment processor reviews. Chris, 11-10.
+    if (!AUTH.user && parts[0] === 'plans' && !publicPricing()) {
+      location.replace('/pricing'); return;
+    }
     const v = VIEW_OF[parts[0]] || 'lib';
     if (v === 'play' && parts[1]) {
       const id = parts.slice(1).join('/');
@@ -3441,20 +3473,35 @@ async function confirmCheckout(ref) {
 // the numbers the server grants: credit per period and storage, then the ladder
 // (each rung is everything below it), and always the voice caveat. A tier with
 // no credit says so instead of printing "$0.00".
-// Narration costs about $19.63 per million characters, so a dollar buys roughly
-// those characters; the hours line is the same arithmetic said in listening time.
+// The narration rate is one number, read from the sale connection when there is
+// one and from the published list price before that. It was typed into three
+// places: the landing page, the plans table, and the credit-to-hours arithmetic.
+// The published value is the fallback, not the truth.
+const RATE_LIST = 19.63;
+function ratePer1m() { return WRATE > 0 ? WRATE : RATE_LIST; }
+function rateText() { return '$' + ratePer1m().toFixed(2) + ' per million characters'; }
+// The duration, with no 'about' in it: a message that adds its own 'about'
+// printed 'about about 46 minutes' on every paid card.
 function creditTime(usd) {
-  const chars = usd / 19.63 * 1_000_000;
+  const chars = usd / ratePer1m() * 1_000_000;
   const mins = Math.round(chars / 66000 * 60);
   if (!mins) return '';
-  return mins < 90 ? 'about ' + mins + ' minutes' : 'about ' + (mins / 60).toFixed(1) + ' hours';
+  return mins < 90 ? mins + ' minutes' : (mins / 60).toFixed(1) + ' hours';
+}
+// Paint the rate where it is read: the door's table and the plans table are the
+// same number, so neither can drift from the other or from what charges.
+function paintRates() {
+  const all = document.querySelectorAll('.rate[data-t], #pageratevoice');
+  all.forEach(el => { el.textContent = rateText(); });
+  const hrs = $('#pageratehours');
+  if (hrs) hrs.textContent = T('about {x} of listening', { x: creditTime(ratePer1m()) || '' });
 }
 function planBullets(t, lower) {
   const out = [];
   if (t.included_usd) {
     const span = creditTime(t.included_usd);
     out.push(money(t.included_usd) + ' of credit a month'
-      + (span ? ' (' + span + ' of listening)' : '') + ', and it rolls over');
+      + (span ? ' (' + T('about {x} of listening', { x: span }) + ')' : '') + ', and it rolls over');
   } else {
     out.push('No credit included: add money, or bring your own Azure key');
   }
@@ -3499,48 +3546,68 @@ function paddlePriceId(cfg, id, cycle) {
   const row = (cfg && cfg.prices && cfg.prices[id]) || {};
   return (cycle === 'year' ? row.year : row.month) || '';
 }
-function planCard(t, plan, cat, cfg) {
+// The cycle is one choice for the page, remembered between visits: three
+// toggles, one per card, asked the same question three times and stored none
+// of the answers. Chris, 11-10.
+const CYCLE_KEY = 'fireside.cycle';
+function readCycle() {
+  try { return localStorage.getItem(CYCLE_KEY) === 'year' ? 'year' : 'month'; }
+  catch (e) { return 'month'; }
+}
+function writeCycle(c) {
+  try { localStorage.setItem(CYCLE_KEY, c === 'year' ? 'year' : 'month'); } catch (e) {}
+}
+function planCard(t, plan, cat, cfg, cycle) {
   const free = t.id === 'free';
-  const isCurrent = t.id === plan;
+  const isCurrent = !!plan && t.id === plan;
+  const cyc = cycle === 'year' ? 'year' : 'month';
   const card = document.createElement('div');
   card.className = 'prcard' + (isCurrent ? ' on current' : '');
   const rung = document.createElement('div'); rung.className = 'rung';
   rung.textContent = t.label || t.id; card.append(rung);
   if (isCurrent) {
-    const badge = document.createElement('div'); badge.className = 'nowbadge'; badge.textContent = T('Your plan');
-    card.append(badge);
+    const nb = document.createElement('div'); nb.className = 'nowbadge';
+    nb.textContent = T('Your plan'); card.append(nb);
   }
 
-  // The big number follows the cycle that is switched on, because $5 a month
-  // and $36 a year are the same card and the reader should not have to do the
-  // arithmetic to compare them.
-  const amount = document.createElement('div'); amount.className = 'amount';
   const cents = shownCents(t);
   const annual = t.list_annual_cents;
-  const paintAmount = (cycle) => {
-    amount.textContent = '';
+  // The saving is computed from the two prices. A typed $24 is a fact about the
+  // price list on the day someone typed it, and this page is the one that has
+  // to stay true after the prices move.
+  const save = (!free && annual != null && cents != null && cents > 0)
+    ? Math.max(0, cents * 12 - annual) : 0;
+
+  const amount = document.createElement('div'); amount.className = 'amount';
+  const billed = document.createElement('div'); billed.className = 'billed';
+  const paint = () => {
+    amount.textContent = ''; billed.textContent = '';
     if (free) { amount.textContent = '$0'; return; }
-    if (cycle === 'year' && annual != null) {
-      amount.textContent = usd(annual);
-      const per = document.createElement('span'); per.textContent = ' ' + T('/ year');
-      amount.append(per); return;
+    if (cyc === 'year' && annual != null) {
+      // Yearly shows the per-month figure the other cards show, with the actual
+      // charge said underneath, so the columns stay comparable.
+      amount.textContent = usd(Math.round(annual / 12));
+      const per = document.createElement('span'); per.textContent = ' ' + T('/ month');
+      amount.append(per);
+      if (save > 0) {
+        const sg = document.createElement('b'); sg.className = 'savebadge';
+        sg.textContent = T('Save {x}', { x: usd(save) }); amount.append(sg);
+      }
+      billed.textContent = T('billed {x} a year', { x: usd(annual) });
+      return;
     }
     amount.textContent = cents == null ? T('price not set') : usd(cents);
     if (cents != null) {
       const per = document.createElement('span'); per.textContent = ' ' + T('/ month');
       amount.append(per);
     }
+    if (annual != null && save > 0) {
+      billed.textContent = T('Yearly: {x} a month, save {y}',
+                             { x: usd(Math.round(annual / 12)), y: usd(save) });
+    }
   };
-  paintAmount('month');
-  card.append(amount);
-
-  const yearly = document.createElement('div'); yearly.className = 'yearly';
-  if (free) yearly.textContent = T('no card, no expiry');
-  else if (annual != null) {
-    const perMonth = Math.round(annual / 12);
-    yearly.textContent = T('or {x} a year, {y} a month', {x: usd(annual), y: usd(perMonth)});
-  }
-  card.append(yearly);
+  paint();
+  card.append(amount, billed);
 
   // What the rung includes, built from the catalog, so the numbers on the card
   // are the numbers the server grants.
@@ -3556,8 +3623,8 @@ function planCard(t, plan, cat, cfg) {
   const lower = lowerTierLabel(t);
   if (t.included_usd) {
     const span = creditTime(t.included_usd);
-    line((span ? T('about {x} of listening', {x: span}) + ', ' : '') + T('and it rolls over'),
-         T('{x} of credit a month', {x: money(t.included_usd)}));
+    line((span ? T('about {x} of listening', { x: span }) + ', ' : '') + T('and it rolls over'),
+         T('{x} of credit a month', { x: money(t.included_usd) }));
   } else {
     line(T('Narration bought separately, or with your own Azure key'));
   }
@@ -3566,62 +3633,26 @@ function planCard(t, plan, cat, cfg) {
   card.append(ul);
 
   const buy = document.createElement('div'); buy.className = 'buy';
-  if (free) {
+  const button = (label, disabled, onclick) => {
     const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
-    b.textContent = AUTH.user ? T('Use the free plan') : T('Create a free account');
-    b.disabled = !!AUTH.user && t.id === plan;
-    if (!b.disabled) b.onclick = () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
-    buy.append(b);
+    b.textContent = label; if (disabled) b.disabled = true; if (onclick) b.onclick = onclick;
+    buy.append(b); return b;
+  };
+  if (free) {
+    // The plan you hold is a state, not an offer. Signed out this is the way in.
+    if (isCurrent) button(T('Your plan'), true);
+    else button(AUTH.user ? T('Use the free plan') : T('Create a free account'), false,
+                () => openDoor(AUTH.hasAccounts ? 'sign' : 'create'));
+  } else if (isCurrent) {
+    button(T('Manage your plan'), false, () => { show('set'); setSetTab('billing'); });
   } else {
-    // One plan, sold two ways, so there is one thing to press. The cycle is a
-    // choice above it; the button says the price of the choice that is on,
-    // instead of two stacked buttons that read as two products.
-    const can = cycle => !!paddlePriceId(cfg, t.id, cycle)
-      || !!(cat && cat.payments_configured);
-    const cycles = [{ c: 'month', label: T('Monthly'), ready: can('month'),
-                      btn: cents == null ? T('Subscribe')
-                        : T('Subscribe, {x} a month', { x: usd(cents) }) }];
-    if (t.list_annual_cents != null) {
-      cycles.push({ c: 'year', label: T('Yearly'), ready: can('year'),
-                    btn: T('Subscribe, {x} a year', { x: usd(t.list_annual_cents) }) });
-    }
-    const offer = cycles.filter(x => x.ready);
-    if (!offer.length) {
-      const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
-      b.textContent = T('Not for sale yet'); b.disabled = true; buy.append(b);
-    } else {
-      let pick = offer[0];
-      const go = document.createElement('button');
-      go.className = 'btn'; go.type = 'button';
-      const paint = () => { go.textContent = pick.btn; go.onclick = () => buyPlan(t.id, pick.c); };
-      // Declared outside the branch: the current-plan path below disables the
-      // cycle buttons, and a const scoped to the if-statement is not there to
-      // reach. It threw for the signed-in plan's own card, which killed the
-      // forEach in loadPlansPage, so that card and every card after it vanished.
-      let bar = null;
-      if (offer.length > 1) {
-        bar = document.createElement('div'); bar.className = 'cycle';
-        bar.setAttribute('role', 'group');
-        bar.setAttribute('aria-label', T('How you pay'));
-        offer.forEach(o => {
-          const b = document.createElement('button'); b.type = 'button';
-          b.textContent = o.label; b.setAttribute('aria-pressed', o === pick ? 'true' : 'false');
-          b.disabled = isCurrent;
-          b.onclick = () => { pick = o; paintAmount(o.c);
-            bar.querySelectorAll('button').forEach(x =>
-              x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
-            paint(); };
-          bar.append(b);
-        });
-        buy.append(bar);
-      }
-      paint(); paintAmount(pick.c);
-      if (isCurrent) {
-        go.disabled = true;
-        bar && bar.querySelectorAll('button').forEach(x => { x.disabled = true; });
-      }
-      buy.append(go);
-    }
+    const can = c => !!paddlePriceId(cfg, t.id, c) || !!(cat && cat.payments_configured);
+    const chosen = can(cyc) ? cyc : (can('month') ? 'month' : (can('year') ? 'year' : ''));
+    if (!chosen) button(T('Not for sale yet'), true);
+    else if (chosen === 'year') button(T('Subscribe, {x} a year', { x: usd(annual) }), false,
+                                       () => buyPlan(t.id, 'year'));
+    else button(cents == null ? T('Subscribe') : T('Subscribe, {x} a month', { x: usd(cents) }),
+                false, () => buyPlan(t.id, 'month'));
   }
   card.append(buy);
   return card;
@@ -3716,36 +3747,6 @@ function renderPageBuys(box, s, cat, cfg) {
   const note = (el, text) => { el.textContent = text; };
   const msg = document.createElement('div'); msg.className = 'sub'; msg.style.marginTop = '8px';
 
-  const funds = document.createElement('section');
-  const h = document.createElement('h3'); h.style.marginTop = '34px'; h.textContent = T('Add funds');
-  const p = document.createElement('p'); p.className = 'sub';
-  p.textContent = T('Dollars in the wallet pay for narration, at the rate below. They do not expire. A plan already grants some each period.');
-  const row = document.createElement('div');
-  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap';
-  funds.append(h, p, row);
-  const usdToBuy = (usd) => async () => {
-    note(msg, T('Opening the payment page\u2026'));
-    try {
-      const r = await jpostIdem('/credits/purchase',
-        { usd: Number(usd), return_url: location.origin + location.pathname });
-      if (r.url) { location.href = r.url; return; }
-      note(msg, '+' + nchar(r.chars) + ' characters. Reference ' + r.reference + '.');
-    } catch (e) {
-      note(msg, e.status === 503 ? T('Buying is not switched on yet, so nothing was charged.')
-        : (e.message || 'could not add funds'));
-    }
-  };
-  if (!can) {
-    const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
-    b.textContent = T('Not for sale yet'); b.disabled = true; row.append(b);
-  } else {
-    const inp = document.createElement('input'); inp.type = 'number'; inp.min = '1';
-    inp.value = '5'; inp.style.maxWidth = '100px';
-    const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
-    b.textContent = T('Add funds'); b.onclick = () => usdToBuy(Math.max(1, parseFloat(inp.value || '0')))();
-    row.append(inp, b);
-  }
-
   // Storage is the one thing a plan buys and the wallet does not. Chris, 11-09:
   // a free account may fund the wallet and spend it on narration, but room on
   // the shelf is the reason to move up. So free gets a door to the plans and no
@@ -3782,10 +3783,31 @@ function renderPageBuys(box, s, cat, cfg) {
     b.onclick = () => startCheckout({ plan: st.addon, quantity: Math.max(1, parseInt(inp.value || '1', 10)) }, msg);
     row2.append(inp, b);
   }
-  box.append(funds, room, msg);
+  box.append(room, msg);
 }
 async function loadPlansPage() {
   const box = $('#pageplans'); if (!box) return;
+  const cyc = readCycle();
+  // The one billing control, painted from the same stored choice the cards read:
+  // the page is set to a cycle once and both say the same thing.
+  const paintCycle = c => {
+    const m = $('#cycmonth'), y = $('#cycyear');
+    if (m) m.setAttribute('aria-pressed', c === 'month' ? 'true' : 'false');
+    if (y) y.setAttribute('aria-pressed', c === 'year' ? 'true' : 'false');
+    const note = $('#cycnote');
+    if (note) note.textContent = c === 'year'
+      ? T('one charge a year, same shelf and wallet') : T('charged monthly, cancel any time');
+  };
+  const setCycle = c => {
+    writeCycle(c);
+    paintCycle(c);
+    const plan = AUTH.user ? (CURRENT_PLAN || 'free') : '';
+    box.innerHTML = '';
+    ((PLAN_CAT && PLAN_CAT.tiers) || []).forEach(t => box.append(planCard(t, plan, PLAN_CAT, BILL_CFG, c)));
+  };
+  paintCycle(cyc);
+  if ($('#cycmonth')) $('#cycmonth').onclick = () => setCycle('month');
+  if ($('#cycyear')) $('#cycyear').onclick = () => setCycle('year');
   let s = {}, cat = null, cfg = null;
   // The page is public. Do not ask for /storage unless there is a session: it
   // answers 401 when logged out, and a 401 makes api() re-lock the page, which
@@ -3795,9 +3817,11 @@ async function loadPlansPage() {
   try { cfg = await billingConfig(true) || {}; } catch (e) {}
   if (cat) PLAN_CAT = cat;
   const plan = AUTH.user ? (s.plan || 'free') : '';
+  CURRENT_PLAN = plan;
   box.innerHTML = '';
-  ((cat && cat.tiers) || []).forEach(t => box.append(planCard(t, plan, cat, cfg)));
+  ((cat && cat.tiers) || []).forEach(t => box.append(planCard(t, plan, cat, cfg, cyc)));
   if (!cat || !cat.tiers) box.textContent = T('Could not load the plans just now.');
+  paintRates();
   // Buying all lives here now: the plan, the wallet, the storage. The settings
   // page no longer sells anything, so this is the one place a returning reader
   // can add dollars or room without hunting through Account.
@@ -3807,8 +3831,13 @@ async function loadPlansPage() {
     buys.hidden = !AUTH.user;
     if (AUTH.user) renderPageBuys(buys, s, cat, cfg);
   }
+  // The visitor line is for visitors. Signed in it was hidden by script, which
+  // meant a reader whose page failed one step earlier still got told to create
+  // an account they already had. It ships hidden and is shown only for a
+  // stranger. Chris, 11-10.
   const sl = $('#pagesignupline');
-  if (sl) sl.style.display = AUTH.user ? 'none' : '';
+  if (sl) sl.hidden = !!AUTH.user;
+  renderWalletAction();
   const msg = $('#pageplanmsg');
   if (!msg) return;
   if (cfg && cfg.ok && cfg.env && cfg.env !== 'production') {
@@ -3821,6 +3850,40 @@ async function loadPlansPage() {
     msg.textContent = (cat && cat.payments_configured)
       ? '' : T('Payments are not switched on yet, so a paid purchase cannot complete. You can still create a free account, and the prices are the real shape.');
   }
+}
+// The wallet callout used to explain the wallet and offer no way to use it.
+// Signed in, one button, the minimum load; signed out, the sentence that says
+// when it becomes available.
+let CURRENT_PLAN = '';
+function renderWalletAction() {
+  const act = $('#wpact'); if (!act) return;
+  act.innerHTML = '';
+  if (!AUTH.user) {
+    const h = document.createElement('p'); h.className = 'hint';
+    h.textContent = T('You can add funds once you have an account, from this page.');
+    act.append(h); return;
+  }
+  const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
+  b.textContent = T('Add {x} to the wallet', { x: '$5' });
+  const m = document.createElement('p'); m.className = 'hint';
+  b.onclick = async () => {
+    b.disabled = true;
+    m.textContent = T('Opening the payment page\u2026');
+    try {
+      const r = await jpostIdem('/credits/purchase',
+        { usd: 5, return_url: location.origin + location.pathname });
+      if (r.url) { location.href = r.url; return; }
+      m.textContent = '+' + nchar(r.chars) + ' characters. Reference ' + r.reference + '.';
+      b.disabled = false;
+    } catch (e) {
+      b.disabled = false;
+      m.textContent = e.status === 503
+        ? T('Buying is not switched on yet, so nothing was charged.')
+        : (e.message || 'could not add funds');
+    }
+  };
+  m.textContent = T('The minimum top-up is $5.');
+  act.append(b, m);
 }
 if ($('#pagesignup')) $('#pagesignup').onclick = () => openDoor(AUTH.hasAccounts ? 'sign' : 'create');
 if ($('#gotopplans')) $('#gotopplans').onclick = () => show('plans');
