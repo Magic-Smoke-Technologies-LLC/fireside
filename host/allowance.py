@@ -14,11 +14,29 @@ The grant is a top-up, not an allowance that expires: it lands in the balance
 and rolls, so a reader who skips a month does not lose the money.
 """
 
+import time
+
 from host import accounting, billing, quota
 
 
 def _entry_id(user_id, period_end):
     return "allowance:%s:%s" % (user_id, int(period_end or 0))
+
+
+def _note(period_end):
+    """What the wallet row says. Never print a raw epoch, and never print a
+    zero: a subscription with no period end is a comp or a sandbox row, and
+    "period ending 0" is a number the reader cannot do anything with. Chris,
+    2026-11-10, read exactly that on his own wallet page and did not know what
+    the row was."""
+    try:
+        ts = int(float(period_end or 0))
+    except (TypeError, ValueError):
+        ts = 0
+    if ts <= 0:
+        return "included with your plan"
+    return "included with your plan, this period ends %s" % time.strftime(
+        "%d %b %Y", time.gmtime(ts))
 
 
 def welcome(conn, user_id):
@@ -89,7 +107,7 @@ def due(conn, user_id):
     try:
         accounting.topup(conn, user_id, amount,
                          currency=cur, entry_id=eid,
-                         note="included with your plan, period ending %s" % period_end)
+                         note=_note(period_end))
     except Exception:
         # A concurrent request won the same primary key; the ledger already has
         # this period's row, so this caller owes nothing.

@@ -96,6 +96,30 @@ class AllowanceTest(unittest.TestCase):
     def test_no_subscription(self):
         self.assertEqual(allowance.due(self.conn, self.uid), 0)
 
+
+    def test_the_note_names_a_date_not_an_epoch(self):
+        """Chris, 11-10: his own wallet row read "period ending 0".
+
+        The row is written once and read for months, so the note is the thing a
+        person sees long after the code that made it is gone. It has to be a
+        sentence with a date in it, never a raw period end, and never a zero
+        dressed up as one.
+        """
+        end = int(time.time()) + 20 * 86400
+        billing.upsert(self.conn, self.uid, quota.PLATFORM_PLAN, "active",
+                       current_period_end=end)
+        allowance.due(self.conn, self.uid)
+        notes = [r["note"] for r in accounting.ledger_entries(self.conn, self.uid)]
+        self.assertEqual(len(notes), 1, notes)
+        self.assertIn("this period ends", notes[0])
+        self.assertNotIn(str(end), notes[0])
+        self.assertRegex(notes[0], r"this period ends \d\d [A-Z][a-z]{2} \d{4}")
+
+    def test_no_period_end_does_not_invent_a_zero(self):
+        self.assertEqual(allowance._note(0), "included with your plan")
+        self.assertEqual(allowance._note(None), "included with your plan")
+        self.assertEqual(allowance._note(""), "included with your plan")
+
     def test_unknown_user_is_harmless(self):
         self.assertEqual(allowance.due(self.conn, "nobody"), 0)
 
@@ -162,6 +186,30 @@ class WelcomeGrantTest(unittest.TestCase):
                        current_period_end=int(time.time()) + 20 * 86400)
         self.assertEqual(allowance.welcome(self.conn, other), 0)
         self.assertEqual(accounting.currency(self.conn, other), "chars")
+
+
+    def test_the_note_names_a_date_not_an_epoch(self):
+        """Chris, 11-10: his own wallet row read "period ending 0".
+
+        The row is written once and read for months, so the note is the thing a
+        person sees long after the code that made it is gone. It has to be a
+        sentence with a date in it, never a raw period end, and never a zero
+        dressed up as one.
+        """
+        end = int(time.time()) + 20 * 86400
+        billing.upsert(self.conn, self.uid, quota.PLATFORM_PLAN, "active",
+                       current_period_end=end)
+        allowance.due(self.conn, self.uid)
+        notes = [r["note"] for r in accounting.ledger_entries(self.conn, self.uid)]
+        self.assertEqual(len(notes), 1, notes)
+        self.assertIn("this period ends", notes[0])
+        self.assertNotIn(str(end), notes[0])
+        self.assertRegex(notes[0], r"this period ends \d\d [A-Z][a-z]{2} \d{4}")
+
+    def test_no_period_end_does_not_invent_a_zero(self):
+        self.assertEqual(allowance._note(0), "included with your plan")
+        self.assertEqual(allowance._note(None), "included with your plan")
+        self.assertEqual(allowance._note(""), "included with your plan")
 
     def test_unknown_user_is_harmless(self):
         self.assertEqual(allowance.welcome(self.conn, "nobody"), 0)

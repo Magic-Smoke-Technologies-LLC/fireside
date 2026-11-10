@@ -583,6 +583,18 @@
     "＋ Add a voice server": "＋ Add a voice server",
     "＋ Add a word": "＋ Add a word",
     "＋ Create series…": "＋ Create series…",
-    "＋ Queue": "＋ Queue"
+    "＋ Queue": "＋ Queue",
+    "Wallet activity": "Wallet activity",
+    "Rows tagged Plan are the narration your plan includes. Nothing was charged for them. Card rows are money you added.": "Rows tagged Plan are the narration your plan includes. Nothing was charged for them. Card rows are money you added.",
+    "Included with your plan": "Included with your plan",
+    "Welcome credit": "Welcome credit",
+    "Change": "Change",
+    "Card": "Card",
+    "Spent": "Spent",
+    "Hold": "Hold",
+    "Refund": "Refund",
+    "Narration": "Narration",
+    "Narration, over the estimate we held": "Narration, over the estimate we held",
+    "estimate {e}, final {f}": "estimate {e}, final {f}"
   }
 }
