@@ -22,14 +22,14 @@
     --flame:#e3a857; --on-flame:#241808; --ready:#9bb58f; --warn:#e2917f;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
     --ui:system-ui,-apple-system,"Segoe UI",sans-serif;
-    --ring:var(--flame);
+    --ring:var(--flame); --doorglow:#241c13;
   }
   /* Light: paper, not a washed-out dark theme. */
   [data-theme="light"], :root[data-theme="light"]{
     --bg:#f7f3ec; --surface:#fffdf8; --raise:#efe9df; --line:#d3c9b9;
     --text:#221e1a; --soft:#57503f; --faint:#6f6759;
     --flame:#8a5a12; --on-flame:#fff8ec; --ready:#2f6b3a; --warn:#9c3527;
-    --ring:#8a5a12;
+    --ring:#8a5a12; --doorglow:#f0e5d2;
   }
   /* Colour-vision safe. Ready and warn sit on the axis deuteranopes and
      protanopes keep (blue against purple) instead of the green/red pair that
@@ -47,7 +47,7 @@
     --bg:#0e1116; --surface:#161b22; --raise:#1f262f; --line:#333c48;
     --text:#e8edf4; --soft:#b0bac6; --faint:#939eac;
     --flame:#e69f00; --on-flame:#1a1206; --ready:#56b4e9; --warn:#cc79a7;
-    --ring:#e69f00;
+    --ring:#e69f00; --doorglow:#10141b;
   }
   /* High contrast: full white on black, and the two states are told apart by
      lightness as well as hue, because colour alone is the thing some readers
@@ -56,7 +56,7 @@
     --bg:#000000; --surface:#0b0b0b; --raise:#1a1a1a; --line:#8a8a8a;
     --text:#ffffff; --soft:#e6e6e6; --faint:#c8c8c8;
     --flame:#ffd400; --on-flame:#000000; --ready:#e6f2ff; --warn:#d2670a;
-    --ring:#ffd400;
+    --ring:#ffd400; --doorglow:#000000;
   }
   /* No theme chosen: follow the machine. Light scheme, then high contrast,
      because a reader who asked for more contrast meant it. */
@@ -65,7 +65,7 @@
       --bg:#f7f3ec; --surface:#fffdf8; --raise:#efe9df; --line:#d3c9b9;
       --text:#221e1a; --soft:#57503f; --faint:#6f6759;
       --flame:#8a5a12; --on-flame:#fff8ec; --ready:#2f6b3a; --warn:#9c3527;
-      --ring:#8a5a12;
+      --ring:#8a5a12; --doorglow:#f0e5d2;
     }
   }
   @media (prefers-contrast:more){
@@ -73,7 +73,7 @@
       --bg:#000000; --surface:#0b0b0b; --raise:#1a1a1a; --line:#8a8a8a;
       --text:#ffffff; --soft:#e6e6e6; --faint:#c8c8c8;
       --flame:#ffd400; --on-flame:#000000; --ready:#e6f2ff; --warn:#d2670a;
-      --ring:#ffd400;
+      --ring:#ffd400; --doorglow:#000000;
     }
   }
   /* High contrast also thickens what carries meaning: borders, focus. */
@@ -313,7 +313,7 @@
   /* --- the door: the whole app sits behind a session ---------------------- */
   body.locked > header, body.locked > main { display:none }
   .lock{position:fixed;inset:0;z-index:60;overflow:auto;overflow-x:hidden;display:grid;place-items:center;
-    background:radial-gradient(120% 90% at 50% 0,#241c13 0,var(--bg) 62%);padding:24px}
+    background:radial-gradient(120% 90% at 50% 0,var(--doorglow) 0,var(--bg) 62%);padding:24px}
   .lock[hidden]{display:none}
   /* Two panes: what this is, then the way in. A door that shows a blank form
      tells a stranger nothing and reads like a wall. */
@@ -851,6 +851,7 @@
   .settabs button.on{color:var(--text);background:var(--raise)}
   .setpanel{margin-top:26px}
   .setpanel .row{border-bottom:1px solid var(--line)}
+  .placesrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:28px;padding-top:16px;border-top:1px solid var(--line)}
   /* Account: six sections in a rail down the left, the panel they open on the
      right. A wrapped row of pills at the top made the page read as a second
      app with its own navigation instead of the same room. */
@@ -887,6 +888,25 @@
     .bktitle{font-size:15.5px}
     .bkstate{gap:8px}
     #transport{left:8px;right:8px;bottom:8px;border-radius:12px}
+  }
+  /* Two rows on a phone, and both rows are allowed to be tall enough to hold
+     what is on them. A fixed 56px header clipped the tab row the moment the
+     tabs wrapped, which is how Plans and Account went missing on a phone.
+     The player bar had the same shape of bug: its controls were wider than the
+     screen, so the volume and the clock were pushed off the right edge. */
+  @media(max-width:600px){
+    header{display:grid;grid-template-columns:minmax(0,1fr) auto;
+      grid-template-areas:"brand who" "tabs tabs";
+      height:auto;min-height:56px;padding:8px 14px 0;gap:2px 10px;align-items:center}
+    header .brand{grid-area:brand;min-width:0}
+    header nav.tabs{grid-area:tabs;justify-content:flex-start;
+      margin-top:4px;padding-bottom:8px}
+    header #who{grid-area:who;margin-left:0;align-self:center}
+    #transport{flex-wrap:wrap;row-gap:4px;padding:8px 10px}
+    #transport .tplay{width:34px;height:34px}
+    #transport .tnav,#transport .tq{padding:6px 8px}
+    #transport .vol{margin-left:auto}
+    #transport .vol input{width:56px}
   }
 </style>
 <script>
@@ -1209,6 +1229,17 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       <p class="small wratefine" id="wnoexpire" data-t="Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.">Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.</p>
       <p class="small wratefine" id="wrefund" data-t="Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.">Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.</p>
       <div class="walletlist" id="wlist"></div>
+
+      <!-- Two screens that are places to go rather than settings: plans is a
+           purchase, the voice sandbox is a toy. They live on the wallet screen
+           as rows so the top bar can stay two destinations wide. This is a
+           footer of the wallet panel, NOT a second wallet panel: two panels
+           sharing data-p="wallet" both took grid-row 3 and drew over each
+           other (UX review 1.1). -->
+      <div class="placesrow">
+        <button class="btn quiet" id="gotopplans" type="button" data-t="Plans &amp; storage →">Plans &amp; storage →</button>
+        <button class="btn quiet" id="gotosand" type="button" data-t="Try a voice →">Try a voice →</button>
+      </div>
     </div>
 
     <div class="setpanel" data-p="billing">
@@ -1376,16 +1407,6 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
         <button class="btn" id="delbtn" type="button" data-t="Delete my account">Delete my account</button>
       </div>
       <div id="delmsg" class="sub" style="margin-top:8px"></div>
-    </div>
-
-    <!-- Two screens that are places to go rather than settings: plans is a
-         purchase, the voice sandbox is a toy. They live here as rows so the
-         top bar can stay two destinations wide. -->
-    <div class="setpanel" data-p="wallet" style="margin-top:28px;border-top:1px solid var(--line);padding-top:16px">
-      <div class="connrow" style="flex-wrap:wrap">
-        <button class="btn quiet" id="gotopplans" type="button" data-t="Plans &amp; storage →">Plans &amp; storage →</button>
-        <button class="btn quiet" id="gotosand" type="button" data-t="Try a voice →">Try a voice →</button>
-      </div>
     </div>
 
   </section>
