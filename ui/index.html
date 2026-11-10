@@ -1832,12 +1832,44 @@ function bellRaise() { ALERTS.unshift({ kind: 'bad', text: $('#rtext').textConte
   const b = $('#bell'); b.classList.add('alert'); renderAlerts();
   b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
   setTimeout(() => b.classList.remove('shake'), 700); }
+
+// --- the bell: this page's failures, plus what the account kept for you -----
+// ALERTS dies with the tab. NOTICES is the server's record, so a conversion that
+// finished (or failed) while the tab was closed is still there when it comes
+// back. The two are shown together because the reader does not care which one
+// remembered.
+let NOTICES = [];
+function paintBell(n) { $('#bell').classList.toggle('alert', !!n || ALERTS.length > 0); }
+async function loadNotices() {
+  if (!USER) return;
+  try {
+    const d = await api('/notifications?user=' + encodeURIComponent(USER));
+    NOTICES = d.items || [];
+    paintBell(d.unread || 0);
+    if (!$('#alertmenu').hidden) renderAlerts();
+  } catch (_) { /* the bell is not worth surfacing a failure of its own */ }
+}
+function openNotice(n) {
+  NOTICES = NOTICES.filter(x => x.id !== n.id);
+  jpost('/notifications/read', { user: USER, ids: [n.id] }).catch(() => {});
+  paintBell(NOTICES.filter(x => x.unread).length);
+  $('#alertmenu').hidden = true;
+  if (n.route && n.route.indexOf('#/') === 0) location.hash = n.route;
+  renderAlerts();
+}
 function renderAlerts() { const m = $('#alertmenu'); m.innerHTML = '';
-  if (!ALERTS.length) { const p = document.createElement('button'); p.disabled = true; p.textContent = T('No alerts'); m.append(p); return; }
-  ALERTS.slice(0, 8).forEach(a => { const d = document.createElement('div'); d.className = 'who';
+  if (!ALERTS.length && !NOTICES.length) {
+    const p = document.createElement('button'); p.disabled = true;
+    p.textContent = T('Nothing needs you'); m.append(p); return; }
+  ALERTS.slice(0, 6).forEach(a => { const d = document.createElement('div'); d.className = 'who';
     d.style.color = a.kind === 'bad' ? 'var(--warn)' : 'var(--soft)'; d.textContent = a.text; m.append(d); });
+  NOTICES.slice(0, 8).forEach(n => { const b = document.createElement('button');
+    b.textContent = n.text; if (n.unread) b.style.color = 'var(--text)';
+    b.onclick = () => openNotice(n); m.append(b); });
   const clr = document.createElement('button'); clr.textContent = T('Clear all');
-  clr.onclick = () => { ALERTS = []; $('#bell').classList.remove('alert'); renderAlerts(); m.hidden = true; };
+  clr.onclick = async () => { ALERTS = []; NOTICES = [];
+    $('#alertmenu').hidden = true; paintBell(0);
+    try { await jpost('/notifications/read', { user: USER }); } catch (_) {} };
   m.append(clr); }
 $('#rdismiss').onclick = () => { _ribbon('', ''); $('#rdismiss').hidden = true; };
 $('#bell').onclick = () => { $('#alertmenu').hidden = !$('#alertmenu').hidden; $('#usermenu').hidden = true;
@@ -1923,6 +1955,8 @@ async function applyRoute() {
 }
 window.addEventListener('popstate', () => { applyRoute(); });
 window.addEventListener('hashchange', () => { if (location.hash !== ROUTE_LAST) applyRoute(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && USER) loadNotices(); });
 
 // --- views -----------------------------------------------------------------
 function show(v, mode) {
@@ -5633,7 +5667,7 @@ async function runConvert(list, label) {
     idle('Converted ' + r.total + ' chapter' + (r.total === 1 ? '' : 's') + '.');
   } catch (e) { fail(e); }
   finally { RENDERJOB = null; $('#rcancel').hidden = true; SELECT.clear();
-            await openBook(book.id); renderActiveJobs(); refreshBalance(); }
+            await openBook(book.id); renderActiveJobs(); refreshBalance(); loadNotices(); }
 }
 
 // Repaint the chapter list from the server while a conversion is still running.
@@ -6614,6 +6648,7 @@ window.addEventListener('load', async () => {
   loadQueue();
   await loadLibrary();
   renderActiveJobs();
+  loadNotices();
   try { const lp = await api('/last?user=' + encodeURIComponent(USER));
     if (lp && lp.book_id) { RESUME = lp; lastName = lp.book_id;
       try { localStorage.setItem(LKEY, lastName); } catch (e) {}

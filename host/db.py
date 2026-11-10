@@ -190,6 +190,13 @@ CREATE TABLE IF NOT EXISTS paddle_events (
     event_id VARCHAR(64) PRIMARY KEY, event_type VARCHAR(64) DEFAULT '',
     occurred_at VARCHAR(32) DEFAULT '', kind VARCHAR(32) DEFAULT '',
     received_at VARCHAR(32));
+
+-- What happened while the reader was looking elsewhere (2026-11-09). One row
+-- is one event, kept until it is read; dkey makes a retried write idempotent.
+CREATE TABLE IF NOT EXISTS notifications (
+    id VARCHAR(64) PRIMARY KEY, user_id VARCHAR(128) DEFAULT '',
+    kind VARCHAR(32) DEFAULT '', text TEXT, route VARCHAR(255) DEFAULT '',
+    dkey VARCHAR(191) DEFAULT '', created_at VARCHAR(32), read_at VARCHAR(32) DEFAULT '');
 """
 
 
@@ -371,6 +378,8 @@ _ADDED_INDEXES = [
     ("idx_render_cache_audio_ref", "render_cache", "audio_ref"),
     # a book leaving the shelf clears this user's listen log for it
     ("idx_listens_user_book", "listens", "user_id, book_id"),
+    # the bell reads one account's rows newest-first
+    ("idx_notices_user", "notifications", "user_id, created_at"),
 ]
 
 
