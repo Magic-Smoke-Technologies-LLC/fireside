@@ -43,10 +43,19 @@ class TestLibrary(unittest.TestCase):
         second = library.add_book(self.conn, self.storage, "u1", _book("Second"))
         self.conn.execute("UPDATE books SET created_at='2026-01-01T00:00:00Z'")
         self.conn.commit()
+        # Book ids are random hex, so "the second book" is not "the higher id":
+        # the first version of this test asserted newest-id-first and went green
+        # or red depending on the uuid dice (it failed on main right after the
+        # merge). Assert the rule the query actually encodes, computed from the
+        # ids this run happened to get.
+        rows = self.conn.execute(
+            "SELECT id,title FROM books WHERE user_id='u1'").fetchall()
+        want = [r["title"] for r in
+                sorted(rows, key=lambda r: r["id"], reverse=True)]
         for _ in range(3):
             self.assertEqual([b["title"] for b in library.list_books(self.conn, "u1")],
-                             ["Second", "First"],
-                             "same-second rows: newest id first, every time")
+                             want,
+                             "same-second rows: created_at then id, every time")
         self.assertNotEqual(first, second)
 
     def test_chapter_text_roundtrips_through_storage(self):
