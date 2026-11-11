@@ -218,3 +218,28 @@ def _entry(conn, user_id, kind, delta, currency, book_id, job_id, note,
         " VALUES(?,?,?,?,?,?,?,?,?)",
         (entry_id or uuid.uuid4().hex, user_id, kind, delta, currency, book_id or "",
          job_id or "", note or "", now()))
+
+
+def settle_run(conn, storage, speech, book_id, todo, rules, voice, model, speed,
+               res_id, fresh, cred, job_id):
+    """Charge a finished run for the text it actually voiced.
+
+    One implementation for the two places a run can end: the request process
+    that started it, and a render job in its own process (python3 -m
+    host.renderjob) that picked the row up later. The reservation was made by
+    the request and remembered on the job row, so this only has to do the same
+    arithmetic in both places. settle() ignores a reservation that is already
+    terminal, so a retried run cannot charge twice.
+    """
+    from host import jobs as _jobs          # local: accounting must stay importable
+    if not res_id:
+        return None
+    try:
+        remaining = _jobs.stale_book_chars(conn, storage, speech, book_id, todo,
+                                           rules, voice, model, speed)
+    except Exception:
+        remaining = 0
+    actual = max(0, int(fresh or 0) - int(remaining or 0))
+    rep = speech.report({"chars_actual": actual, "cred": cred, "job_id": job_id,
+                         "sale": True})
+    return settle(conn, res_id, rep)

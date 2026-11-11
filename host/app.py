@@ -221,17 +221,9 @@ class App:
         self.conn = db.connect(db_path)
         library.backfill_renditions(self.conn)   # a book voiced before renditions still lists its voice
         jobs.sweep_stale(self.conn)              # a fresh boot has no live renderer
-        # Backend selection: an explicit id, else $FIRESIDE_STORAGE, else local.
-        # An unknown or unconfigured backend falls back to local so the box still
-        # comes up; local is the reference and the default everywhere.
-        want = storage_id or os.environ.get("FIRESIDE_STORAGE") or "local"
-        if want not in self.host.storage:
-            want = "local"
-        elif want != "local":
-            obj = self.host.storage[want].obj
-            if hasattr(obj, "configured") and not obj.configured:
-                want = "local"
-        self.storage_id = want
+        # Backend selection lives on the Host so a render job in its own process
+        # picks the same one. An explicit id, else $FIRESIDE_STORAGE, else local.
+        self.storage_id = self.host.storage_backend(storage_id)
         self.sale_connection = (sale_connection if sale_connection is not None
                                 else _sale_connection_from_env())
         self.rate_limiter = rate_limiter
@@ -1793,7 +1785,12 @@ class App:
                                  "available": accounting.available(self.conn, user),
                                  "detail": str(e)}
         jid = jobs.start_job(self.conn, user, book_id, speech.id, voice, model,
-                             total=len(todo), status="queued")
+                             total=len(todo), status="queued",
+                             connection_id=cid, speed=speed)
+        if res_id:
+            # The row carries what a worker in another process needs to settle
+            # this charge: the reservation and the characters it quoted.
+            jobs.set_reservation(self.conn, jid, res_id, fresh)
         opts = {"model": model, "speed": speed}
 
         def _work():
@@ -1809,16 +1806,11 @@ class App:
                     # Charge only the characters this run actually synthesised:
                     # what is still stale after the run is what was never voiced
                     # (a chapter that was already cached, or one that failed).
-                    try:
-                        remaining = jobs.stale_book_chars(
-                            c, self.storage, speech, book_id, todo, rules,
-                            voice, model, speed)
-                    except Exception:
-                        remaining = 0
-                    actual = max(0, fresh - remaining)
-                    rep = speech.report({"chars_actual": actual, "cred": cred,
-                                         "job_id": jid, "sale": True})
-                    accounting.settle(c, res_id, rep)
+                    # Shared with the out-of-process render job, which settles
+                    # the same reservation from its own process.
+                    accounting.settle_run(c, self.storage, speech, book_id, todo,
+                                          rules, voice, model, speed, res_id,
+                                          fresh, cred, jid)
                 self._notice_run(c, user, book_id, jid)
             finally:
                 c.close()

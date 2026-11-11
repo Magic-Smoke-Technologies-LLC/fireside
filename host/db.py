@@ -315,6 +315,15 @@ def _columns(conn, table):
 # there, so each one is added in place. Idempotent and safe on both engines.
 _ADDED_COLUMNS = [
     ("jobs", "done_chars", "INT DEFAULT 0"),
+    # What a job needs to be finished by a DIFFERENT process: its own process
+    # (python3 -m host.renderjob) has no request to recover the connection, the
+    # speed, or the amount the request already reserved. Empty/0 on a row from
+    # before this existed, and on the in-process path where the request holds
+    # all three in memory.
+    ("jobs", "connection_id", "VARCHAR(128) DEFAULT ''"),
+    ("jobs", "speed", "DOUBLE DEFAULT 1.0"),
+    ("jobs", "reservation_id", "VARCHAR(128) DEFAULT ''"),
+    ("jobs", "quoted_chars", "INT DEFAULT 0"),
     ("books", "cover_ref", "VARCHAR(255) DEFAULT ''"),
     ("books", "cover_mime", "VARCHAR(64) DEFAULT ''"),
     ("books", "author", "VARCHAR(255) DEFAULT ''"),
