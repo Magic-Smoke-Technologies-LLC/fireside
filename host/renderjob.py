@@ -63,9 +63,46 @@ def _finish_notice(conn, user, book_id, job_id):
         pass                      # a notice must never fail a finished run
 
 
-def run(job_id, plugins_root=None, echo=print):
-    """Run the job row `job_id` to completion. Returns a POSIX exit code."""
+def drain(plugins_root=None, echo=print, limit=20):
+    """Run every queued row, one at a time, then stop.
+
+    This is what the hosted job's container runs: no argument names the row,
+    because the queue row is the work order and a per-execution argument would
+    make the *starter* carry details of the image. One host, many rows.
+    """
     conn = db.connect(None)
+    done = 0
+    try:
+        host = Host(plugins_root=plugins_root)
+        while done < limit:
+            jid = jobs.claim_queued(conn)
+            if not jid:
+                break
+            echo("claimed %s" % jid)
+            _run_with(conn, host, jid, echo)
+            done += 1
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    echo("drained %d job(s)" % done)
+    return 0
+
+
+def run(job_id, plugins_root=None, echo=print):
+    conn = db.connect(None)
+    try:
+        return _run_with(conn, Host(plugins_root=plugins_root), job_id, echo)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _run_with(conn, host, job_id, echo=print):
+    """Run the job row `job_id` to completion. Returns a POSIX exit code."""
     try:
         row = jobs.job(conn, job_id)
         if not row:
@@ -88,7 +125,6 @@ def run(job_id, plugins_root=None, echo=print):
         res_id = row.get("reservation_id") or ""
         fresh = int(row.get("quoted_chars") or 0)
 
-        host = Host(plugins_root=plugins_root)
         if provider not in host.speech:
             echo("speech provider %r is not loaded here" % provider)
             return 4
@@ -106,7 +142,7 @@ def run(job_id, plugins_root=None, echo=print):
 
         jobs.render_book(conn, storage, speech, user, book_id, voice,
                          model, speed, cred=cred, opts={"model": model, "speed": speed},
-                         job_id=job_id, plugins_root=plugins_root,
+                         job_id=job_id, plugins_root=host.plugins_root,
                          should_stop=cancelled)
 
         if res_id:
@@ -120,20 +156,29 @@ def run(job_id, plugins_root=None, echo=print):
         echo("job %s: %s (%s/%s)" % (job_id, j.get("status"), j.get("current"),
                                      j.get("total")))
         return 0 if j.get("status") in ("done", "cancelled") else 1
-    finally:
+    except Exception as e:                 # a worker must leave a status, not a trace
         try:
-            conn.close()
+            jobs.mark_error(conn, job_id, "%s: %s" % (type(e).__name__, e))
         except Exception:
             pass
+        echo("job %s failed: %s" % (job_id, e))
+        return 1
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python3 -m host.renderjob",
                                  description="Run one queued render from its job row.")
-    ap.add_argument("job", help="job id (the row is the work order)")
+    ap.add_argument("job", nargs="?", help="job id (the row is the work order)")
+    ap.add_argument("--drain", action="store_true",
+                    help="run every queued row and stop; this is what the hosted "
+                         "job container runs, so nothing outside has to name a row")
     ap.add_argument("--plugins", default=os.environ.get("FIRESIDE_PLUGINS_ROOT"),
                     help="plugins root (default: the checkout's ./plugins)")
     a = ap.parse_args(argv)
+    if a.drain:
+        return drain(plugins_root=a.plugins)
+    if not a.job:
+        ap.error("either a job id or --drain")
     return run(a.job, plugins_root=a.plugins)
 
 

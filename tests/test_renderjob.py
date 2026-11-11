@@ -154,5 +154,29 @@ class RenderJobTest(unittest.TestCase):
                          "settling the same reservation twice charged twice")
 
 
+    # The hosted job's container runs --drain: it names no row, because naming
+    # one would make the starter carry the row's identity as an argument.
+
+    def _another_book(self, title):
+        b = Book(title=title, chapters=[Chapter("c0", "cc")])
+        return library.add_book(self.conn, self._storage(), "u1", b)
+
+    def test_drain_finishes_every_queued_row_then_stops(self):
+        a = self._queued()
+        b = jobs.start_job(self.conn, "u1", self._another_book("V"), "local",
+                           "tone", total=1, status="queued")
+        renderjob.drain(plugins_root=PLUGINS, echo=_Quiet())
+        self.assertEqual(jobs.status_of(self.conn, a), "done")
+        self.assertEqual(jobs.status_of(self.conn, b), "done")
+
+    def test_a_claim_cannot_be_taken_twice(self):
+        # Two workers may read the same row; only the UPDATE may decide who got it.
+        jid = self._queued()
+        first = jobs.claim_queued(self.conn)
+        self.assertEqual(first, jid)
+        self.assertIsNone(jobs.claim_queued(self.conn),
+                          "a claimed row was handed to a second worker")
+
+
 if __name__ == "__main__":
     unittest.main()

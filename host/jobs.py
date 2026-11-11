@@ -339,6 +339,34 @@ def set_reservation(conn, job_id, reservation_id, quoted_chars):
     conn.commit()
 
 
+def mark_error(conn, job_id, msg):
+    """Say a row failed, so a reader sees a reason instead of "stopped"."""
+    conn.execute("UPDATE jobs SET status='error',error=?,updated_at=? WHERE id=?",
+                 (str(msg or "")[:500], now(), job_id))
+    conn.commit()
+
+
+def claim_queued(conn):
+    """Take the oldest queued render for a worker outside the request process.
+
+    The claim is the UPDATE, not the SELECT: two workers may look at the same
+    row, and only one of them may leave with it. Returns the id or None.
+    """
+    for _ in range(5):
+        r = conn.execute("SELECT id FROM jobs WHERE status='queued'"
+                         " ORDER BY created_at ASC LIMIT 1").fetchone()
+        if not r:
+            return None
+        jid = r["id"]
+        cur = conn.execute("UPDATE jobs SET status='running',worker='worker',"
+                           "updated_at=? WHERE id=? AND status='queued'",
+                           (now(), jid))
+        conn.commit()
+        if (getattr(cur, "rowcount", 0) or 0) == 1:
+            return jid
+    return None
+
+
 def status_of(conn, job_id):
     j = job(conn, job_id)
     return (j or {}).get("status") or ""
