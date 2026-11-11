@@ -22,7 +22,7 @@ from host import pluginhost, pron
 
 DEFAULT_PLUGINS_ROOT = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "plugins")
-DICT_NAME = "Readings (model)"
+DICT_NAME = pron.MODEL_DICT_NAME  # one name, so saving words cannot touch it
 _SCOPE = "book"
 _WORD = re.compile(r"^[A-Za-z][A-Za-z'’-]{1,30}$")
 # a respelling is one to four ordinary words ("liv", "lyve", "berry good")
@@ -82,6 +82,7 @@ def existing(conn, uid, book_id):
 # tokens per minute, not just per token: a 2.6M-char book is ~650k tokens and no
 # deployment will take that in one request (ours allows 50k/min), so the pass is
 # batched and paced the same way a human would read it.
+MAX_RULES = 60           # one book's worth of two-reading words, not a lexicon
 BATCH_CHARS = 24000
 BATCH_PAUSE = 1.0        # seconds between requests (tests set this to 0)
 RETRY_BACKOFF = 5.0      # seconds before retrying a rate limit
@@ -151,7 +152,7 @@ def _rules(book_id, fixes):
         # turn one word into prose the engine has to guess at
         if not _WORD.match(word) or not _SAY.match(say) or len(say) > 40:
             continue
-        if say.lower() == word.lower():
+        if say.lower().strip() == word.lower().strip():
             continue
         k = word.lower()
         if k not in by_word:
@@ -165,6 +166,8 @@ def _rules(book_id, fixes):
         if len(says) > 1:
             clash.append(word)
             continue
+        if len(out) >= MAX_RULES:
+            break
         out.append(pron._rule(word, says[0], book=book_id))
     return out, clash
 

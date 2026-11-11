@@ -4,6 +4,7 @@ No network. The plugin's HTTP call is replaced, so these check the shape the
 host and the UI depend on, not OpenAI's uptime.
 """
 
+import json
 import os
 import sys
 import unittest
@@ -85,6 +86,48 @@ class TestScan(unittest.TestCase):
     def test_no_model_is_an_error(self):
         with self.assertRaises(RuntimeError):
             self.d.scan("She had to live with it.", "", {})
+
+
+class TestDecideKeepsItsWord(unittest.TestCase):
+    """The model answers; the plugin decides what counts as a fix.
+
+    A live gpt-4.1-mini answer on one book contained "guide" -> "guyd" and
+    "living" -> "liv-ing": a spelling of a word with one reading, and a word
+    split into syllables. Both reached a reader's word list as if she had typed
+    them. The sentence filter already knows which words are two-reading words;
+    a fix about any other word is the model freelancing.
+    """
+
+    def setUp(self):
+        self.d = P.Disambig()
+        self.orig = P._post
+
+    def tearDown(self):
+        P._post = self.orig
+
+    def _answer(self, fixes):
+        P._post = lambda url, key, payload: {"choices": [{"message": {"content":
+            json.dumps({"fixes": fixes})}}]}
+
+    def test_nonsense_is_dropped_and_a_real_fix_survives(self):
+        self._answer([
+            {"word": "guide", "say": "guyd"},          # one reading, not a fix
+            {"word": "living", "say": "liv-ing"},      # syllables, not a sound
+            {"word": "winding", "say": "wynding"},     # a real two-reading word
+            {"word": "live", "say": "liv"},            # a real two-reading word
+        ])
+        out = self.d.decide("She had to live with it, winding the clock.",
+                            "gpt-4.1-mini", {})
+        self.assertEqual([(f["word"], f["say"]) for f in out],
+                         [("winding", "wynding"), ("live", "liv")])
+
+    def test_an_inflected_form_of_a_listed_word_counts(self):
+        # The sentence is selected by its base word ("live"); the answer about
+        # the inflected one ("records" is "record") is still a real fix.
+        self._answer([{"word": "records", "say": "rek-ords"}])
+        out = self.d.decide("He records the show live.", "m", {})
+        self.assertEqual([(f["word"], f["say"]) for f in out],
+                         [("records", "rek-ords")])
 
 
 class TestSettings(unittest.TestCase):

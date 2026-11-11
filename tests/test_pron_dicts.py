@@ -258,6 +258,33 @@ class TestDictRoutes(unittest.TestCase):
         self.assertEqual(st, 200)
         self.assertEqual(pron.dicts(self.app.conn, "u1"), [])
 
+    def test_a_model_guess_is_not_one_of_the_reader_s_words(self):
+        """The model pass writes at the same scopes as the reader's own words.
+
+        It must not appear in the editor's list (where it would look like
+        something she typed) and a Save must not overwrite or delete it.
+        """
+        q = {"user": "u1"}
+        guess = pron.save_dict(self.app.conn, "u1", pron.MODEL_DICT_NAME, "book",
+                               "b1", [{"from": "guide", "to": "guyd"}])
+        own = pron.save_dict(self.app.conn, "u1", "My words", "book", "b1",
+                             [{"from": "DoD", "to": "Dee oh dee"}])
+        st, out = self.app.pron_get(q, {})
+        self.assertEqual([r["from"] for r in out["rules"]], ["DoD"])
+        self.assertEqual([(m["id"], m["count"]) for m in out["model"]], [(guess["id"], 1)])
+        # the render still applies both: a guess is a rule to the engine
+        self.assertEqual(sorted(r["from"] for r in pron.load(self.app.conn, "u1")),
+                         ["DoD", "guide"])
+        # the editor saving her own list leaves the guess at the same scope alone
+        st, out = self.app.pron_set(q, {"rules": [{"from": "DoD", "to": "dee oh dee",
+                                                   "book": "b1"}]})
+        self.assertEqual(st, 200)
+        self.assertEqual([r["from"] for r in out["rules"]], ["DoD"])
+        self.assertEqual(pron.get_dict(self.app.conn, "u1", guess["id"])["rules"],
+                         [{"from": "guide", "to": "guyd"}])
+        self.assertEqual(pron.get_dict(self.app.conn, "u1", own["id"])["rules"],
+                         [{"from": "DoD", "to": "dee oh dee"}])
+
     def test_a_scope_with_no_key_is_a_400_not_a_silent_global(self):
         st, out = self.app.pron_dict_save({"user": "u1"},
                                           {"name": "S", "scope": "series", "rules": []})
