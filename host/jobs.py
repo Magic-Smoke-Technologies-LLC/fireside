@@ -156,8 +156,24 @@ def _chapter_row(conn, book_id, idx):
     return r
 
 
+def _stop_fn(job_id, should_stop=None):
+    """How a render learns it was cancelled.
+
+    In the request process that is a threading.Event parked under the job id.
+    In a render job (its own process, python3 -m host.renderjob) there is no
+    such event: the flag lives in the row, so the caller passes a function that
+    reads it. One seam, two sources.
+    """
+    if should_stop is not None:
+        return should_stop
+    if job_id:
+        return lambda: is_cancelled(job_id)
+    return None
+
+
 def render_chapter(conn, storage, speech, book_id, idx, voice="", model="", speed=1.0,
-                   cred=None, opts=None, voice_label="", pron_rules=None, job_id=None):
+                   cred=None, opts=None, voice_label="", pron_rules=None, job_id=None,
+                   should_stop=None):
     """Render one chapter. Returns "cached" or "rendered".
 
     Pronunciation fixes are applied to the text here, before the engine sees
@@ -185,7 +201,7 @@ def render_chapter(conn, storage, speech, book_id, idx, voice="", model="", spee
     o.setdefault("speed", speed)
     o.setdefault("model", model)
     buf = bytearray()
-    stop = (lambda: is_cancelled(job_id)) if job_id else None
+    stop = _stop_fn(job_id, should_stop)
     for ch in chunks.split(speech, text):
         if stop and stop():
             raise Cancelled()
@@ -284,16 +300,32 @@ def _write_chapter_audio(conn, book_id, idx, entry, provider, voice, model, spee
 
 
 def start_job(conn, user_id, book_id, provider, voice="", model="", total=0, kind="render",
-              status="running"):
+              status="running", connection_id="", speed=1.0):
     job_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO jobs(id,user_id,book_id,kind,provider,voice,model,status,"
-        "total,current,error,created_at,updated_at)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "total,current,error,created_at,updated_at,connection_id,speed,"
+        "reservation_id,quoted_chars)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (job_id, user_id, book_id, kind, provider, voice, model, status,
-         total, 0, "", now(), now()))
+         total, 0, "", now(), now(), connection_id or "", float(speed or 1.0),
+         "", 0))
     conn.commit()
     return job_id
+
+
+def set_reservation(conn, job_id, reservation_id, quoted_chars):
+    """Remember what the request reserved and how much text it quoted, so a
+    worker in another process can settle the charge when the run ends."""
+    conn.execute("UPDATE jobs SET reservation_id=?,quoted_chars=?,updated_at=? "
+                 "WHERE id=?", (reservation_id or "", int(quoted_chars or 0),
+                                now(), job_id))
+    conn.commit()
+
+
+def status_of(conn, job_id):
+    j = job(conn, job_id)
+    return (j or {}).get("status") or ""
 
 
 def _resume_state(conn, book_id, idxs, provider, voice, model, speed, tokens=None):
@@ -352,21 +384,21 @@ def _active_leave():
 
 def render_book(conn, storage, speech, user_id, book_id, voice="", model="",
                 speed=1.0, cred=None, opts=None, only=None, job_id=None,
-                voice_label="", plugins_root=None):
+                voice_label="", plugins_root=None, should_stop=None):
     """Render a book, counted while it runs so the replica is not allowed to
     sleep underneath it. See _render_book for the work itself."""
     _active_enter()
     try:
         return _render_book(conn, storage, speech, user_id, book_id, voice, model,
                             speed, cred, opts, only, job_id, voice_label,
-                            plugins_root)
+                            plugins_root, should_stop)
     finally:
         _active_leave()
 
 
 def _render_book(conn, storage, speech, user_id, book_id, voice="", model="",
                  speed=1.0, cred=None, opts=None, only=None, job_id=None,
-                 voice_label="", plugins_root=None):
+                 voice_label="", plugins_root=None, should_stop=None):
     """Render all (or `only`) chapters of a book. Returns the job id.
 
     Resumable: chapters already converted in this voice are counted, not
@@ -410,7 +442,8 @@ def _render_book(conn, storage, speech, user_id, book_id, voice="", model="",
     todo = [i for i in idxs if i not in already]
     if job_id is None:
         job_id = start_job(conn, user_id, book_id, speech.id, voice, model, len(idxs))
-    if (job(conn, job_id) or {}).get("status") == "cancelled" or is_cancelled(job_id):
+    stop = _stop_fn(job_id, should_stop)
+    if (job(conn, job_id) or {}).get("status") == "cancelled" or (stop and stop()):
         release_cancel(job_id)
         return job_id
     if disambig_error:
@@ -425,7 +458,7 @@ def _render_book(conn, storage, speech, user_id, book_id, voice="", model="",
     with _RENDER_LOCK:
         # A cancel can land while this job waits its turn for the lock, so the
         # status is read again here: a job told to stop never starts.
-        if (job(conn, job_id) or {}).get("status") == "cancelled" or is_cancelled(job_id):
+        if (job(conn, job_id) or {}).get("status") == "cancelled" or (stop and stop()):
             release_cancel(job_id)
             return job_id
         try:
@@ -440,13 +473,13 @@ def _render_book(conn, storage, speech, user_id, book_id, voice="", model="",
                          (now(), job_id))
             conn.commit()
             for i in todo:
-                if is_cancelled(job_id):
+                if stop and stop():
                     cancelled = True
                     break
                 try:
                     render_chapter(conn, storage, speech, book_id, i, voice, model, speed,
                                    cred=cred, opts=opts, voice_label=voice_label,
-                                   pron_rules=rules, job_id=job_id)
+                                   pron_rules=rules, job_id=job_id, should_stop=stop)
                 except Cancelled:
                     cancelled = True
                     break

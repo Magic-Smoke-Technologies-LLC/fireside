@@ -56,6 +56,23 @@ class Host:
                         raise PluginError(
                             f"{kind} plugin {p.id!r} has no {method}()")
 
+    def storage_backend(self, wanted=None):
+        """Which storage plugin this box actually uses.
+
+        An unknown or unconfigured backend falls back to local so the box still
+        comes up; local is the reference and the default everywhere. Shared by
+        the HTTP host and by a render job in its own process, because the worker
+        has to write audio where the reader will look for it.
+        """
+        want = wanted or os.environ.get("FIRESIDE_STORAGE") or "local"
+        if want not in self.storage:
+            want = "local"
+        elif want != "local":
+            obj = self.storage[want].obj
+            if hasattr(obj, "configured") and not obj.configured:
+                want = "local"
+        return want
+
     def health(self):
         """The one endpoint that must never lie: what this deployment loaded."""
         return {
