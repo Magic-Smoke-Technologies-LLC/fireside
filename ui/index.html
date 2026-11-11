@@ -1358,6 +1358,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       <p class="sub" style="margin-top:4px" data-t="Scope: all books, one author, or one book. A writer&#x27;s own money glyphs usually belong to the author; a single story&#x27;s belong to the book. The same word in a narrower scope wins.">Scope: all books, one author, or one book. A writer's own money glyphs usually belong to the author; a single story's belong to the book. The same word in a narrower scope wins.</p>
       <p class="sub" style="margin-top:4px" data-t="Numbers written with commas (50,000) are read as words (fifty thousand) automatically. A plain 1999 or Chapter 12 is left as the author wrote it.">Numbers written with commas (50,000) are read as words (fifty thousand) automatically. A plain 1999 or Chapter 12 is left as the author wrote it.</p>
       <div id="pronrows"></div>
+      <div id="pronmodel" class="sub" style="margin-top:10px"></div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn quiet" id="pronadd" type="button" data-t="＋ Add a word">＋ Add a word</button>
         <button class="btn quiet" id="proncheck" type="button" data-t="Check audio">Check audio</button>
@@ -1652,6 +1653,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
     <p class="sub" id="pimsg" style="margin-top:6px"></p>
     <div id="pilist" style="margin-top:8px;display:flex;flex-direction:column;gap:6px"></div>
     <div class="connrow">
+      <button class="btn quiet" id="piall" type="button" data-t="Check all books">Check all books</button>
       <button class="btn quiet" id="pilater" type="button" data-t="Later">Later</button>
       <button class="btn" id="pigo" type="button" data-t="Re-encode only these">Re-encode only these</button>
     </div>
@@ -2525,6 +2527,13 @@ let PRON = [];
 // usual answer for a fic writer's private money glyphs; a single story's
 // convention is the narrow case, and it wins for the same word.
 let SCOPEBOOKS = [], SCOPEAUTHORS = [], SCOSERIES = [];
+// A word a reader types belongs to the book they are looking at, not to the
+// whole library: a default of "All books" turned one fix into a library-wide
+// change and a re-encode list across every book they own.
+function defaultScope() {
+  const id = (book && book.id) || (player && player.id) || '';
+  return id ? 'book:' + id : '';
+}
 async function loadScopeOptions() {
   // /library answers with the shelf array itself (loadLibrary forEach-es it), so
   // reading `.books` off it left every option list empty and the scope select
@@ -2585,12 +2594,43 @@ function collectPron() {
 }
 function showPron(rules) {
   $('#pronrows').innerHTML = '';
-  (rules && rules.length ? rules : [{ from: '', to: '' }]).forEach(r => pronRow(r.from, r.to, scopeValue(r)));
+  (rules && rules.length ? rules : [{ from: '', to: '' }])
+    .forEach(r => pronRow(r.from, r.to, scopeValue(r) || defaultScope()));
 }
+let PRONMODEL = [];
 async function loadPron() {
   await loadScopeOptions();
-  try { const d = await api('/pron'); PRON = d.rules || []; showPron(PRON); }
-  catch (e) { showPron([]); }
+  try { const d = await api('/pron'); PRON = d.rules || []; PRONMODEL = d.model || [];
+    showPron(PRON); showPronModel(); }
+  catch (e) { showPron([]); PRONMODEL = []; showPronModel(); }
+}
+// A model pass writes its guesses as ordinary rules, but they are guesses, not
+// the reader's words. They are listed apart, with the only honest control: drop
+// this book's guesses and let the next voicing decide again.
+function scopeTitle(d) {
+  const k = d.scope_key || '';
+  if (d.scope === 'book') { const b = SCOPEBOOKS.find(x => x.id === k); return b ? (b.title || k) : k; }
+  return k;
+}
+function showPronModel() {
+  const box = $('#pronmodel'); box.innerHTML = '';
+  if (!PRONMODEL.length) return;
+  PRONMODEL.forEach(d => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;align-items:baseline;flex-wrap:wrap';
+    const t = document.createElement('span');
+    t.textContent = (d.count || 0) + ' ' + (d.count === 1 ? T('word') : T('words'))
+      + ' ' + T('guessed by the model for') + ' ' + (scopeTitle(d) || d.scope);
+    const x = document.createElement('button');
+    x.type = 'button'; x.className = 'btn quiet'; x.textContent = T('Forget these');
+    x.onclick = async () => {
+      try { await jpost('/pron/dicts/delete', { id: d.id });
+        PRONMODEL = PRONMODEL.filter(y => y.id !== d.id); showPronModel();
+        loadPron(); idle(T('Forgotten. The next voicing can decide again.'));
+      } catch (e) { fail(e); }
+    };
+    row.append(t, x); box.append(row);
+  });
 }
 async function savePron() {
   collectPron();
@@ -2627,7 +2667,7 @@ async function testPron(text) {
     idle('That is "' + text + '" in the default voice.');
   } catch (e) { fail(e); }
 }
-$('#pronadd').onclick = () => pronRow('', '');
+$('#pronadd').onclick = () => pronRow('', '', defaultScope());
 $('#pronsave').onclick = savePron;
 // Saving is not the only way to ask. If you said Later on the audio dialog,
 // or you are coming back to it a day later, this opens the same check without
@@ -2642,24 +2682,34 @@ let PRONIMPACT = null;
 function findConnFor(provider) {
   return CONNS.find(c => c.enabled !== false && c.provider === provider) || null;
 }
-async function showPronImpact(manual) {
+// A rule change is judged against the book the reader is in, because that is
+// where they typed the word. "All books" is a second, explicit question; running
+// it by default once produced a 35-book list for one word.
+function impactBook() {
+  return (book && book.id) || (player && player.id) || '';
+}
+async function showPronImpact(manual, all) {
   let im = null;
-  try { im = await api('/pron/impact'); }
+  const bid = impactBook();
+  const q = (!all && bid) ? ('?book=' + encodeURIComponent(bid)) : '';
+  try { im = await api('/pron/impact' + q); }
   catch (e) { $('#pronmsg').textContent += '  Words saved. (Could not check which chapters need re-encoding: ' + String(e && e.message ? e.message : e) + ')'; return; }
   PRONIMPACT = im;
   if (!im || !im.chapters_affected) {
     if (manual) $('#pronmsg').textContent = 'Nothing to redo. All of your audio already matches your words.';
     return;
   }
-  const n = im.chapters_affected, m = im.books_affected;
+  const n = im.chapters_affected, m = im.books_affected, wide = all || !bid;
   const secs = im.est_seconds || 0;
   const t = secs < 1 ? 'under a second'
     : secs < 90 ? (Math.max(1, Math.round(secs)) + 's')
     : (Math.round(secs / 60) + ' min');
   $('#pimsg').textContent = n + ' chapter' + (n === 1 ? '' : 's')
     + ' in ' + m + ' book' + (m === 1 ? '' : 's')
+    + (wide ? ' (' + T('all your books') + ')' : ' (' + ((book && book.id === bid ? book.title : '') || 'this book') + ')')
     + ' already have audio this change makes wrong. Only the affected chunks'
     + ' re-encode, about ' + t + ' of new audio. Re-encode those?';
+  $('#piall').hidden = wide;
   const box = $('#pilist'); box.innerHTML = '';
   let any = false;
   im.books.forEach(b => b.renditions.forEach(r => {
@@ -2681,6 +2731,7 @@ async function showPronImpact(manual) {
   $('#pigo').disabled = !any;
   $('#pronimpactdlg').hidden = false;
 }
+$('#piall').onclick = () => { $('#pronimpactdlg').hidden = true; showPronImpact(false, true); };
 $('#pilater').onclick = () => {
   $('#pronimpactdlg').hidden = true;
   // The dialog is re-openable: say so, so Later does not look like a dead end.

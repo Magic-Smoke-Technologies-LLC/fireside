@@ -597,6 +597,13 @@
     "Refund": "Refund",
     "Narration": "Narration",
     "Narration, over the estimate we held": "Narration, over the estimate we held",
-    "estimate {e}, final {f}": "estimate {e}, final {f}"
+    "estimate {e}, final {f}": "estimate {e}, final {f}",
+    "Check all books": "Check all books",
+    "word": "word",
+    "words": "words",
+    "guessed by the model for": "guessed by the model for",
+    "Forget these": "Forget these",
+    "Forgotten. The next voicing can decide again.": "Forgotten. The next voicing can decide again.",
+    "all your books": "all your books"
   }
 }
