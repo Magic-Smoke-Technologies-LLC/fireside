@@ -99,6 +99,14 @@ CREATE TABLE IF NOT EXISTS devices (
     stop INT DEFAULT 0, PRIMARY KEY (user_id, device_id, book_id));
 CREATE TABLE IF NOT EXISTS listens (
     user_id VARCHAR(128), book_id VARCHAR(128), seconds DOUBLE, created_at VARCHAR(32));
+-- One row per model pass on one book. It is also the record that the pass ran,
+-- so a book is never paid for twice, whatever the reader did with the answers.
+-- status: running | suggested | accepted | discarded | failed
+CREATE TABLE IF NOT EXISTS model_pass (
+    book_id VARCHAR(128) PRIMARY KEY, user_id VARCHAR(128),
+    status VARCHAR(16) DEFAULT 'suggested', rules TEXT, words INT DEFAULT 0,
+    note TEXT, job_id VARCHAR(128) DEFAULT '',
+    created_at VARCHAR(32), updated_at VARCHAR(32));
 CREATE TABLE IF NOT EXISTS credentials (
     user_id VARCHAR(128), provider VARCHAR(64), data TEXT, updated_at VARCHAR(32),
     PRIMARY KEY (user_id, provider));
@@ -321,6 +329,9 @@ _ADDED_COLUMNS = [
     # old row and a new one read the same way.
     ("books", "read_at", "VARCHAR(32) DEFAULT ''"),
     ("user_prefs", "pron", "TEXT"),
+    # this book was opted in to the model pass when it was imported; per book,
+    # because that is where the reader ticked it and where the cost lands.
+    ("books", "model_pass", "INT DEFAULT 0"),
     # how the player reads along: highlight, scroll, scroll mode. JSON, because
     # it is one small bag of preferences and not a thing anything else queries.
     ("user_prefs", "reading", "TEXT"),

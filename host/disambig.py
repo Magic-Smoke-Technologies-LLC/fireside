@@ -5,20 +5,26 @@ the reader is right for a public box (nobody should pay for a voice that gets
 their book wrong), but it is the wrong shape for the one person this exists for
 right now: she wants to press play.
 
-So this pass runs the same questions through the same plugin, takes the answers,
-and stores them where pronunciation already lives: a book-scoped dictionary. The
-rules are ordinary rules from then on, so the engine speaks the right reading on
-the first render, a re-render re-uses the cached audio, the reader can see and
-edit what the model chose, and nobody pays the model twice for one book.
+So this pass runs the same questions through the same plugin and keeps the
+answers on one row per book. The answers are SUGGESTIONS, never rules: nothing
+the model says reaches the audio until the reader taps "use these", because a
+guess that arrives as a setting is a silent lie (11-11: a live model turned
+"guide" into "guyd" and "living" into "liv-ing" and those landed in the reader's
+own word list). Accepting turns them into an ordinary book-scoped dictionary, so
+the engine speaks the right reading and a re-render reuses the cached audio. The
+row also records that the pass ran, so nobody pays the model twice for one book.
 
-It is OFF unless an account is named in FIRESIDE_DISAMBIG_ACCOUNTS. A render on
-any other account does not even look at it: no call, no latency, no charge.
+It runs for a book the reader opted in at import (books.model_pass) or for an
+account named in FIRESIDE_DISAMBIG_ACCOUNTS, and only when the box is set. Any
+other book costs nothing: no call, no latency, no charge.
 """
+import json
 import os
 import re
 import time
 
 from host import pluginhost, pron
+from host.db import now
 
 DEFAULT_PLUGINS_ROOT = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "plugins")
@@ -56,9 +62,115 @@ def configured():
     return bool(base_url() and model())
 
 
-def enabled_for(uid):
-    """Off for everyone, unless this exact account is named and the box is set."""
-    return bool(uid) and configured() and uid in accounts()
+def opted_in(conn, book_id):
+    """Did this book ask for the pass when it was imported?
+
+    Per book, not per account: the reader ticked the box on one import, and that
+    is the only place the question was asked.
+    """
+    if not book_id:
+        return False
+    try:
+        row = conn.execute("SELECT model_pass FROM books WHERE id=?",
+                           (book_id,)).fetchone()
+    except Exception:
+        return False
+    return bool(row and (row["model_pass"] or 0))
+
+
+def set_optin(conn, book_id, on):
+    conn.execute("UPDATE books SET model_pass=? WHERE id=?",
+                 (1 if on else 0, book_id))
+    conn.commit()
+
+
+def enabled_for(conn, uid, book_id=""):
+    """Is the pass allowed to run at all for this book?
+
+    Two ways in, and both are somebody saying yes: this book was opted in at
+    import, or the account is named on the box (the old deployment's switch, kept
+    so a server that already had it does not go quiet after an upgrade).
+    """
+    if not configured():
+        return False
+    if uid and uid in accounts():
+        return True
+    return opted_in(conn, book_id)
+
+
+def state(conn, book_id):
+    """What happened on this book's last pass, or None if it never ran."""
+    try:
+        row = conn.execute(
+            "SELECT status,rules,words,note,job_id,updated_at FROM model_pass"
+            " WHERE book_id=?", (book_id,)).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    try:
+        rules = json.loads(row["rules"] or "[]")
+    except Exception:
+        rules = []
+    return {"status": (row["status"] or "suggested"), "rules": rules
+            if isinstance(rules, list) else [],
+            "words": int(row["words"] or 0), "note": row["note"] or "",
+            "job_id": row["job_id"] or "", "updated_at": row["updated_at"] or ""}
+
+
+def _save(conn, uid, book_id, status, rules=(), note="", job_id=""):
+    """One row per book, overwritten in place. The row is also the receipt that
+    the pass ran, so a finished pass is never paid for a second time."""
+    rules = list(rules or [])
+    blob = json.dumps(rules, ensure_ascii=False)
+    stamp = now()
+    if state(conn, book_id) is None:
+        conn.execute(
+            "INSERT INTO model_pass(book_id,user_id,status,rules,words,note,"
+            "job_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            (book_id, uid or "", status, blob, len(rules), note, job_id,
+             stamp, stamp))
+    else:
+        conn.execute(
+            "UPDATE model_pass SET user_id=?,status=?,rules=?,words=?,note=?,"
+            "job_id=?,updated_at=? WHERE book_id=?",
+            (uid or "", status, blob, len(rules), note, job_id, stamp, book_id))
+    conn.commit()
+    return state(conn, book_id)
+
+
+def apply(conn, uid, book_id):
+    """The reader said yes: the suggestions become ordinary rules for this book.
+
+    Nothing is voiced here; applying a rule makes audio stale, and the page
+    already knows how to ask about re-encoding only the chapters it touches.
+    """
+    st = state(conn, book_id)
+    if not st or not st["rules"]:
+        return st, "nothing to apply"
+    got = existing(conn, uid, book_id)
+    saved = pron.save_dict(conn, uid, DICT_NAME, _SCOPE, book_id, st["rules"],
+                           dict_id=got["id"] if got else "")
+    if saved is None:
+        return st, "could not save the readings"
+    return _save(conn, uid, book_id, "accepted", st["rules"], st["note"],
+                 st["job_id"]), ""
+
+
+def discard(conn, uid, book_id):
+    """The default. The suggestions stay on record (so the pass is not re-billed)
+    and stop applying: a dictionary they already became is emptied, not deleted,
+    because its id is what the reader's screen points at."""
+    st = state(conn, book_id)
+    if not st:
+        return None
+    if st["status"] == "accepted":
+        got = existing(conn, uid, book_id)
+        if got:
+            pron.save_dict(conn, uid, DICT_NAME, _SCOPE, book_id, [],
+                           dict_id=got["id"])
+    return _save(conn, uid, book_id, "discarded", st["rules"], st["note"],
+                 st["job_id"])
 
 
 def _plugin(plugins_root=None):
@@ -172,16 +284,18 @@ def _rules(book_id, fixes):
     return out, clash
 
 
-def ensure(conn, storage, uid, book_id, idxs, plugins_root=None, run=None):
-    """Make sure this book's readings exist before it is voiced.
+def ensure(conn, storage, uid, book_id, idxs, plugins_root=None, run=None,
+           job_id="", force=False):
+    """Run this book's pass, if it was asked for and has not run yet.
 
-    Returns the rules for this book (possibly empty). Never raises: a model box
-    that is asleep must not fail somebody's render, so a failure is reported and
-    the render continues with the user's own rules.
+    Returns no rules: the model's answers are suggestions until the reader says
+    otherwise, so a render never speaks them. Never raises: a model box that is
+    asleep must not fail somebody's render, so a failure is reported and the
+    render continues with the user's own rules.
     """
-    if not enabled_for(uid):
+    if not enabled_for(conn, uid, book_id):
         return [], ""
-    if existing(conn, uid, book_id):
+    if not force and state(conn, book_id) is not None:
         return [], ""
     text = []
     for i in idxs or []:
@@ -201,10 +315,9 @@ def ensure(conn, storage, uid, book_id, idxs, plugins_root=None, run=None):
     fixes, failed, total, last = _call_batched(call, text)
     rules, clash = _rules(book_id, fixes)
     if failed and not rules:
-        # Nothing at all came back: say so and leave no dictionary behind, so the
-        # next render tries again instead of finding an empty one and giving up.
+        # Nothing at all came back: say so and leave no row behind, so the next
+        # render tries again instead of finding an empty pass and giving up.
         return [], "%d of %d part(s) failed (%s)" % (failed, total, last)
-    pron.save_dict(conn, uid, DICT_NAME, _SCOPE, book_id, rules)
     notes = []
     if failed:
         notes.append("%d of %d part(s) failed (%s); saved what came back"
@@ -214,4 +327,25 @@ def ensure(conn, storage, uid, book_id, idxs, plugins_root=None, run=None):
         # the reader is told which words were too ambiguous to fix.
         notes.append("%d two-reading word(s) differ inside this book and were "
                      "left plain: %s" % (len(clash), ", ".join(sorted(clash)[:8])))
-    return rules, "; ".join(notes)
+    # Default-dismissed: the answers are kept so the reader can look at them, but
+    # nothing they say reaches the audio until somebody taps "use these".
+    _save(conn, uid, book_id, "suggested", rules, "; ".join(notes), job_id)
+    return [], "; ".join(notes)
+
+
+def scan(conn, storage, uid, book_id, idxs=None, job_id="", plugins_root=None,
+         run=None):
+    """Run the pass now, on this book only, whatever it ran before.
+
+    This is the reader's own button: "check this book again". A pass that keeps
+    its old row leaves the old answers in place, so a re-scan of a book with
+    nothing new still shows the same suggestions rather than an empty screen.
+    """
+    if idxs is None:
+        rows = conn.execute("SELECT idx FROM chapters WHERE book_id=?"
+                            " ORDER BY idx", (book_id,)).fetchall()
+        idxs = [r["idx"] for r in rows]
+    rules, note = ensure(conn, storage, uid, book_id, idxs,
+                         plugins_root=plugins_root, run=run, job_id=job_id,
+                         force=True)
+    return state(conn, book_id), note
