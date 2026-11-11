@@ -1,9 +1,13 @@
 """A paying reader has to be able to see the charge and stop it, from here.
 
-Change card and Cancel renewal used to live in a settings panel that was deleted
-with the plans page move, and the code behind them was deleted after it. Nobody
-was exposed only because payments are off; the first live charge would have
-created a subscriber with no self-serve control anywhere in the app.
+Change card and Cancel subscription used to live in a settings panel that was
+deleted with the plans page move, and the code behind them was deleted after it.
+Nobody was exposed only because payments are off; the first live charge would
+have created a subscriber with no self-serve control anywhere in the app.
+
+Chris, 11-11: "Under plan & Billing make an obvious 'Cancel subscription'". So
+the control is not a quiet button queued behind the card link: it has its own
+ruled section, its own heading, and it is the only way to stop a charge.
 
 What is asserted is the seam, not the form: a real host, a real account, a
 subscription row written into the host's own database, and what the screen says
@@ -66,6 +70,30 @@ def buttons(page):
         document.querySelectorAll('#billacts button')).map(b => b.textContent.trim())""")
 
 
+def cancel_buttons(page):
+    return page.evaluate("""() => Array.from(
+        document.querySelectorAll('#billcancelacts button')).map(b => b.textContent.trim())""")
+
+
+def cancel_section(page):
+    """What the stop block says, and whether a reader can actually see it."""
+    return page.evaluate("""() => {
+        const box = document.getElementById('billcancel');
+        const btn = document.querySelector('#billcancelacts button');
+        const cs = btn ? getComputedStyle(btn) : null;
+        return {
+            hidden: !box || box.hidden,
+            heading: box ? (box.querySelector('h3') || {}).textContent || '' : '',
+            text: (document.getElementById('billcanceltxt') || {}).textContent || '',
+            button: btn ? btn.textContent.trim() : '',
+            // a quiet button in the row above was the complaint: this one has to
+            // read as a real button, with its own visible border
+            border: cs ? cs.borderTopWidth : '',
+            visible: !!(btn && btn.offsetParent !== null),
+        };
+    }""")
+
+
 class TestBillingPanel(BrowserTest):
 
     def test_free_account_is_told_nothing_is_billed(self):
@@ -89,8 +117,14 @@ class TestBillingPanel(BrowserTest):
         self.assertIn("Renews on", renew)
         self.assertIn(str(time.gmtime(end).tm_mday), renew,
                       "the date on screen is not the one in the row: %r" % renew)
-        self.assertEqual(buttons(self.page),
-                         ["Change card or billing details", "Cancel renewal"])
+        self.assertEqual(buttons(self.page), ["Change card or billing details"])
+        stop = cancel_section(self.page)
+        self.assertFalse(stop["hidden"], "the cancel section is not shown to a subscriber")
+        self.assertEqual(stop["heading"], "Cancel subscription")
+        self.assertEqual(stop["button"], "Cancel subscription")
+        self.assertTrue(stop["visible"], "the cancel button is not visible")
+        self.assertIn("Stops the next charge", stop["text"])
+        self.assertNotEqual(stop["border"], "0px", "the cancel button reads as a link, not a button")
         self.assert_no_page_errors()
 
     def test_a_subscriber_can_move_plan_on_the_same_subscription(self):
@@ -117,8 +151,8 @@ class TestBillingPanel(BrowserTest):
         self.page.reload()
         self.wait_in_app()
         open_billing(self.page)
-        self.assertEqual(buttons(self.page),
-                         ["Change card or billing details", "Keep it renewing"])
+        self.assertEqual(buttons(self.page), ["Change card or billing details"])
+        self.assertEqual(cancel_buttons(self.page), ["Keep subscription"])
         # a plan change on a subscription that is ending would charge for a
         # period it will not have, so the block is not offered
         self.assertEqual(self.page.evaluate(
@@ -137,6 +171,13 @@ class TestBillingPanel(BrowserTest):
         self.assertIn("Stops on", renew)
         self.assertNotIn("Renews on", renew)
         # no second cancel on an already-cancelled row, and a way back instead
-        self.assertEqual(buttons(self.page),
-                         ["Change card or billing details", "Keep it renewing"])
+        self.assertEqual(buttons(self.page), ["Change card or billing details"])
+        self.assertEqual(cancel_buttons(self.page), ["Keep subscription"])
+        self.assert_no_page_errors()
+
+    def test_a_free_account_has_no_cancel_section(self):
+        self.register("billnocancel")
+        open_billing(self.page)
+        self.assertTrue(cancel_section(self.page)["hidden"],
+                        "a free account was offered a subscription to cancel")
         self.assert_no_page_errors()
