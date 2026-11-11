@@ -141,7 +141,10 @@ class TestSeriesHttp(unittest.TestCase):
         self.assertEqual(s, 200)
         self.assertEqual([r["title"] for r in out["imported"]], ["First", "Third"])
         self.assertEqual(out["failed"], [])
-        self.assertEqual([b["title"] for b in self._shelf()], ["First", "Third"])
+        # Which works landed, not the shelf's order: all picks are written in
+        # one second, so the shelf sorts them newest-first by id (list_books
+        # breaks the created_at tie there).
+        self.assertEqual(sorted(b["title"] for b in self._shelf()), ["First", "Third"])
 
     def test_the_books_land_in_one_series_in_page_order(self):
         self._pull([W3, W1, W2])          # request order is not shelf order

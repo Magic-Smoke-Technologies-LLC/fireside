@@ -29,6 +29,35 @@ class TestLibrary(unittest.TestCase):
         self.assertEqual(books[0]["rendered"], 0)
         self.assertEqual(library.get_book(self.conn, bid)["title"], "Fire")
 
+    def test_same_second_books_still_have_one_order(self):
+        """Two books written in the same second must not swap places.
+
+        A series import writes every picked work inside one second, so the
+        shelf had two rows with the same created_at and no tie-break: SQLite
+        and MySQL could each return them in insertion order on one request and
+        sorted order on the next. The series-import test read that as a flake
+        on CI; it was the shelf answering two different pages.
+        """
+        library.create_user(self.conn, "u1")
+        first = library.add_book(self.conn, self.storage, "u1", _book("First"))
+        second = library.add_book(self.conn, self.storage, "u1", _book("Second"))
+        self.conn.execute("UPDATE books SET created_at='2026-01-01T00:00:00Z'")
+        self.conn.commit()
+        # Book ids are random hex, so "the second book" is not "the higher id":
+        # the first version of this test asserted newest-id-first and went green
+        # or red depending on the uuid dice (it failed on main right after the
+        # merge). Assert the rule the query actually encodes, computed from the
+        # ids this run happened to get.
+        rows = self.conn.execute(
+            "SELECT id,title FROM books WHERE user_id='u1'").fetchall()
+        want = [r["title"] for r in
+                sorted(rows, key=lambda r: r["id"], reverse=True)]
+        for _ in range(3):
+            self.assertEqual([b["title"] for b in library.list_books(self.conn, "u1")],
+                             want,
+                             "same-second rows: created_at then id, every time")
+        self.assertNotEqual(first, second)
+
     def test_chapter_text_roundtrips_through_storage(self):
         library.create_user(self.conn, "u1")
         bid = library.add_book(self.conn, self.storage, "u1", _book())
