@@ -448,6 +448,18 @@ def active_for_book(conn, book_id):
     return bool(r)
 
 
+def any_active(conn):
+    """True while some render is queued or still running.
+
+    A render is a thread in this process. The hosted deployment sleeps when no
+    request arrives, and sleeping kills the thread, so the server asks itself
+    for /health while this is true (see host/keepwarm.py).
+    """
+    r = conn.execute("SELECT 1 FROM jobs WHERE status IN "
+                     "('queued','running') LIMIT 1").fetchone()
+    return bool(r)
+
+
 def list_for(conn, user_id, limit=20):
     """Recent jobs for one user, newest first. The client shows the active
     ones (queued or running) so a conversion the page forgot is cancellable."""
