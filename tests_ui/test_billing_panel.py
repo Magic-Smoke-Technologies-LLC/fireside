@@ -181,3 +181,27 @@ class TestBillingPanel(BrowserTest):
         self.assertTrue(cancel_section(self.page)["hidden"],
                         "a free account was offered a subscription to cancel")
         self.assert_no_page_errors()
+    def test_two_loads_at_once_leave_one_door_not_two(self):
+        """Chris, 11-11: "Now I have 2 'see the plans' buttons".
+
+        The button row is painted after three fetches, but the blank-out that is
+        meant to keep it from going stale runs before them. Two loads in flight
+        therefore both clear the row and then both paint, and the reader gets the
+        same door twice. Both ways this happens are ordinary: #/set/billing runs
+        loadBilling once from the stored settings tab and once from the route,
+        and the plans page's "Manage your plan" calls show('set') then
+        setSetTab('billing'). Firing the two calls together is that seam.
+        """
+        self.register("billtwice")
+        open_billing(self.page)
+        self.assertEqual(buttons(self.page), ["See the plans"])
+        self.page.evaluate("() => { loadBilling(); loadBilling(); }")
+        wait_until(self.page, "() => document.querySelectorAll('#billacts button').length > 0")
+        # settle any second paint, then count what a reader can actually press
+        self.page.wait_for_timeout(1500)
+        self.assertEqual(buttons(self.page), ["See the plans"])
+        visible = self.page.evaluate(
+            "() => Array.from(document.querySelectorAll('#v-set .setpanel[data-p=\"billing\"] button'))"
+            ".filter(b => b.offsetParent !== null && b.textContent.trim() === 'See the plans').length")
+        self.assertEqual(visible, 1)
+        self.assert_no_page_errors()
