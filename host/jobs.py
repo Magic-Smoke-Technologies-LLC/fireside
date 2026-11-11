@@ -322,9 +322,51 @@ def _resume_state(conn, book_id, idxs, provider, voice, model, speed, tokens=Non
     return have, chars
 
 
+# A render lives in this process. The hosted deployment may sleep when it sees
+# no traffic, and sleeping kills the thread: three of Cat's four queued books
+# did exactly that on 11-11. This counter is the in-process truth about work in
+# flight (waiting for the lock counts), and host/keepwarm.py reads it to decide
+# whether to ask the platform for another minute of life. A count, not a DB
+# query: the keeper must not fail because a connection was refused, and a row
+# swept to stalled is not work anyway.
+_ACTIVE = 0
+_ACTIVE_LOCK = threading.Lock()
+
+
+def active_renders():
+    """How many renders are live in this process right now."""
+    return _ACTIVE
+
+
+def _active_enter():
+    global _ACTIVE
+    with _ACTIVE_LOCK:
+        _ACTIVE += 1
+
+
+def _active_leave():
+    global _ACTIVE
+    with _ACTIVE_LOCK:
+        _ACTIVE = max(0, _ACTIVE - 1)
+
+
 def render_book(conn, storage, speech, user_id, book_id, voice="", model="",
                 speed=1.0, cred=None, opts=None, only=None, job_id=None,
                 voice_label="", plugins_root=None):
+    """Render a book, counted while it runs so the replica is not allowed to
+    sleep underneath it. See _render_book for the work itself."""
+    _active_enter()
+    try:
+        return _render_book(conn, storage, speech, user_id, book_id, voice, model,
+                            speed, cred, opts, only, job_id, voice_label,
+                            plugins_root)
+    finally:
+        _active_leave()
+
+
+def _render_book(conn, storage, speech, user_id, book_id, voice="", model="",
+                 speed=1.0, cred=None, opts=None, only=None, job_id=None,
+                 voice_label="", plugins_root=None):
     """Render all (or `only`) chapters of a book. Returns the job id.
 
     Resumable: chapters already converted in this voice are counted, not

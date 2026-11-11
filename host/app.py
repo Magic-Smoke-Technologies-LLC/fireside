@@ -249,7 +249,7 @@ class App:
         # A render lives in a thread here, so a replica that sleeps loses it.
         # Hold the replica awake for as long as there is work to do.
         if self.hosted:
-            keepwarm.start(self.db_path)
+            keepwarm.start()
 
     def _uid(self, q, body):
         """The signed-in user wins over any user id the client passed in."""
