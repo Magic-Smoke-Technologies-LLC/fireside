@@ -1136,6 +1136,10 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
         <input type="file" id="file" accept=".epub,application/epub+zip" hidden></div>
       <label data-t="Or paste a story link">Or paste a story link</label>
       <div style="display:flex;gap:8px"><input id="url" placeholder="https://…" data-t-ph="https://…" autocomplete="off"><button id="loadurl" class="btn" style="flex:0 0 96px" data-t="Load">Load</button></div>
+      <label id="modelpassrow" style="display:none;align-items:flex-start;gap:8px;margin-top:10px" hidden>
+        <input type="checkbox" id="modelpass" style="margin-top:3px">
+        <span class="small" data-t="Have a model read this book for words with two readings (like &quot;live&quot; or &quot;read&quot;). Its answers are only suggestions: nothing changes until you accept them.">Have a model read this book for words with two readings (like "live" or "read"). Its answers are only suggestions: nothing changes until you accept them.</span>
+      </label>
       <div class="addpanel" id="dupnote" hidden style="margin-top:12px;border-color:var(--flame);background:transparent">
         <p class="sub" id="duptext"></p>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
@@ -1196,6 +1200,10 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
           <div id="npvoices" style="display:none;margin-top:12px"></div>
           <div class="spine" id="npspine"></div>
           <p class="small" id="npnote" style="margin-top:8px"></p>
+          <div class="addpanel" id="npmodel" style="margin-top:12px" hidden>
+            <p class="small" id="npmodeltext"></p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px" id="npmodelbtns"></div>
+          </div>
           <div class="chaplistwrap">
             <div class="chaplisthead"><h3 data-t="Chapters">Chapters</h3></div>
             <div id="nplist" class="chaplist"></div>
@@ -2479,6 +2487,9 @@ function renderDefaultPicker() {
 
 async function loadPlugins() {
   plugins = await api('/plugins');
+  // The checkbox is offered only when a model box is actually set up. Promising
+  // a pass and then doing nothing is worse than not asking at all.
+  if ($('#modelpassrow')) $('#modelpassrow').hidden = !plugins.model_pass;
   await loadConnections();
   await loadSources();
 }
@@ -2673,6 +2684,94 @@ $('#pronsave').onclick = savePron;
 // or you are coming back to it a day later, this opens the same check without
 // touching your words.
 $('#proncheck').onclick = () => showPronImpact(true);
+
+// --- the model pass: suggestions first, audio second -----------------------
+// Nothing the model says is applied by itself. This card is the only place the
+// reader can accept it, and the same card carries the other question: which
+// chapters here were voiced under older words than the ones on file now.
+let MODELSTATE = null, MODELPOLL = null;
+function stopModelPoll() { if (MODELPOLL) { clearTimeout(MODELPOLL); MODELPOLL = null; } }
+async function loadBookModel(id) {
+  stopModelPoll();
+  if (!id) { MODELSTATE = null; renderBookModel(); return; }
+  try { MODELSTATE = await api('/book/model?book=' + encodeURIComponent(id)); }
+  catch (e) { MODELSTATE = null; }
+  renderBookModel();
+  // A pass over a whole book is minutes. Poll while it runs and then stop; the
+  // page never keeps a timer alive for a book that is closed.
+  if (MODELSTATE && MODELSTATE.status === 'running') {
+    MODELPOLL = setTimeout(() => { if (book && book.id === id) loadBookModel(id); }, 4000);
+  }
+}
+function modelAct(action) {
+  return async () => {
+    busy(action === 'scan' ? T('Reading the book for two-reading words…') : T('Saving…'));
+    try {
+      await jpost('/book/model', { book: book.id, user: USER, action });
+      idle(action === 'apply' ? T('Using the model’s readings in this book.')
+        : action === 'discard' ? T('Model suggestions discarded.')
+        : action === 'off' ? T('Model checking is off for this book.') : '');
+      await loadBookModel(book.id);
+    } catch (e) { fail(e); }
+  };
+}
+function modelBtn(label, action, quiet) {
+  const b = document.createElement('button');
+  b.className = 'btn' + (quiet ? ' quiet' : ''); b.type = 'button';
+  b.textContent = label; b.onclick = modelAct(action);
+  return b;
+}
+function renderBookModel() {
+  const box = $('#npmodel'), txt = $('#npmodeltext'), btns = $('#npmodelbtns');
+  if (!box) return;
+  box.hidden = true; btns.innerHTML = ''; txt.textContent = '';
+  const s = MODELSTATE;
+  if (!s || !book || !book.id) return;
+  const n = s.words || 0, stale = (s.stale && s.stale.chapters) || 0;
+  const state = s.status || '';
+  const add = (...b) => b.forEach(x => btns.append(x));
+  let said = '';
+  if (state === 'running') {
+    said = T('Reading this book for words with two readings…');
+  } else if (state === 'suggested' && n) {
+    said = T('The model suggested {n} pronunciation change{s} in this book. None of them is in your audio until you use them.', { n, s: n === 1 ? '' : 's' });
+    add(modelBtn(T('Use these'), 'apply'), modelBtn(T('Discard'), 'discard', true));
+  } else if (state === 'suggested') {
+    said = T('The model found nothing to change in this book.');
+    add(modelBtn(T('Discard'), 'discard', true));
+  } else if (state === 'accepted') {
+    said = T('Using {n} model-chosen reading{s} in this book.', { n, s: n === 1 ? '' : 's' });
+    add(modelBtn(T('Discard them'), 'discard', true));
+  } else if (state === 'discarded') {
+    said = T('Nothing from the model is in this book’s audio.');
+    if (s.optin) add(modelBtn(T('Check again'), 'scan', true));
+  } else if (state) {
+    said = (s.note || '').trim() || T('The model pass did not finish.');
+    if (s.optin) add(modelBtn(T('Try again'), 'scan', true));
+  }
+  // The second question, and the one that matters on a return visit: this book
+  // has audio made with rules it no longer has.
+  if (stale) {
+    const line = T('{n} chapter{s} here were voiced before your latest word changes.', { n: stale, s: stale === 1 ? '' : 's' });
+    said = said ? (said + ' ' + line) : line;
+    if (s.available && s.optin && state !== 'running') add(modelBtn(T('Check this book'), 'scan', true));
+    const rb = document.createElement('button');
+    rb.className = 'btn'; rb.type = 'button'; rb.textContent = T('Re-encode those chapters');
+    rb.onclick = () => { $('#npmodel').hidden = true; showPronImpact(false); };
+    add(rb);
+  }
+  if (!said && s.available && !s.optin) {
+    said = T('Have a model check this book for words with two readings? Its answers would be suggestions, not changes.');
+    add(modelBtn(T('Check this book'), 'scan', true));
+  }
+  if (s.optin && state && state !== 'running') {
+    const b = modelBtn(T('Stop checking this book'), 'off', true);
+    b.style.opacity = '.7'; add(b);
+  }
+  if (!said) return;
+  txt.textContent = said;
+  box.hidden = false;
+}
 
 // --- pronunciation impact: a rule change only re-encodes what it touches ---
 // Saving a word does not re-encode anything by itself. This asks the server
@@ -4675,8 +4774,10 @@ function fileB64(f) { return new Promise((res, rej) => { const r = new FileReade
 // replace or keep_both.
 let PENDING_IMPORT = null;
 function clearDup() { PENDING_IMPORT = null; const n = $('#dupnote'); if (n) n.hidden = true; }
+function modelOn() { const c = $('#modelpass'); return !!(c && c.checked); }
 async function doImport(payload, note) {
   clearDup(); clearSeries();
+  if (modelOn()) payload = Object.assign({}, payload, { model_pass: true });
   if (note) busy(note);
   try {
     const d = await jpost('/import', Object.assign({ user: USER }, payload));
@@ -5413,6 +5514,7 @@ async function openBook(id, jumpPlay) {
     // page's conversion, another tab's, or one that finished while we were
     // away. Without it the shelf keeps a number that stopped being true.
     syncShelfCounts(id, book.chapters);
+    loadBookModel(id);
     SELECT.clear();
     selVoice = defaultVoiceKey();       // the newest voice, until the reader picks another
     refreshStates();

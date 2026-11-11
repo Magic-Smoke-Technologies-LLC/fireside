@@ -324,7 +324,7 @@ def _resume_state(conn, book_id, idxs, provider, voice, model, speed, tokens=Non
 
 def render_book(conn, storage, speech, user_id, book_id, voice="", model="",
                 speed=1.0, cred=None, opts=None, only=None, job_id=None,
-                voice_label=""):
+                voice_label="", plugins_root=None):
     """Render all (or `only`) chapters of a book. Returns the job id.
 
     Resumable: chapters already converted in this voice are counted, not
@@ -349,7 +349,9 @@ def render_book(conn, storage, speech, user_id, book_id, voice="", model="",
     # and a re-render costs nothing. Off for every other account (it is checked
     # inside, before any call), and a failure here never fails the render.
     disambig_rules, disambig_error = disambig.ensure(conn, storage, user_id,
-                                                     book_id, idxs)
+                                                     book_id, idxs,
+                                                     plugins_root=plugins_root,
+                                                     job_id=job_id or "")
     if disambig_rules:
         rules = pron.for_book(pron.load(conn, user_id), book_id,
                               pron.book_author(conn, book_id),
