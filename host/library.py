@@ -232,7 +232,12 @@ def find_by_meta(conn, user_id, key, value):
 
 
 def list_books(conn, user_id):
-    """The whole shelf, one query set, in the order it was added.
+    """The whole shelf, one query set, newest first.
+
+    id breaks the created_at tie: a series import writes its books inside one
+    second, so without it SQLite and MySQL are free to hand back either order
+    and the same shelf reads differently on two requests (a test caught that
+    as a "flake" and it was a real nondeterminism).
 
     This used to ask the database twice per book for its chapter and voiced
     counts. On a shelf of 1,828 books that is 3,656 round trips for one screen,
@@ -247,7 +252,7 @@ def list_books(conn, user_id):
     rows = conn.execute(
         "SELECT id,title,author,created_at,cover_ref,series_name,series_index,"
         " read_at"
-        " FROM books WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
+        " FROM books WHERE user_id=? ORDER BY created_at DESC, id DESC", (user_id,)).fetchall()
     # SUM() comes back as Decimal from MySQL and an int from SQLite. A Decimal
     # in this dict reaches json.dumps and the shelf answers a connection reset
     # instead of a page, so the cast is not tidiness - it is the difference
