@@ -120,26 +120,42 @@ def estimate(chars, provider=""):
     }
 
 
-def sweep_stale(conn, stale_seconds=0):
+def set_worker(conn, job_id, worker):
+    """Record who owns the run, so a boot can tell a dead thread from a live one."""
+    conn.execute("UPDATE jobs SET worker=?,updated_at=? WHERE id=?",
+                 (worker or "", now(), job_id))
+    conn.commit()
+
+
+def sweep_stale(conn, stale_seconds=0, worker=None):
     """Close out jobs whose worker is gone.
 
-    At startup no render thread can be alive, so `stale_seconds=0` marks every
-    running job interrupted. A positive window only touches jobs untouched for
-    that long. Converted chapters are kept either way, so a resume is cheap.
+    `worker` narrows the sweep to one kind of owner. A boot can only prove that
+    a *request* thread died with the process: a worker started outside it (a
+    Container Apps Job, a detached local process) may still be running while a
+    new replica boots, and sweeping it would throw away a live render. Callers
+    sweep request rows with a zero window and worker rows with a long one.
     """
     ts = now()
     msg = "interrupted; converted chapters are kept, run the convert again to resume"
+    where = " WHERE status IN ('running','queued')"
+    args = ()
+    if worker == "request":
+        where += " AND (worker IS NULL OR worker='' OR worker='request')"
+    elif worker:
+        where += " AND worker=?"
+        args = (worker,)
     if stale_seconds and stale_seconds > 0:
         cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                time.gmtime(time.time() - stale_seconds))
         cur = conn.execute(
             "UPDATE jobs SET status='stalled',error=?,updated_at=?"
-            " WHERE status IN ('running','queued') AND updated_at < ?",
-            (msg, ts, cutoff))
+            + where + " AND updated_at < ?",
+            (msg, ts) + args + (cutoff,))
     else:
         cur = conn.execute(
-            "UPDATE jobs SET status='stalled',error=?,updated_at=?"
-            " WHERE status IN ('running','queued')", (msg, ts))
+            "UPDATE jobs SET status='stalled',error=?,updated_at=?" + where,
+            (msg, ts) + args)
     conn.commit()
     return getattr(cur, "rowcount", 0) or 0
 
@@ -300,16 +316,16 @@ def _write_chapter_audio(conn, book_id, idx, entry, provider, voice, model, spee
 
 
 def start_job(conn, user_id, book_id, provider, voice="", model="", total=0, kind="render",
-              status="running", connection_id="", speed=1.0):
+              status="running", connection_id="", speed=1.0, worker="request"):
     job_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO jobs(id,user_id,book_id,kind,provider,voice,model,status,"
         "total,current,error,created_at,updated_at,connection_id,speed,"
-        "reservation_id,quoted_chars)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "reservation_id,quoted_chars,worker)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (job_id, user_id, book_id, kind, provider, voice, model, status,
          total, 0, "", now(), now(), connection_id or "", float(speed or 1.0),
-         "", 0))
+         "", 0, worker or "request"))
     conn.commit()
     return job_id
 

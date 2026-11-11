@@ -324,6 +324,10 @@ _ADDED_COLUMNS = [
     ("jobs", "speed", "DOUBLE DEFAULT 1.0"),
     ("jobs", "reservation_id", "VARCHAR(128) DEFAULT ''"),
     ("jobs", "quoted_chars", "INT DEFAULT 0"),
+    # Who is running it: 'request' for a thread inside the web process,
+    # 'worker' for a process the request did not keep alive. A boot can
+    # prove a request thread is gone; it cannot prove a worker is.
+    ("jobs", "worker", "VARCHAR(32) DEFAULT ''"),
     ("books", "cover_ref", "VARCHAR(255) DEFAULT ''"),
     ("books", "cover_mime", "VARCHAR(64) DEFAULT ''"),
     ("books", "author", "VARCHAR(255) DEFAULT ''"),
