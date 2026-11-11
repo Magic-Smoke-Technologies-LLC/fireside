@@ -630,6 +630,18 @@
     "guessed by the model for": "guessed by the model for",
     "Forget these": "Forget these",
     "Forgotten. The next voicing can decide again.": "Forgotten. The next voicing can decide again.",
-    "all your books": "all your books"
+    "all your books": "all your books",
+    "It stopped before it could start, when the server restarted. The chapters it did voice are kept, so those are not paid for again.": "It stopped before it could start, when the server restarted. The chapters it did voice are kept, so those are not paid for again.",
+    "That book is no longer on your shelf.": "That book is no longer on your shelf.",
+    "Press Convert to pick up where it stopped. Chapters already voiced are skipped.": "Press Convert to pick up where it stopped. Chapters already voiced are skipped.",
+    "Picking it up again.": "Picking it up again.",
+    "waiting to start": "waiting to start",
+    "voicing {n} of {total}": "voicing {n} of {total}",
+    "stopped": "stopped",
+    "A book": "A book",
+    "Resume": "Resume",
+    "Clear": "Clear",
+    "Cleared.": "Cleared.",
+    "Conversion cancelled.": "Conversion cancelled."
   }
 }

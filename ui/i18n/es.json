@@ -629,7 +629,19 @@
     "guessed by the model for": "adivinadas por el modelo para",
     "Forget these": "Olvidar estas",
     "Forgotten. The next voicing can decide again.": "Olvidadas. La próxima conversión puede volver a decidir.",
-    "all your books": "todos tus libros"
+    "all your books": "todos tus libros",
+    "It stopped before it could start, when the server restarted. The chapters it did voice are kept, so those are not paid for again.": "Se detuvo antes de empezar, cuando el servidor se reinició. Los capítulos que sí convirtió se conservan, así que no se pagan otra vez.",
+    "That book is no longer on your shelf.": "Ese libro ya no está en tu estantería.",
+    "Press Convert to pick up where it stopped. Chapters already voiced are skipped.": "Pulsa Convertir para retomarlo donde se quedó. Los capítulos ya convertidos se saltan.",
+    "Picking it up again.": "Retomándolo.",
+    "waiting to start": "esperando para empezar",
+    "voicing {n} of {total}": "convirtiendo {n} de {total}",
+    "stopped": "detenido",
+    "A book": "Un libro",
+    "Resume": "Reanudar",
+    "Clear": "Quitar",
+    "Cleared.": "Quitado.",
+    "Conversion cancelled.": "Conversión cancelada."
   },
   "name": "Español"
 }
