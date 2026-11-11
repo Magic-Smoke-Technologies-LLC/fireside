@@ -33,6 +33,7 @@ import os
 import re
 import socket
 import threading
+import time
 import unicodedata
 import urllib.parse
 import urllib.request
@@ -41,7 +42,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from host.host import Host
 import inspect
 
-from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, draft as drafts, erase, example, grants, i18n, jobs, library, mailer, notices, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
+from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, disambig, draft as drafts, erase, example, grants, i18n, jobs, library, mailer, notices, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
 from host.egress import fetch as _fetch
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -387,6 +388,10 @@ class App:
         out["disambig"] = [{"id": pid, "label": p.label,
                             "settings": self._fields(p.obj)}
                            for pid, p in self.host.disambig.items()]
+        # Whether a box is set, which is what decides if the import screen even
+        # offers the checkbox. A checkbox that promises nothing is worse than no
+        # checkbox, so the page asks instead of assuming.
+        out["model_pass"] = bool(self.host.disambig) and disambig.configured()
         return 200, out
 
     def voices(self, q, body):
@@ -481,6 +486,141 @@ class App:
             return 502, {"error": "scan failed",
                         "detail": _detail(e, "the reader could not read that text")}
         return 200, {"questions": questions or []}
+
+    # ---- the model pass: suggestions, never settings ----------------------
+    def _disambig_plugin(self):
+        """The disambiguator this host actually loaded. Discovery happens once,
+        at startup; asking the default plugin directory again here could load a
+        second copy that the host never checked the contract against."""
+        for p in self.host.disambig.values():
+            if getattr(p.obj, "decide", None):
+                return p.obj
+        return None
+
+    def _own_book(self, uid, book_id):
+        """This account owns this book, or None. Every model-pass route goes
+        through here: a book id is not a permission."""
+        bk = library.get_book(self.conn, book_id) or {}
+        if not bk or bk.get("user_id") != uid:
+            return None
+        return bk
+
+    def _empty_model_state(self):
+        return {"book": "", "available": disambig.configured(), "optin": False,
+                "status": "", "words": 0, "rules": [], "note": "",
+                "updated_at": "", "stale": None}
+
+    def _model_pass_on(self, book_id, user):
+        """Allow the pass on one book, and start it now."""
+        disambig.set_optin(self.conn, book_id, True)
+        return self._start_model_pass(book_id, user)
+
+    def _start_model_pass(self, book_id, user):
+        """Run the pass on this book in its own thread, off the request.
+
+        The row, not a job, is the status: the pass belongs to the book and the
+        page already polls the book. A second click while one is running is
+        ignored rather than paid for twice.
+        """
+        if not disambig.configured():
+            return None
+        st = disambig.state(self.conn, book_id) or {}
+        if st.get("status") == "running" and not _stale_claim(st.get("updated_at")):
+            return None
+        disambig._save(self.conn, user, book_id, "running", st.get("rules") or [],
+                       st.get("note") or "")
+
+        p = self._disambig_plugin()
+
+        def _work():
+            c = db.connect(self.db_path)
+            try:
+                disambig.scan(c, self.storage, user, book_id,
+                              run=getattr(p, "decide", None))
+            except Exception as e:
+                try:
+                    disambig._save(c, user, book_id, "failed", [],
+                                   "the pass could not finish: " + str(e)[:200])
+                except Exception:
+                    pass
+            finally:
+                c.close()
+
+        threading.Thread(target=_work, daemon=True).start()
+        return disambig.state(self.conn, book_id)
+
+    def book_model_get(self, q, body):
+        """What the model pass did on this book, and what has gone stale since.
+
+        `stale` is the question Chris asked for (11-11): the rules a chapter was
+        voiced with are stamped on the rendition, so the host can say which
+        chapters predate the reader's latest word changes without re-reading
+        anything by hand.
+        """
+        uid = self._uid(q, body)
+        if not uid:
+            # A page with no session yet asks this on load. An empty state is the
+            # honest answer; a 401 here would read as an error in the book.
+            return 200, self._empty_model_state()
+        bid = q.get("book") or ""
+        # A route can name a book that is not here (a dead link, a notice whose
+        # book was deleted). That is "nothing to say about it", not a refusal:
+        # a 403 on a page load is an error nobody can act on.
+        if not library.get_book(self.conn, bid):
+            out = self._empty_model_state()
+            out["book"] = bid
+            return 200, out
+        if not self._own_book(uid, bid):
+            return 403, {"error": "no such book"}
+        st = disambig.state(self.conn, bid) or {}
+        out = {"book": bid, "available": disambig.configured(),
+               "optin": disambig.opted_in(self.conn, bid),
+               "status": st.get("status") or "", "words": st.get("words") or 0,
+               "rules": st.get("rules") or [], "note": st.get("note") or "",
+               "updated_at": st.get("updated_at") or ""}
+        try:
+            im = pron.impact(self.conn, self.storage, uid, bid,
+                             split_for=self._speech_split)
+            out["stale"] = {"chapters": im.get("chapters_affected") or 0,
+                            "est_seconds": im.get("est_seconds") or 0,
+                            "voice": ((im.get("books") or [{}])[0].get("renditions")
+                                      or [{}])[0].get("voice_label", "") if im.get("books") else ""}
+        except Exception:
+            # Not knowing is not "nothing changed". The page says so in words.
+            out["stale"] = None
+        return 200, out
+
+    def book_model_set(self, q, body):
+        """scan | apply | discard | off. Each one is the reader's own hand."""
+        uid = self._uid(q, body)
+        if not uid:
+            return 401, {"error": "auth required"}
+        bid = body.get("book") or ""
+        if not self._own_book(uid, bid):
+            return 403, {"error": "no such book"}
+        action = (body.get("action") or "scan").strip().lower()
+        if action == "scan":
+            if not disambig.configured():
+                return 400, {"error": "no model box is set up"}
+            disambig.set_optin(self.conn, bid, True)
+            st = self._start_model_pass(bid, uid)
+            return 200, {"book": bid, "status": (st or {}).get("status", "running"),
+                         "optin": True}
+        if action == "apply":
+            st, err = disambig.apply(self.conn, uid, bid)
+            if err:
+                return 400, {"error": err}
+            return 200, {"book": bid, "status": (st or {}).get("status", ""),
+                         "words": (st or {}).get("words", 0), "optin": True}
+        if action == "discard":
+            st = disambig.discard(self.conn, uid, bid)
+            return 200, {"book": bid, "status": (st or {}).get("status", ""),
+                         "optin": disambig.opted_in(self.conn, bid)}
+        if action == "off":
+            disambig.set_optin(self.conn, bid, False)
+            return 200, {"book": bid, "optin": False,
+                         "status": (disambig.state(self.conn, bid) or {}).get("status", "")}
+        return 400, {"error": "unknown action"}
 
     def ui(self, q, body):
         """Serve the browser client. The host owns its own UI; plugins ship none.
@@ -755,6 +895,8 @@ class App:
                 tagmod.subjects_into_tags(self.conn, user, existing, subjects)
             self._file_meta(existing, book)
             self._maybe_cover(existing, book)
+            if _truthy(body.get("model_pass")):
+                self._model_pass_on(existing, user)
             out = {"book_id": existing, "title": getattr(book, "title", ""),
                    "chapters": len(getattr(book, "chapters", [])),
                    "replaced": True}
@@ -764,8 +906,14 @@ class App:
                                tags_from=subjects)
         self._file_meta(bid, book)
         self._maybe_cover(bid, book)
+        # The reader ticked the box on this import, so the pass is allowed on
+        # this book and no other. It starts now, in its own thread: a model over a
+        # whole book is minutes, and an import is a click.
+        if _truthy(body.get("model_pass")):
+            self._model_pass_on(bid, user)
         return 200, {"book_id": bid, "title": getattr(book, "title", ""),
-                     "chapters": len(getattr(book, "chapters", []))}
+                     "chapters": len(getattr(book, "chapters", [])),
+                     "model_pass": disambig.opted_in(self.conn, bid)}
 
     def _refusal(self, e, user, plugin):
         """A plugin's refusal, made useful before it reaches the page.
@@ -1651,7 +1799,8 @@ class App:
             try:
                 jobs.render_book(c, self.storage, speech, user, book_id, voice,
                                  model, speed, cred=cred, opts=opts, only=only,
-                                 job_id=jid, voice_label=voice_label)
+                                 job_id=jid, voice_label=voice_label,
+                                 plugins_root=self.host.plugins_root)
                 if sale and res_id:
                     # Charge only the characters this run actually synthesised:
                     # what is still stale after the run is what was never voiced
@@ -3360,6 +3509,7 @@ GET_ROUTES = {
     "/plans": "plans_get",
     "/storage": "storage_get",
     "/disambig/models": "disambig_models",
+    "/book/model": "book_model_get",
 }
 POST_ROUTES = {
     "/import": "import_book", "/import/preview": "preview_import",
@@ -3383,6 +3533,7 @@ POST_ROUTES = {
     "/connections/override": "connection_override", "/prefs": "prefs_set",
     "/pron": "pron_set", "/pron/dicts": "pron_dict_save",
     "/disambig/scan": "disambig_scan", "/disambig/quote": "disambig_quote",
+    "/book/model": "book_model_set",
     "/pron/dicts/delete": "pron_dict_delete",
     "/credits/purchase": "credits_purchase",
     "/grants": "grants_set",
@@ -3471,6 +3622,22 @@ def _with_idem(fn, *args, **kwargs):
         except (TypeError, ValueError):
             pass
     return fn(*args, **kwargs)
+
+
+# A pass is a few minutes on a big book. A "running" row older than this was a
+# thread that died (a restart, an OOM), and leaving it forever would mean the
+# button never works again for that book.
+_PASS_CLAIM_SECONDS = 30 * 60
+
+
+def _stale_claim(stamp):
+    if not stamp:
+        return True
+    try:
+        when = time.mktime(time.strptime(str(stamp)[:19], "%Y-%m-%dT%H:%M:%S"))
+    except Exception:
+        return True
+    return (time.time() - when) > _PASS_CLAIM_SECONDS
 
 
 def _truthy(v):
