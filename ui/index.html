@@ -214,7 +214,10 @@
   .resume .cover{width:130px;flex:none;aspect-ratio:2/3}
   .convjobs{display:flex;flex-direction:column;gap:8px;margin-top:18px}
   .convjobs[hidden]{display:none}
-  .convrow{display:flex;gap:12px;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+  .convrow{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+  .convwhat{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .convwhat .why{margin:0;color:var(--mute,#888)}
+  .convacts{display:flex;gap:8px;flex:none}
   .shelf{display:grid;grid-template-columns:repeat(auto-fill,170px);gap:22px;margin-top:12px;justify-content:start}
   .bk{cursor:pointer;max-width:170px;position:relative}
   /* a book the reader finished: dimmed, and out of the way unless asked for */
@@ -6178,7 +6181,46 @@ $('#rcancel').onclick = async () => {
 };
 
 // Conversions the server still remembers, so one the page forgot (a reload, a
-// second tab, a job queued behind another) is still cancellable.
+// second tab, a job queued behind another) is still cancelable.
+
+// Why a job stopped, in words the reader can act on. The server writes its
+// sentence for whoever reads the logs; what the reader needs to know is whether
+// her queue was accepted, and what to press to get it moving again.
+function jobReason(j) {
+  const e = (j.error || '').trim();
+  if (!e) return '';
+  if (/^interrupted/i.test(e)) {
+    return T('It stopped before it could start, when the server restarted. The chapters it did voice are kept, so those are not paid for again.');
+  }
+  if (/^model pass/i.test(e)) return '';   // a note, not a failure
+  return e;
+}
+// Pick a stopped run up again through the same door the dialog uses: same
+// connection, same voice, and the server skips every chapter already voiced.
+// Nothing here invents a voice or a provider for a job row that has none; the
+// book's own dialog is the honest fallback.
+async function resumeJob(j) {
+  const b = bookById(j.book_id);
+  if (!b) { idle(T('That book is no longer on your shelf.')); return; }
+  const cand = CONNS.filter(c => c.enabled !== false && (!j.provider || c.provider === j.provider));
+  const conn = cand.find(c => c.id === PREFS.default_connection_id) || cand[0];
+  if (!conn || !j.voice) {
+    await openBook(j.book_id); openConvert();
+    idle(T('Press Convert to pick up where it stopped. Chapters already voiced are skipped.'));
+    return;
+  }
+  try {
+    busy('Picking that book up again…');
+    await jpost('/render', { user: USER, book: j.book_id, connection_id: conn.id,
+                             voice: j.voice, model: j.model || '', speed: 1.0 });
+    idle(T('Picking it up again.'));
+  } catch (e) {
+    await openBook(j.book_id); openConvert();
+    fail(e);
+    return;
+  }
+  renderActiveJobs();
+}
 async function renderActiveJobs() {
   const box = $('#convjobs'); if (!box) return;
   if (!USER) { box.hidden = true; return; }
@@ -6191,23 +6233,35 @@ async function renderActiveJobs() {
   box.innerHTML = '';
   active.slice(0, 5).forEach(j => {
     const row = document.createElement('div'); row.className = 'convrow';
+    const what = document.createElement('div'); what.className = 'convwhat';
     const t = document.createElement('span'); t.className = 'small';
     const bk = bookById(j.book_id) || {};
-    const state = (j.status === 'queued') ? 'waiting to start'
-      : (j.status === 'running') ? ('voicing ' + (j.current || 0) + '/' + (j.total || 0))
-      : 'stopped';
-    t.textContent = (bk.title || 'A book') + ' · ' + state;
+    const state = (j.status === 'queued') ? T('waiting to start')
+      : (j.status === 'running') ? T('voicing {n} of {total}', { n: (j.current || 0), total: (j.total || 0) })
+      : T('stopped');
+    t.textContent = (bk.title || T('A book')) + ' · ' + state;
+    what.append(t);
+    const why = jobReason(j);
+    if (why) { const w = document.createElement('p'); w.className = 'small why'; w.textContent = why; what.append(w); }
+    const acts = document.createElement('div'); acts.className = 'convacts';
+    if (j.status === 'stalled') {
+      const rb = document.createElement('button'); rb.type = 'button';
+      rb.className = 'btn'; rb.textContent = T('Resume');
+      rb.onclick = () => { rb.disabled = true; resumeJob(j); };
+      acts.append(rb);
+    }
     const b = document.createElement('button'); b.type = 'button';
     b.className = 'btn quiet';
-    b.textContent = (j.status === 'stalled') ? 'Clear' : 'Cancel';
+    b.textContent = (j.status === 'stalled') ? T('Clear') : T('Cancel');
     b.onclick = async () => {
       b.disabled = true;
       try { await jpost('/cancel', { user: USER, job: j.id });
-            idle(j.status === 'stalled' ? 'Cleared.' : 'Conversion cancelled.'); }
+            idle(j.status === 'stalled' ? T('Cleared.') : T('Conversion cancelled.')); }
       catch (e) { fail(e); }
       renderActiveJobs();
     };
-    row.append(t, b); box.append(row);
+    acts.append(b);
+    row.append(what, acts); box.append(row);
   });
   box.hidden = false;
 }

@@ -42,7 +42,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from host.host import Host
 import inspect
 
-from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, disambig, draft as drafts, erase, example, grants, i18n, jobs, library, mailer, notices, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
+from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, disambig, draft as drafts, erase, example, grants, i18n, jobs, keepwarm, library, mailer, notices, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
 from host.egress import fetch as _fetch
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -246,6 +246,10 @@ class App:
         self.hosted = hosted
         self.require_auth = require_auth
         self.auth = auth.Auth(self.conn)
+        # A render lives in a thread here, so a replica that sleeps loses it.
+        # Hold the replica awake for as long as there is work to do.
+        if self.hosted:
+            keepwarm.start(self.db_path)
 
     def _uid(self, q, body):
         """The signed-in user wins over any user id the client passed in."""
