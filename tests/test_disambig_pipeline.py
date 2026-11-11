@@ -1,8 +1,9 @@
-"""The pre-render model pass: off by default, one book's readings decided once.
+"""The model pass: off by default, per book, and its answers are suggestions.
 
-The interesting behaviours are the gates, not the model: an account that is not
-named must cost nothing, a second render must not ask again, and a box that is
-asleep must leave the render alone.
+The interesting behaviours are the gates, not the model: a book nobody opted in
+must cost nothing, a second render must not ask again, a box that is asleep must
+leave the render alone, and a model's answers must never reach the audio until a
+reader accepts them.
 """
 
 import os
@@ -85,21 +86,36 @@ class Base(unittest.TestCase):
             {"word": "live", "say": "liv", "why": "we live here"}])
         return disambig.ensure(self.conn, self.storage, UID, self.bid, idxs, **kw)
 
+    def suggested(self):
+        return disambig.state(self.conn, self.bid) or {}
+
 
 class TestGates(Base):
-    def test_nobody_is_enabled_without_being_named(self):
+    def test_nobody_is_enabled_without_being_named_or_opted_in(self):
         with Env(accounts=""):
-            self.assertFalse(disambig.enabled_for(UID))
+            self.assertFalse(disambig.enabled_for(self.conn, UID, self.bid))
         with Env(accounts="someone-else"):
-            self.assertFalse(disambig.enabled_for(UID))
+            self.assertFalse(disambig.enabled_for(self.conn, UID, self.bid))
         with Env():
-            self.assertTrue(disambig.enabled_for(UID))
+            self.assertTrue(disambig.enabled_for(self.conn, UID, self.bid))
+
+    def test_one_ticked_import_enables_only_that_book(self):
+        other = library.add_book(self.conn, self.storage, UID,
+                                 Book(title="Other", chapters=[Chapter("a", "live")]))
+        with Env(accounts=""):
+            self.assertFalse(disambig.enabled_for(self.conn, UID, self.bid))
+            disambig.set_optin(self.conn, self.bid, True)
+            self.assertTrue(disambig.enabled_for(self.conn, UID, self.bid))
+            self.assertFalse(disambig.enabled_for(self.conn, UID, other))
+            disambig.set_optin(self.conn, self.bid, False)
+            self.assertFalse(disambig.enabled_for(self.conn, UID, self.bid))
 
     def test_an_unconfigured_box_runs_for_nobody(self):
+        disambig.set_optin(self.conn, self.bid, True)
         with Env(url=""):
-            self.assertFalse(disambig.enabled_for(UID))
+            self.assertFalse(disambig.enabled_for(self.conn, UID, self.bid))
         with Env(model=""):
-            self.assertFalse(disambig.enabled_for(UID))
+            self.assertFalse(disambig.enabled_for(self.conn, UID, self.bid))
 
     def test_a_disabled_account_never_reaches_the_model(self):
         called = []
@@ -107,7 +123,7 @@ class TestGates(Base):
             rules, err = self.run_pass(run=lambda *a: called.append(1) or [])
         self.assertEqual((rules, err), ([], ""))
         self.assertEqual(called, [])
-        self.assertIsNone(disambig.existing(self.conn, UID, self.bid))
+        self.assertIsNone(disambig.state(self.conn, self.bid))
 
 
 class TestTheKey(Base):
@@ -138,23 +154,44 @@ class TestTheKey(Base):
 
 
 class TestThePass(Base):
-    def test_answers_are_stored_as_this_books_rules(self):
+    def test_answers_are_stored_as_suggestions_not_rules(self):
         with Env():
             rules, err = self.run_pass()
         self.assertEqual(err, "")
-        self.assertEqual([r["from"] for r in rules], ["live"])
-        d = disambig.existing(self.conn, UID, self.bid)
-        self.assertIsNotNone(d)
-        self.assertEqual(d["scope"], "book")
-        self.assertEqual(d["scope_key"], self.bid)
-        self.assertEqual(d["rules"][0]["to"], "liv")
+        # the pass never hands the renderer rules: nothing was accepted yet
+        self.assertEqual(rules, [])
+        st = self.suggested()
+        self.assertEqual(st["status"], "suggested")
+        self.assertEqual([r["from"] for r in st["rules"]], ["live"])
+        # and no dictionary was written, so the reader's word list stays theirs
+        self.assertIsNone(disambig.existing(self.conn, UID, self.bid))
 
-    def test_the_saved_rules_reach_the_render(self):
+    def test_a_render_speaks_the_readers_words_until_they_say_otherwise(self):
         with Env():
             self.run_pass()
         rules = pron.for_book(pron.load(self.conn, UID), self.bid)
-        self.assertIn("liv", [r["to"] for r in rules])
+        self.assertEqual(pron.apply("We live here.", rules), "We live here.")
+        # now the reader taps "use these"
+        with Env():
+            disambig.apply(self.conn, UID, self.bid)
+        rules = pron.for_book(pron.load(self.conn, UID), self.bid)
         self.assertEqual(pron.apply("We live here.", rules), "We liv here.")
+        d = disambig.existing(self.conn, UID, self.bid)
+        self.assertEqual(d["scope"], "book")
+        self.assertEqual(d["scope_key"], self.bid)
+        self.assertEqual(d["rules"][0]["to"], "liv")
+        self.assertEqual(self.suggested()["status"], "accepted")
+
+    def test_discard_takes_them_back_out_of_the_audio(self):
+        with Env():
+            self.run_pass()
+            disambig.apply(self.conn, UID, self.bid)
+            got = disambig.discard(self.conn, UID, self.bid)
+        self.assertEqual(got["status"], "discarded")
+        rules = pron.for_book(pron.load(self.conn, UID), self.bid)
+        self.assertNotIn("liv", [r["to"] for r in rules])
+        # discarded is still remembered, so the model is not paid for again
+        self.assertEqual([r["from"] for r in self.suggested()["rules"]], ["live"])
 
     def test_one_book_is_asked_once(self):
         calls = []
@@ -168,7 +205,21 @@ class TestThePass(Base):
             rules, err = self.run_pass(run=run)
         self.assertEqual(len(calls), 1)
         self.assertEqual((rules, err), ([], ""))
-        self.assertEqual(pron.for_book(pron.load(self.conn, UID), self.bid)[0]["to"], "liv")
+        self.assertEqual([r["from"] for r in self.suggested()["rules"]], ["live"])
+
+    def test_a_scan_asked_for_is_a_new_question(self):
+        calls = []
+
+        def run(text, model, cred):
+            calls.append(text)
+            return [{"word": "live", "say": "lyve"}]
+
+        with Env():
+            self.run_pass(run=run)
+            st, note = disambig.scan(self.conn, self.storage, UID, self.bid, run=run)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(note, "")
+        self.assertEqual([r["to"] for r in st["rules"]], ["lyve"])
 
     def test_a_sleeping_box_does_not_fail_the_render(self):
         def boom(*a):
@@ -178,6 +229,7 @@ class TestThePass(Base):
             rules, err = self.run_pass(run=boom)
         self.assertEqual(rules, [])
         self.assertIn("did not answer", err)
+        self.assertIsNone(disambig.state(self.conn, self.bid))
         self.assertIsNone(disambig.existing(self.conn, UID, self.bid))
 
     def test_a_failed_pass_is_not_remembered_as_done(self):
@@ -185,7 +237,7 @@ class TestThePass(Base):
             self.run_pass(run=lambda *a: (_ for _ in ()).throw(RuntimeError("down")))
             rules, err = self.run_pass()
         self.assertEqual(err, "")
-        self.assertEqual([r["from"] for r in rules], ["live"])
+        self.assertEqual([r["from"] for r in self.suggested()["rules"]], ["live"])
 
 
 class TestTheBatch(Base):
@@ -211,7 +263,8 @@ class TestTheBatch(Base):
         self.assertEqual(err, "")
         self.assertGreater(len(seen), 1)
         self.assertTrue(all(n <= disambig.BATCH_CHARS + 2 * len(big) for n in seen))
-        self.assertEqual([r["from"] for r in rules], ["live"])
+        st = disambig.state(self.conn, bid)
+        self.assertEqual([r["from"] for r in st["rules"]], ["live"])
 
     def test_a_rate_limit_is_retried_not_saved_as_empty(self):
         attempts = []
@@ -225,7 +278,7 @@ class TestTheBatch(Base):
         with Env():
             rules, err = self.run_pass(run=run)
         self.assertEqual(err, "")
-        self.assertEqual([r["from"] for r in rules], ["live"])
+        self.assertEqual([r["from"] for r in self.suggested()["rules"]], ["live"])
 
     def test_a_partial_pass_keeps_what_came_back_and_says_so(self):
         big = "We live here. " * 900
@@ -241,9 +294,11 @@ class TestTheBatch(Base):
         idxs = [r["idx"] for r in library.chapters(self.conn, bid)]
         with Env():
             rules, err = disambig.ensure(self.conn, self.storage, UID, bid, idxs, run=run)
-        self.assertEqual([r["from"] for r in rules], ["live"])
+        self.assertEqual(rules, [])
+        st = disambig.state(self.conn, bid)
+        self.assertEqual([r["from"] for r in st["rules"]], ["live"])
         self.assertIn("part(s) failed", err)
-        self.assertIsNotNone(disambig.existing(self.conn, UID, bid))
+        self.assertIn("part(s) failed", st["note"])
 
     def test_a_book_with_nothing_to_ask_is_remembered(self):
         calls = []
@@ -301,22 +356,28 @@ class TestWhatIsRefused(unittest.TestCase):
 
 
 class TestRenderHook(Base):
-    def test_an_enabled_account_renders_through_the_rules(self):
+    def test_a_render_asks_once_and_still_speaks_the_readers_words(self):
         speech = FakeSpeech()
+        calls = []
         with Env():
             from host import disambig as d
             old = d._plugin
             d._plugin = lambda root=None: type("P", (), {
-                "decide": staticmethod(lambda text, model, cred: [
+                "decide": staticmethod(lambda text, model, cred: calls.append(1) or [
                     {"word": "live", "say": "liv"}])})
             try:
                 jid = jobs.render_book(self.conn, self.storage, speech, UID, self.bid,
                                        voice="v1", model="m1")
+                jid2 = jobs.render_book(self.conn, self.storage, speech, UID, self.bid,
+                                        voice="v2", model="m1")
             finally:
                 d._plugin = old
         self.assertEqual(jobs.job(self.conn, jid)["status"], "done")
+        self.assertEqual(jobs.job(self.conn, jid2)["status"], "done")
+        self.assertEqual(len(calls), 1, "the second render must not pay for the model again")
         rules = pron.for_book(pron.load(self.conn, UID), self.bid)
-        self.assertEqual(pron.spoken("We live here.", rules), "We liv here.")
+        self.assertEqual(pron.spoken("We live here.", rules), "We live here.")
+        self.assertEqual(self.suggested()["status"], "suggested")
 
     def test_a_word_the_book_uses_both_ways_says_so_on_the_job(self):
         # the note has to reach the place a human reads it: the job's error line,
@@ -336,5 +397,6 @@ class TestRenderHook(Base):
         job = jobs.job(self.conn, jid)
         self.assertEqual(job["status"], "done")
         self.assertIn("left plain: record", job["error"])
+        self.assertIn("left plain: record", self.suggested()["note"])
         rules = pron.for_book(pron.load(self.conn, UID), self.bid)
         self.assertEqual([r for r in rules if r["from"] == "record"], [])
