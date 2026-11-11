@@ -220,6 +220,21 @@ class TestChunkRerender(unittest.TestCase):
         im2 = pron.impact(self.conn, self.storage, "u1")
         self.assertGreater(im2["chars_to_synth"], im["chars_to_synth"])
 
+    def test_impact_can_be_asked_about_one_book(self):
+        # A word typed in the book on screen is judged against that book. Asking
+        # without a book is the separate "all books" question, and it is only
+        # right when the reader asked it.
+        other = library.add_book(self.conn, self.storage, "u1", Book(
+            title="Other", chapters=[Chapter("c0", "Qui-Gon again.")]))
+        jobs.render_book(self.conn, self.storage, self.speech, "u1", self.bid, voice="v1")
+        jobs.render_book(self.conn, self.storage, self.speech, "u1", other, voice="v1")
+        pron.save(self.conn, "u1", [{"from": "Qui-Gon", "to": "Kwai-Gon"}])
+        one = pron.impact(self.conn, self.storage, "u1", book_id=other)
+        self.assertEqual([b["id"] for b in one["books"]], [other])
+        self.assertEqual(one["books_affected"], 1)
+        wide = pron.impact(self.conn, self.storage, "u1")
+        self.assertEqual(wide["books_affected"], 2)
+
     def test_impact_clears_after_the_reencode(self):
         jobs.render_book(self.conn, self.storage, self.speech, "u1", self.bid, voice="v1")
         pron.save(self.conn, "u1", [{"from": "Qui-Gon", "to": "Kwai-Gon"}])

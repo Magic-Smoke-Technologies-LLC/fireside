@@ -35,6 +35,11 @@ import uuid
 
 from host.db import now
 
+# The dictionary a model pass writes. It lives with the user's own words so a
+# render needs one list, but it is not the user's: nothing in the editor may
+# treat it as theirs, match it when saving, or delete it by accident.
+MODEL_DICT_NAME = "Readings (model)"
+
 
 _ONES = ("", "one", "two", "three", "four", "five", "six", "seven", "eight",
          "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
@@ -332,16 +337,14 @@ def migrate(conn, uid):
     return len(groups)
 
 
-def load(conn, uid):
-    """Every rule this user has, one flat list, oldest dictionary first.
+def fold(dict_list):
+    """Dictionaries as one flat rule list, oldest dictionary first.
 
     Anything malformed is dropped rather than raised: one bad row must not take
     down a render.
     """
-    uid = uid or ""
-    migrate(conn, uid)
     out = []
-    for d in dicts(conn, uid):
+    for d in dict_list or []:
         for r in d["rules"]:
             keep = {k: r[k] for k in ("before", "after", "exact") if r.get(k)}
             out.append(_rule(r["from"], r["to"],
@@ -350,6 +353,23 @@ def load(conn, uid):
                              d["scope_key"] if d["scope"] == "series" else "",
                              extra=keep))
     return out
+
+
+def load(conn, uid):
+    """Every rule this user has, including what a model pass decided for them.
+
+    That is the list a render applies, so it is the whole truth for the engine.
+    The editor asks a narrower question (see `mine`) because a guess is not
+    something the reader typed.
+    """
+    uid = uid or ""
+    migrate(conn, uid)
+    return fold(dicts(conn, uid))
+
+
+def mine(conn, uid):
+    """The reader's own dictionaries: everything except a model's guesses."""
+    return [d for d in dicts(conn, uid) if d["name"] != MODEL_DICT_NAME]
 
 
 def save(conn, uid, rules):
@@ -372,7 +392,12 @@ def save(conn, uid, rules):
         item.update({k: r[k] for k in ("before", "after", "exact") if (r or {}).get(k)})
         groups.setdefault((scope, key), []).append(item)
     keep = {d["id"] for d in dicts(conn, uid)}
-    existing = {(d["scope"], d["scope_key"]): d for d in dicts(conn, uid)}
+    # A model pass writes its guesses at the same scopes as the user's words. This
+    # call owns only what the user typed, so the model's dictionary is invisible
+    # here: matching it would overwrite the guesses, and treating it as a scope
+    # this call emptied would delete them.
+    mine = [d for d in dicts(conn, uid) if d["name"] != MODEL_DICT_NAME]
+    existing = {(d["scope"], d["scope_key"]): d for d in mine}
     for (scope, key), items in groups.items():
         hit = existing.get((scope, key))
         save_dict(conn, uid, hit["name"] if hit else "My words", scope, key, items,
