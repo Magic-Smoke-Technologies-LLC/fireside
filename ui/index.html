@@ -140,6 +140,13 @@
   .billplan small{font:400 13px/1.4 var(--sans);color:var(--soft);margin-left:10px}
   .billbar{height:6px;border-radius:3px;background:var(--raise);overflow:hidden;margin:10px 0 0}
   .billbar i{display:block;height:100%;background:var(--flame);width:0;transition:width .3s}
+  /* Stopping the charge is the one thing on this screen a reader must be able
+     to find without hunting, so it gets its own ruled section under its own
+     heading, not a quiet button queued behind the card link (Chris, 11-11). */
+  .billcancel{border-top:1px dashed var(--line);margin-top:24px;padding-top:16px}
+  .billcancel h3{margin:0 0 6px}
+  .billcancel .custstop{background:none;border:1px solid var(--warn);color:var(--warn)}
+  .billcancel .custstop:hover{background:var(--warn);color:var(--bg)}
   /* The wallet's two jobs, as tabs: adding money and seeing where it went.
      The list used to open under the add buttons and read as one more block of
      fine print (Chris, 11-10). The balance stays above the tabs, always. */
@@ -1309,9 +1316,13 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       <div class="billbar" id="billbar" hidden><i id="billbarfill"></i></div>
       <div class="walletrow" id="billacts"></div>
       <div id="billchange"></div>
+      <div class="billcancel" id="billcancel" hidden>
+        <h3 data-t="Cancel subscription">Cancel subscription</h3>
+        <p class="small" id="billcanceltxt"></p>
+        <div class="walletrow" id="billcancelacts"></div>
+      </div>
       <p class="small" id="billmsg" role="status" aria-live="polite"></p>
       <p class="small wratefine" data-t="The card is entered on the payment provider&#x27;s page, never here. Changing the card, moving to another plan, and downloading an invoice all happen there, opened from this screen.">The card is entered on the payment provider's page, never here. Changing the card, moving to another plan, and downloading an invoice all happen there, opened from this screen.</p>
-      <p class="small wratefine" data-t="Cancelling stops the next charge and nothing after it. What you already paid for keeps working until the period ends.">Cancelling stops the next charge and nothing after it. What you already paid for keeps working until the period ends.</p>
     </div>
 
     <div class="setpanel" data-p="voice">
@@ -3533,7 +3544,9 @@ async function loadBilling() {
   const name = $('#billname'); if (!name) return;
   const status = $('#billstatus'), renew = $('#billrenew'),
         usage = $('#billusage'), bar = $('#billbar'),
-        fill = $('#billbarfill'), acts = $('#billacts'), msg = $('#billmsg');
+        fill = $('#billbarfill'), acts = $('#billacts'), msg = $('#billmsg'),
+        cancelbox = $('#billcancel'), canceltxt = $('#billcanceltxt'),
+        cancelacts = $('#billcancelacts');
   const setMsg = t => { if (msg) msg.textContent = t || ''; };
   if (acts) acts.innerHTML = '';
   if (bar) bar.hidden = true;
@@ -3588,6 +3601,9 @@ async function loadBilling() {
   if (!bill.payments_configured) {
     setMsg(T('Billing is not switched on yet, so nothing can be charged.'));
   }
+  // A repaint must not leave a stale cancel section behind for a plan that no
+  // longer exists on this account.
+  if (cancelbox) { cancelbox.hidden = true; cancelacts.innerHTML = ''; }
 
   const change = $('#billchange');
   if (change) change.innerHTML = '';
@@ -3650,36 +3666,54 @@ async function loadBilling() {
       } catch (e) { setMsg(errorText(e)); }
     };
     acts.append(card);
-    if (sub.cancel_at) {
-      const back = document.createElement('button');
-      back.className = 'btn'; back.type = 'button';
-      back.textContent = T('Keep it renewing');
-      back.onclick = async () => {
-        back.disabled = true;
-        try {
-          await jpost('/billing/resume', {});
-          setMsg(T('Renewal is back on.'));
-          await loadBilling();
-        } catch (e) { back.disabled = false; setMsg(errorText(e)); }
-      };
-      acts.append(back);
-    } else {
-      const stop = document.createElement('button');
-      stop.className = 'btn quiet'; stop.type = 'button';
-      stop.textContent = T('Cancel renewal');
-      stop.onclick = async () => {
-        if (!window.confirm(T('Stop the next charge? What you already paid for keeps working until the period ends.'))) return;
-        stop.disabled = true;
-        try {
-          await jpost('/billing/cancel', {});
-          setMsg(T('Renewal cancelled.'));
-          await loadBilling();
-        } catch (e) {
-          stop.disabled = false;
-          setMsg(errorText(e));
-        }
-      };
-      acts.append(stop);
+    // Stopping the charge lives in its own ruled section with its own heading
+    // (#billcancel), not as a quiet button in the row above: a reader hunting
+    // for it should not have to read past "change card" to find it. The words
+    // stay exact about what happens - the next charge stops, the paid period
+    // runs to its end - because "cancel" alone would promise a refund we do
+    // not give.
+    if (cancelbox) {
+      cancelbox.hidden = false;
+      cancelacts.innerHTML = '';
+      if (sub.cancel_at) {
+        const date = billDay(sub.cancel_at);
+        canceltxt.textContent = T('This subscription stops on {date}. Nothing is charged after that, and everything you paid for keeps working until then.',
+                                  { date: date || '' });
+        const back = document.createElement('button');
+        back.className = 'btn'; back.type = 'button';
+        back.textContent = T('Keep subscription');
+        back.onclick = async () => {
+          back.disabled = true;
+          try {
+            await jpost('/billing/resume', {});
+            setMsg(T('Your subscription keeps renewing.'));
+            await loadBilling();
+          } catch (e) { back.disabled = false; setMsg(errorText(e)); }
+        };
+        cancelacts.append(back);
+      } else {
+        const date = billDay(sub.current_period_end);
+        canceltxt.textContent = T('Stops the next charge. Nothing is charged after that, and what you already paid for keeps working until {date}.',
+                                  { date: date || T('the period ends') });
+        const stop = document.createElement('button');
+        stop.className = 'btn custstop'; stop.type = 'button';
+        stop.textContent = T('Cancel subscription');
+        stop.onclick = async () => {
+          const when = date ? T(' Your access keeps working until {date}.', { date: date })
+                            : T(' Your access keeps working until the period ends.');
+          if (!window.confirm(T('Cancel this subscription? The next charge stops and nothing is charged after it.') + when)) return;
+          stop.disabled = true;
+          try {
+            await jpost('/billing/cancel', {});
+            setMsg(T('Subscription cancelled. It stays active until the end of the period you paid for.'));
+            await loadBilling();
+          } catch (e) {
+            stop.disabled = false;
+            setMsg(errorText(e));
+          }
+        };
+        cancelacts.append(stop);
+      }
     }
   } else {
     const plans = document.createElement('button');
