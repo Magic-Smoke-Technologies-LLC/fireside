@@ -27,7 +27,7 @@ from host.contracts import Disambig as Base, Field, Quote
 
 DEFAULT_BASE = "https://api.openai.com/v1"
 _TIMEOUT = 60
-MAX_FIXES = 200                # one book, not a dictionary
+MAX_FIXES = 40                 # one batch, not a dictionary
 
 # Words with two readings that change the sound of the sentence around them.
 # Not a dictionary: a hit means "worth asking", not "ask".
@@ -100,10 +100,35 @@ _DECIDE = (
     "ordinary spelling and no phonetic symbols: \"live\" in \"we live here\" is "
     "\"liv\", and \"live\" in \"a live broadcast\" is \"lyve\". Only report a "
     "word when the sentence settles it and the plain spelling could be read the "
-    "other way. Reply with JSON only: "
+    "other way. Never report a word that has only one reading, never split a "
+    "word into syllables (\"living\" is fine as it is), and never invent a word "
+    "that is not in the text. Reply with JSON only: "
     '{"fixes":[{"word":"live","say":"liv","why":"we live here"}]}. '
     "Fewer is better. An empty list is a good answer."
 )
+
+
+def _known(word):
+    """Is this one of the two-reading words the pass exists for?
+
+    The sentence filter already picks sentences by this list, so a fix about any
+    other word is the model freelancing ("guide" -> "guyd" is not a reading, it
+    is a spelling). Inflections count: "winding" is "wind", "records" is
+    "record". "living" is not, because its stem is not a two-reading word either
+    and no one says "living" two ways.
+    """
+    w = (word or "").strip().lower()
+    if w in CANDIDATES:
+        return True
+    for suffix in ("'s", "s", "es", "ed", "d", "ing", "er", "est"):
+        if len(w) > len(suffix) + 2 and w.endswith(suffix):
+            base = w[:-len(suffix)]
+            if base in CANDIDATES:
+                return True
+            # a doubled consonant before the suffix: stopping -> stop
+            if len(base) > 2 and base[-1] == base[-2] and base[:-1] in CANDIDATES:
+                return True
+    return False
 
 
 def _clean_fix(item):
@@ -117,6 +142,8 @@ def _clean_fix(item):
     if not word or not say or len(word) > 40 or len(say) > 60:
         return None
     if say.lower() == word.lower():
+        return None
+    if not _known(word):
         return None
     return {"word": word, "say": say, "why": (item.get("why") or "").strip()[:160]}
 

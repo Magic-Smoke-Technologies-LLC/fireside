@@ -596,7 +596,15 @@
     "Refund": "Reembolso",
     "Narration": "Narración",
     "Narration, over the estimate we held": "Narración, por encima del estimado que retuvimos",
-    "estimate {e}, final {f}": "estimado {e}, final {f}"
+    "estimate {e}, final {f}": "estimado {e}, final {f}",
+    "Check all books": "Comprobar todos los libros",
+    "word": "palabra",
+    "words": "palabras",
+    "guessed by the model for": "adivinadas por el modelo para",
+    "Forget these": "Olvidar estas",
+    "Forgotten. The next voicing can decide again.": "Olvidadas. La próxima conversión puede volver a decidir.",
+    "this book": "este libro",
+    "all your books": "todos tus libros"
   },
   "name": "Español"
 }

@@ -2698,14 +2698,25 @@ class App:
 
     def pron_get(self, q, body):
         uid = self._uid(q, body)
-        return 200, {"rules": pron.load(self.conn, uid)}
+        if not uid:
+            return 200, {"rules": [], "model": []}
+        own = pron.mine(self.conn, uid)
+        # The editor shows what the reader typed. A model pass writes its guesses
+        # at the same scopes, and showing them in this list makes them look like
+        # the reader's own words (and a Save would write them into one). They are
+        # handed over separately, with the dictionary id so they can be dropped.
+        guesses = [{"id": d["id"], "scope": d["scope"], "scope_key": d["scope_key"],
+                    "count": len(d["rules"])}
+                   for d in pron.dicts(self.conn, uid) if d["name"] == pron.MODEL_DICT_NAME]
+        return 200, {"rules": pron.fold(own), "model": guesses}
 
     def pron_set(self, q, body):
         uid = self._uid(q, body)
         if not uid:
             return 401, {"error": "auth required"}
-        return 200, {"ok": True,
-                     "rules": pron.save(self.conn, uid, body.get("rules"))}
+        pron.save(self.conn, uid, body.get("rules"))
+        # same shape as GET: the editor's list is the reader's words only
+        return 200, {"ok": True, "rules": pron.fold(pron.mine(self.conn, uid))}
 
     def pron_dicts(self, q, body):
         """Every dictionary this user has, with its scope and words."""
