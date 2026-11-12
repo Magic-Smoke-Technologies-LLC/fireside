@@ -29,7 +29,8 @@ import urllib.request
 
 # Keys whose live value is a bool. Checked as booleans, so "false" really means
 # false rather than the truthy string "false".
-BOOL_KEYS = {"hosted", "require_auth", "payments_configured", "sale_connection", "ok"}
+BOOL_KEYS = {"hosted", "require_auth", "payments_configured", "sale_connection",
+              "render_job", "ok"}
 
 
 class Unreachable(Exception):
