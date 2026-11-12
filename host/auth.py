@@ -579,21 +579,32 @@ def confirm_enroll(conn, user_id, code):
     return issue_recovery_codes(conn, user_id)
 
 
-def check_code(conn, user_id, code):
-    """Does this TOTP code open this account right now? Replays are refused."""
+def check_code_status(conn, user_id, code):
+    """Why a TOTP code was refused, or 'ok'. Only 'ok' spends the counter.
+
+    'replayed' is a separate answer on purpose. The likeliest time to type a
+    code twice is right after turning the factor on: the page reloads and the
+    same digits are still on the phone. Answering that with "did not match"
+    blames a code that was correct, and the person retypes it and fails again.
+    """
     row = conn.execute("SELECT secret,confirmed_at,last_counter FROM twofa"
                        " WHERE user_id=?", (user_id,)).fetchone()
     if row is None or not row["secret"] or not int(row["confirmed_at"] or 0):
-        return False
+        return "mismatch"
     counter = totp.verify(row["secret"], code)
     if counter is None:
-        return False
+        return "mismatch"
     if counter <= int(row["last_counter"] or 0):
-        return False                    # the same code, seen twice
+        return "replayed"               # the same code, seen twice
     conn.execute("UPDATE twofa SET last_counter=? WHERE user_id=?",
                  (counter, user_id))
     conn.commit()
-    return True
+    return "ok"
+
+
+def check_code(conn, user_id, code):
+    """Does this TOTP code open this account right now? Replays are refused."""
+    return check_code_status(conn, user_id, code) == "ok"
 
 
 def disable_2fa(conn, user_id):

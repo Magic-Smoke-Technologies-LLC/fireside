@@ -638,9 +638,19 @@ class TestTransportNav(unittest.TestCase):
         html = self._html()
         self.assertIn('title="Back 15 seconds"', html)
         self.assertIn('title="Forward 15 seconds"', html)
-        self.assertNotIn("30 seconds", html)
-        self.assertNotIn("\u221230s", html)
-        self.assertNotIn("+30s", html)
+        # Scoped to the seek buttons' own markup. "30 seconds" is a legitimate
+        # sentence elsewhere on the page (a one-time code changes every 30
+        # seconds), so the guard is about the seek unit, not about the phrase
+        # appearing anywhere in a 460KB page.
+        seen = 0
+        for line in html.splitlines():
+            if not any(i in line for i in ('id="tback"', 'id="tfwd"', 'id="back30"')):
+                continue
+            seen += 1
+            self.assertNotIn("30 seconds", line)
+            self.assertNotIn("\u221230s", line)
+            self.assertNotIn("+30s", line)
+        self.assertEqual(seen, 3, "the seek buttons moved or were renamed")
 
 
 class TestGlobalConversionProgress(unittest.TestCase):

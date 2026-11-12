@@ -3334,6 +3334,22 @@ class App:
             auth.satisfy_factor(self.conn, (q or {}).get("_token") or "")
         return 200, out
 
+    def _code_refusal(self, uid, code):
+        """A refusal to return for a typed code, or None when it was good.
+
+        "already been used" is its own sentence because the commonest replay is
+        innocent: right after turning the factor on, the same digits are still
+        on the phone. Saying "did not match" to that sends a person round the
+        same loop with a code that was right.
+        """
+        st = auth.check_code_status(self.conn, uid, code)
+        if st == "ok":
+            return None
+        if st == "replayed":
+            return 401, {"error": "that code has already been used; wait for the "
+                                  "next one, then type it"}
+        return 401, {"error": "that code did not match"}
+
     def twofa_verify(self, q, body):
         """Finish a login: a TOTP code or a recovery code, then a full session."""
         factor, uid = self._twofa_who(q)
@@ -3349,8 +3365,10 @@ class App:
             used = "recovery"
             if not auth.spend_recovery_code(self.conn, uid, b.get("recovery")):
                 return 401, {"error": "that recovery code is not valid"}
-        elif not auth.check_code(self.conn, uid, b.get("code")):
-            return 401, {"error": "that code did not match"}
+        else:
+            bad = self._code_refusal(uid, b.get("code"))
+            if bad:
+                return bad
         auth.satisfy_factor(self.conn, (q or {}).get("_token") or "")
         return 200, {"ok": True, "user": uid, "twofa": "", "used": used,
                      "recovery_left": auth.recovery_code_left(self.conn, uid)}
@@ -3362,8 +3380,9 @@ class App:
             return 401, {"error": "enrol two-factor first"}
         if not self._allow_attempt(uid, "recovery"):
             return 429, {"error": "too many attempts"}
-        if not auth.check_code(self.conn, uid, (body or {}).get("code")):
-            return 401, {"error": "that code did not match"}
+        bad = self._code_refusal(uid, (body or {}).get("code"))
+        if bad:
+            return bad
         codes = auth.issue_recovery_codes(self.conn, uid)
         return 200, {"ok": True, "recovery": codes, "recovery_left": len(codes)}
 
@@ -3391,11 +3410,12 @@ class App:
         if not self._allow_attempt(uid, "disable"):
             return 429, {"error": "too many attempts"}
         b = body or {}
-        ok = auth.check_code(self.conn, uid, b.get("code"))
-        if not ok and (b.get("recovery") or "").strip():
-            ok = auth.spend_recovery_code(self.conn, uid, b.get("recovery"))
-        if not ok:
-            return 401, {"error": "that code did not match"}
+        bad = self._code_refusal(uid, b.get("code"))
+        if bad and (b.get("recovery") or "").strip():
+            if auth.spend_recovery_code(self.conn, uid, b.get("recovery")):
+                bad = None
+        if bad:
+            return bad
         auth.disable_2fa(self.conn, uid)
         return 200, {"ok": True, "enrolled": False}
 
