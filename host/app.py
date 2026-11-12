@@ -42,7 +42,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from host.host import Host
 import inspect
 
-from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, disambig, draft as drafts, erase, example, grants, i18n, jobs, keepwarm, library, mailer, notices, payments, playback, plans, pron, quota, ratelimit, reading, renderjob_runner, stats, tags as tagmod
+from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, disambig, draft as drafts, erase, example, grants, i18n, jobs, keepwarm, library, mailer, notices, payments, playback, plans, pron, quota, ratelimit, reading, renderjob_runner, settings, stats, tags as tagmod
 from host.egress import fetch as _fetch
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -228,6 +228,11 @@ class App:
         # Backend selection lives on the Host so a render job in its own process
         # picks the same one. An explicit id, else $FIRESIDE_STORAGE, else local.
         self.storage_id = self.host.storage_backend(storage_id)
+        # Operator settings saved in the DB win over the environment, and this
+        # has to happen before the payment provider is registered (serve() does
+        # that) or a key saved on the admin screen would be read as absent until
+        # the next deploy. See host/settings.py.
+        settings.apply(self.conn)
         self.sale_connection = (sale_connection if sale_connection is not None
                                 else _sale_connection_from_env())
         self.rate_limiter = rate_limiter
@@ -691,14 +696,50 @@ class App:
         return self.ui(q, body)
 
     def checkout(self, q, body):
-        """The checkout page a payment processor's reviewer needs to see.
+        """The checkout page, live when a provider is.
 
-        Payment is off, so the page exists, names what would be bought, links
-        the legal pages, and its pay button is inert. Enabling payments swaps
-        the button for the provider's hosted session; the page itself does not
-        collect card data and never has.
+        A payment processor's reviewer needs to see this page, and so does a
+        buyer who was sent here: the plan, the real price, and one button. The
+        page never collects a card number; the button opens the provider's own
+        form with the price id the server hands it.
+
+        The prices are rendered from the same catalog the app reads, not from
+        numbers typed into the page. The static version still quoted the
+        launch ladder ($3/$8/$20 a month) after the ladder changed, which is
+        the kind of drift a reviewer reads as a bait and switch.
         """
-        return self._legal("checkout.html")
+        with open(os.path.join(UI_DIR, "checkout.html"), "r", encoding="utf-8") as f:
+            page = f.read()
+        page = (page
+                .replace("__COMPANY__", os.environ.get("FIRESIDE_COMPANY", "Fireside"))
+                .replace("__CONTACT__", os.environ.get("FIRESIDE_CONTACT_EMAIL",
+                                                      "support@readfireside.com")))
+        pp = payments.get()
+        conf = {}
+        fn = getattr(pp, "public_config", None)
+        if callable(fn):
+            try:
+                conf = fn() or {}
+            except Exception:
+                conf = {}
+        cat = plans.catalog(pp)
+        tiers = {}
+        for t in (cat or {}).get("tiers", []):
+            if t.get("id") == quota.FREE_PLAN:
+                continue
+            tiers[t["id"]] = {"label": t.get("label") or t["id"],
+                              "month_cents": t.get("list_amount_cents"),
+                              "year_cents": t.get("list_annual_cents"),
+                              "included_usd": t.get("included_usd"),
+                              "included_bytes": t.get("included_bytes")}
+        data = {"configured": bool(conf.get("ok")),
+                "provider": conf.get("provider") or "",
+                "client_token": conf.get("client_token") or "",
+                "env": conf.get("env") or "",
+                "prices": conf.get("prices") or {},
+                "tiers": tiers}
+        blob = json.dumps(data, separators=(",", ":")).replace("<", "\\u003c")
+        return 200, {"_html": page.replace("__CHECKOUT_JSON__", blob)}
 
     def privacy(self, q, body):
         """The privacy policy. Public, static, and store-listing mineable."""
@@ -3039,6 +3080,68 @@ class App:
         row = billing.upsert(self.conn, target, plan, "active", provider="admin")
         return 200, {"ok": True, "subscription": row}
 
+    # ---- payments setup (admin) ---------------------------------------------
+    # Going live with the card provider used to be a paste-the-secrets-into-Azure
+    # job, which meant the values were invisible, unvalidated, and could only
+    # change with a new image. These three routes make it a screen: read what is
+    # set (never the secrets themselves), save a batch, and ask the provider
+    # whether the saved values are actually real.
+
+    def _admin_only(self, q):
+        uid = (q or {}).get("_user") or ""
+        return uid if auth.is_admin(self.conn, uid) else ""
+
+    def admin_billing(self, q, body):
+        """Admin: the provider configuration, masked, and what still blocks a
+        sale. A secret comes back as set:true plus its last four characters."""
+        if not self._admin_only(q):
+            return 403, {"error": "admin only"}
+        out = settings.view(self.conn)
+        out["provider"] = getattr(payments.get(), "id", "")
+        out["payments_configured"] = payments.configured()
+        return 200, out
+
+    def admin_billing_save(self, q, body):
+        """Admin: save a batch of settings and put them to work immediately.
+
+        Validated as a batch before anything is written, so a refused save (a
+        live key against the sandbox environment, two tiers sharing one price)
+        leaves the working configuration alone. Applied and re-registered in
+        the same breath: a key that is saved but not loaded is the shape of bug
+        that has cost this project a live render more than once.
+        """
+        if not self._admin_only(q):
+            return 403, {"error": "admin only"}
+        body = body or {}
+        values = body.get("values")
+        if values is None:
+            values = {k: v for k, v in body.items() if k in settings.BY_KEY}
+        if not isinstance(values, dict):
+            return 400, {"error": "values must be an object"}
+        clear = [k for k in (body.get("clear") or []) if isinstance(k, str)]
+        saved, errors = settings.save(self.conn, values, clear=clear)
+        if errors:
+            return 400, {"error": "not saved", "fields": errors,
+                         "settings": settings.view(self.conn)}
+        settings.apply(self.conn)
+        payments.reload()
+        out = settings.view(self.conn)
+        out.update({"ok": True, "saved": saved,
+                    "payments_configured": payments.configured(),
+                    "provider": getattr(payments.get(), "id", "")})
+        return 200, out
+
+    def admin_billing_check(self, q, body):
+        """Admin: ask Paddle whether the saved key and price ids exist.
+
+        A saved value is a claim. This is the receipt: the key authenticates,
+        the catalog holds every id we sell, and the webhook secret is stated as
+        unproven, because only a real delivery can prove it.
+        """
+        if not self._admin_only(q):
+            return 403, {"error": "admin only"}
+        return 200, settings.check(self.conn)
+
     def admin_accounts(self, q, body):
         """Admin: every account as one row, with the numbers that decide what to
         do about it.
@@ -3513,6 +3616,7 @@ GET_ROUTES = {
     "/grants": "grants_list",
     "/admin/plans": "plans_admin",
     "/admin/accounts": "admin_accounts",
+    "/admin/billing": "admin_billing",
     "/billing": "billing_get",
     "/notifications": "notices_list",
     # A GET: the page asks for its price ids on load, before anyone clicks.
@@ -3550,6 +3654,8 @@ POST_ROUTES = {
     "/grants": "grants_set",
     "/admin/plan": "plans_admin_set",
     "/admin/account/delete": "admin_account_delete",
+    "/admin/billing": "admin_billing_save",
+    "/admin/billing/check": "admin_billing_check",
     "/billing/checkout": "billing_checkout", "/billing/confirm": "billing_confirm",
     "/billing/cancel": "billing_cancel", "/billing/portal": "billing_portal",
     "/billing/change": "billing_change", "/billing/resume": "billing_resume",
@@ -4122,8 +4228,11 @@ def hosted_from(flag=False):
 
 
 def serve(app=None, port=8788, host="127.0.0.1"):
-    payments.load()      # register the payment provider named by FIRESIDE_PAYMENT_PROVIDER
+    # The app applies the settings saved in the DB into the environment, so it
+    # has to exist before the provider is registered; otherwise a key saved on
+    # the admin screen is invisible until the next deploy.
     app = app or App()
+    payments.load()      # register the payment provider named by FIRESIDE_PAYMENT_PROVIDER
     httpd = ThreadingHTTPServer((host, port), make_handler(app))
     return app, httpd
 

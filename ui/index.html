@@ -682,6 +682,19 @@
   .acctrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:6px 0}
   .acctrow .small{margin-left:auto}
   .admtoggle{display:flex;align-items:center;gap:8px;margin-top:10px}
+  /* admin > payments: one field per row, the source tag next to it */
+  .billfield{margin-top:14px;max-width:560px}
+  .billfield label{display:block;font-weight:600;font-size:13px;margin-bottom:4px}
+  .billfield input,.billfield select{width:100%;margin:0}
+  .billfield .small{margin:4px 0 0;color:var(--faint)}
+  .billsrc{font-size:11px;letter-spacing:.3px;text-transform:uppercase;color:var(--faint)}
+  .billfield .btn.tiny{margin-left:8px;padding:2px 8px;font-size:11px}
+  .prgrid{display:flex;flex-direction:column;gap:6px}
+  .prrow{display:flex;gap:6px;align-items:center}
+  .prrow .prtier{width:70px;font-size:12px;color:var(--soft);text-transform:capitalize}
+  .prrow input{flex:1;min-width:0;margin:0}
+  .okline{color:var(--ready)}
+  .errline{color:#e2775f}
   .admtoggle input{width:auto}
   .acctdanger{border-top:1px dashed var(--line);margin-top:16px;padding-top:12px}
   .acctdanger input{max-width:220px;margin:0}
@@ -1503,6 +1516,17 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
     <p class="small" id="admregmsg"></p>
     <div style="margin-top:18px"><button class="btn quiet" id="admbootall" type="button" data-t="Sign out every device">Sign out every device</button></div>
     <p class="small" id="admmsg" style="min-height:18px"></p>
+
+    <h3 style="margin-top:34px" data-t="Payments">Payments</h3>
+    <p class="sub" data-t="The card account and the price ids this server sells. Saved here, applied on the next click, no redeploy. Secrets are never shown back: a saved key appears as its last four characters.">The card account and the price ids this server sells. Saved here, applied on the next click, no redeploy. Secrets are never shown back: a saved key appears as its last four characters.</p>
+    <p class="small" id="billstatus"></p>
+    <div id="billfields"></div>
+    <div class="connrow">
+      <button class="btn" id="billsave" type="button" data-t="Save payments">Save payments</button>
+      <button class="btn quiet" id="billcheck" type="button" data-t="Ask the provider">Ask the provider</button>
+    </div>
+    <p class="small" id="billmsg" style="min-height:18px"></p>
+    <div id="billchecks"></div>
   </section>
 
   <!-- pricing: the price list, in the same room as the library. A stranger
@@ -3040,7 +3064,185 @@ async function loadAdmin() {
   const boot = $('#admbootall'); if (boot) boot.onclick = bootEveryone;
   const filter = $('#admfilter'); if (filter) filter.oninput = drawAdmin;
   drawAdmin();
+  loadBillSetup();
 }
+
+// --- admin: the payments setup -------------------------------------------
+// The values that used to live only in the container's environment. The server
+// hands back every secret as set:true plus a four-character hint, so a wrong
+// environment stays visible without the key ever coming back to a page.
+// Nothing is validated in this function: /admin/billing refuses a bad batch and
+// names the field, and the screen believes the server over its own copy.
+let BILL = null;
+// Every sentence this screen translates goes through a literal T() call, so the
+// catalog can hold it (the extractor reads literals, not variables). The field
+// labels and help lines come from the server in English on purpose: they
+// describe the provider's own keys, and a wrong translation there would be
+// worse than a right English word on an operator screen.
+function billEnvName(env) { return env === 'production' ? T('Production') : T('Sandbox'); }
+function billSourceName(src) { return src === 'environment' ? T('environment') : T('saved here'); }
+function billCycleName(cyc) { return cyc === 'year' ? T('year') : T('month'); }
+function billTierName(tier) {
+  if (tier === 'platform') return T('platform');
+  if (tier === 'listener') return T('listener');
+  return T('studio');
+}
+function billCheckName(id) {
+  if (id === 'key') return T('API key');
+  if (id === 'catalog') return T('Price ids');
+  return T('Webhook secret');
+}
+
+async function loadBillSetup() {
+  const box = $('#billfields'); if (!box) return;
+  let d;
+  try { d = await api('/admin/billing'); }
+  catch (e) { billNote((e && e.message) || T('could not read the payment settings')); return; }
+  BILL = d;
+  renderBill();
+}
+
+function renderBill() {
+  const box = $('#billfields'); if (!box || !BILL) return;
+  box.innerHTML = '';
+  const st = $('#billstatus');
+  if (st) {
+    const missing = BILL.missing || [];
+    st.textContent = !BILL.provider || !BILL.payments_configured
+      ? T('No payment provider is registered yet. Fill this in and save: until then every buy button says so and charges nothing.')
+      : (missing.length
+        ? T('The provider is on, but {n} setting(s) are missing: no purchase will settle.', { n: missing.length })
+        : T('The provider is on: {env}, {n} price id(s).', { env: billEnvName(BILL.env), n: Object.keys(BILL.prices || {}).length }));
+  }
+  (BILL.fields || []).forEach(f => {
+    const wrap = document.createElement('div'); wrap.className = 'billfield';
+    const lab = document.createElement('label'); lab.textContent = T(f.label);
+    let inp;
+    if (f.kind === 'select') {
+      inp = document.createElement('select');
+      const blank = document.createElement('option');
+      blank.value = ''; blank.textContent = T('match the key'); inp.append(blank);
+      (f.choices || []).forEach(c => {
+        const o = document.createElement('option'); o.value = c;
+        o.textContent = billEnvName(c); inp.append(o);
+      });
+      inp.value = f.value || '';
+    } else if (f.kind === 'prices') {
+      inp = document.createElement('div'); inp.className = 'prgrid';
+      (BILL.tiers || []).forEach(tier => {
+        const row = document.createElement('div'); row.className = 'prrow';
+        const nm = document.createElement('span'); nm.className = 'prtier';
+        nm.textContent = billTierName(tier);
+        row.append(nm);
+        ['month', 'year'].forEach(cyc => {
+          const i = document.createElement('input'); i.type = 'text'; i.autocomplete = 'off';
+          i.placeholder = T('{tier} {cycle} price id',
+                            { tier: billTierName(tier), cycle: billCycleName(cyc) });
+          i.value = ((f.value || {})[tier] || {})[cyc] || '';
+          i.dataset.tier = tier; i.dataset.cycle = cyc;
+          row.append(i);
+        });
+        inp.append(row);
+      });
+    } else {
+      inp = document.createElement('input');
+      inp.type = f.secret ? 'password' : 'text';
+      inp.autocomplete = 'off';
+      inp.value = f.secret ? '' : (f.value || '');
+      if (f.secret) {
+        inp.placeholder = f.set ? T('saved: ••••{hint} (type to replace)', { hint: f.hint || '' })
+                                : T('not set');
+      }
+    }
+    wrap.append(lab);
+    if (f.kind !== 'prices') lab.htmlFor = inp.id = 'bill_' + f.key;
+    wrap.append(inp);
+    const help = document.createElement('p'); help.className = 'small'; help.textContent = T(f.help || '');
+    wrap.append(help);
+    const tag = document.createElement('span'); tag.className = 'billsrc';
+    tag.textContent = f.set
+      ? T('set ({src})', { src: billSourceName(f.source) })
+      : T('not set');
+    wrap.append(tag);
+    if (f.set && f.secret) {
+      const clr = document.createElement('button'); clr.type = 'button'; clr.className = 'btn quiet tiny';
+      clr.textContent = T('clear');
+      clr.onclick = async () => {
+        clr.disabled = true;
+        try { const d = await jpost('/admin/billing', { clear: [f.key] });
+          BILL = d; renderBill(); billNote(T('Cleared.')); }
+        catch (e) { clr.disabled = false; billNote(e.message || T('could not clear it')); }
+      };
+      wrap.append(clr);
+    }
+    box.append(wrap);
+  });
+  const save = $('#billsave'); if (save) save.onclick = saveBillSetup;
+  const chk = $('#billcheck'); if (chk) chk.onclick = checkBillSetup;
+  const checks = $('#billchecks'); if (checks) checks.innerHTML = '';
+}
+
+function billValues() {
+  const out = {};
+  (BILL.fields || []).forEach(f => {
+    if (f.kind === 'prices') {
+      const plans = {};
+      document.querySelectorAll('#billfields input[data-tier]').forEach(i => {
+        if (!i.value.trim()) return;
+        plans[i.dataset.tier] = plans[i.dataset.tier] || {};
+        plans[i.dataset.tier][i.dataset.cycle] = i.value.trim();
+      });
+      if (Object.keys(plans).length) out[f.key] = plans;
+      return;
+    }
+    const el = document.getElementById('bill_' + f.key);
+    if (!el) return;
+    const v = (el.value || '').trim();
+    if (f.secret && !v) return;      // blank means "keep the saved one"
+    if (!f.secret && v === (f.value || '')) return;
+    if (v || !f.secret) out[f.key] = v;
+  });
+  return out;
+}
+
+async function saveBillSetup() {
+  const btn = $('#billsave'); if (btn) btn.disabled = true;
+  billNote(T('Saving…'));
+  try {
+    const d = await jpost('/admin/billing', { values: billValues() });
+    BILL = d; renderBill();
+    billNote(T('Saved {n} setting(s). They are live now, no restart.', { n: (d.saved || []).length }));
+  } catch (e) {
+    // api() throws the whole body on e.data, so the field that was refused is
+    // named here instead of the generic "not saved".
+    const body = (e && e.data) || {};
+    const fields = body.fields || {};
+    const first = Object.keys(fields)[0];
+    billNote(first ? T('{field}: {why}', { field: first, why: fields[first] })
+                   : (e.message || T('could not save')));
+    if (body.settings) { BILL = body.settings; renderBill(); }
+  } finally { if (btn) btn.disabled = false; }
+}
+
+async function checkBillSetup() {
+  const btn = $('#billcheck'); if (btn) btn.disabled = true;
+  const box = $('#billchecks'); if (box) box.textContent = T('Asking the provider…');
+  try {
+    const d = await jpost('/admin/billing/check', {});
+    if (!box) return;
+    box.innerHTML = '';
+    (d.checks || []).forEach(c => {
+      const p = document.createElement('p'); p.className = 'small ' + (c.ok ? 'okline' : 'errline');
+      p.textContent = (c.ok ? '\u2713 ' : '\u2717 ') + billCheckName(c.id) + ': ' + c.detail;
+      box.append(p);
+    });
+    billNote(d.ok ? T('Everything the provider can check right now is real.')
+                  : T('Not live yet: see the lines below.'));
+  } catch (e) { if (box) box.textContent = ''; billNote(e.message || T('could not reach the provider')); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+function billNote(text) { const m = $('#billmsg'); if (m) m.textContent = text || ''; }
 
 function drawAdmin() {
   const list = $('#admlist'); if (!list || !ADM_DATA) return;
@@ -7161,6 +7363,22 @@ function bootWait(label) {
 window.addEventListener('load', async () => {
   const ok = await requireSession();
   bootDone();
+  /* A plan picked on the checkout page before there was an account: the link
+     names it, so it survives the sign-up and the price list opens on it, the
+     same way the cart does. It sits before the signed-out return below, because
+     the visitor who needs it most is the one who is not signed in yet. */
+  try {
+    const lp0 = new URLSearchParams(location.search);
+    const want = lp0.get('plan');
+    if (want && ['platform', 'listener', 'studio'].indexOf(want) >= 0) {
+      const c = readCart();
+      c.tier = want; c.cycle = lp0.get('cycle') === 'year' ? 'year' : 'month';
+      writeCart(c);
+      if (location.pathname !== '/pricing') {
+        history.replaceState({}, '', '/pricing' + (location.hash || ''));
+      }
+    }
+  } catch (e) {}
   if (!ok) return;
   if (ok === 'public') {
     // The price list is the whole page: show it and stop. Nothing here needs
