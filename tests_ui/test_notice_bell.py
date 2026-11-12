@@ -39,9 +39,22 @@ class TestNoticeBell(BrowserTest):
         finally:
             conn.close()
 
+    def _bell_has_read_the_account(self):
+        """Wait for the boot read to land before planting.
+
+        The app fires loadNotices without awaiting it, after the library, so a
+        row planted now can be swept up by the boot read still in flight and
+        the badge lights before anything asks it to. That race cost a green
+        run on 11-12: same commit, two workflows, one red. Awaiting the read
+        puts the baseline where the test thinks it is.
+        """
+        self.page.evaluate("() => loadNotices()")
+        self.page.wait_for_timeout(50)
+
     def test_the_badge_lights_from_a_row_the_tab_never_saw(self):
         self.register("bell_geo")
         self.wait_in_app()
+        self._bell_has_read_the_account()
         nid = self._plant("Moby Dick is ready to play.", route="#/play/nowhere")
         self.assertEqual(self._unread(), 1)
         self.assertNotIn("alert", self.page.get_attribute("#bell", "class") or "")
