@@ -7161,6 +7161,22 @@ function bootWait(label) {
 window.addEventListener('load', async () => {
   const ok = await requireSession();
   bootDone();
+  /* A plan picked on the checkout page before there was an account: the link
+     names it, so it survives the sign-up and the price list opens on it, the
+     same way the cart does. It sits before the signed-out return below, because
+     the visitor who needs it most is the one who is not signed in yet. */
+  try {
+    const lp0 = new URLSearchParams(location.search);
+    const want = lp0.get('plan');
+    if (want && ['platform', 'listener', 'studio'].indexOf(want) >= 0) {
+      const c = readCart();
+      c.tier = want; c.cycle = lp0.get('cycle') === 'year' ? 'year' : 'month';
+      writeCart(c);
+      if (location.pathname !== '/pricing') {
+        history.replaceState({}, '', '/pricing' + (location.hash || ''));
+      }
+    }
+  } catch (e) {}
   if (!ok) return;
   if (ok === 'public') {
     // The price list is the whole page: show it and stop. Nothing here needs
