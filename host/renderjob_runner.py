@@ -61,13 +61,23 @@ def _say(msg):
 
 def _identity_token(resource=ARM + "/"):
     """A token for ARM from the app's managed identity, or None if this box has
-    no identity (every self-host box). Container Apps puts these in the env."""
+    no identity (every self-host box). Container Apps puts these in the env.
+
+    A user-assigned identity must be named in the request: the endpoint answers
+    400 for a bare resource when the identity is not system-assigned (found
+    11-12, first live render). A system-assigned box has one identity and needs
+    no client_id, so naming one is optional and harmless there.
+    """
     endpoint = (os.environ.get("IDENTITY_ENDPOINT") or "").strip()
     header = (os.environ.get("IDENTITY_HEADER") or "").strip()
     if not endpoint or not header:
         return None
+    client_id = (os.environ.get("FIRESIDE_MSI_CLIENT_ID")
+                 or os.environ.get("AZURE_CLIENT_ID") or "").strip()
     url = (endpoint + "?resource=" + urllib.parse.quote(resource)
            + "&api-version=" + IDENTITY_API)
+    if client_id:
+        url += "&client_id=" + urllib.parse.quote(client_id)
     req = urllib.request.Request(url, headers={"X-IDENTITY-HEADER": header})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
@@ -155,7 +165,8 @@ def start(job_id, resource_id=None, log_dir=None):
         # A configured hosted job that will not start is a real failure, but the
         # reader is waiting: fall through to a local process rather than leave
         # the book queued.
-        _say("falling back to a local worker for job %s" % job_id)
+        _say("hosted start failed for job %s; falling through to the local "
+             "path if it is enabled" % job_id)
     if (os.environ.get("FIRESIDE_RENDER_LOCAL") or "").strip() in ("1", "true", "yes"):
         return "local" if start_local(job_id, log_dir=log_dir) else None
     return None
