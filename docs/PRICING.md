@@ -229,8 +229,7 @@ Dollar credits removed the one number a buyer could reason with. The wallet now
 shows it, computed from the same sale rate the checkout pins
 (`sale_rate_per_1m_chars`), so the shelf and the receipt cannot disagree.
 
-At the current retail rate (**$19.63/M characters** = Azure neural $15 + $0.10
-infra, x1.3) and **~54,000 characters per listening hour** (~150 wpm at ~6
+At the current retail rate (**$18.75/M characters** = Azure neural $15 x1.25) and **~54,000 characters per listening hour** (~150 wpm at ~6
 characters a word):
 
 | Add | Characters | Listening at normal speed |

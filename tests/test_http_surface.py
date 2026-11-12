@@ -335,7 +335,7 @@ class TestPricingIsTheApp(Base):
         # Crawlable: a page whose prices only exist after a fetch is a page a
         # reviewer can see empty.
         body = self.get("/pricing").read().decode()
-        self.assertIn("$19.63 per million characters", body)
+        self.assertIn("$18.75 per million characters", body)
         # The monthly rungs are static so a crawler reads a price without a
         # fetch. The yearly figure is painted from the catalog, because a
         # typed "or $36 a year" is a fact about the day it was typed.
