@@ -696,14 +696,50 @@ class App:
         return self.ui(q, body)
 
     def checkout(self, q, body):
-        """The checkout page a payment processor's reviewer needs to see.
+        """The checkout page, live when a provider is.
 
-        Payment is off, so the page exists, names what would be bought, links
-        the legal pages, and its pay button is inert. Enabling payments swaps
-        the button for the provider's hosted session; the page itself does not
-        collect card data and never has.
+        A payment processor's reviewer needs to see this page, and so does a
+        buyer who was sent here: the plan, the real price, and one button. The
+        page never collects a card number; the button opens the provider's own
+        form with the price id the server hands it.
+
+        The prices are rendered from the same catalog the app reads, not from
+        numbers typed into the page. The static version still quoted the
+        launch ladder ($3/$8/$20 a month) after the ladder changed, which is
+        the kind of drift a reviewer reads as a bait and switch.
         """
-        return self._legal("checkout.html")
+        with open(os.path.join(UI_DIR, "checkout.html"), "r", encoding="utf-8") as f:
+            page = f.read()
+        page = (page
+                .replace("__COMPANY__", os.environ.get("FIRESIDE_COMPANY", "Fireside"))
+                .replace("__CONTACT__", os.environ.get("FIRESIDE_CONTACT_EMAIL",
+                                                      "support@readfireside.com")))
+        pp = payments.get()
+        conf = {}
+        fn = getattr(pp, "public_config", None)
+        if callable(fn):
+            try:
+                conf = fn() or {}
+            except Exception:
+                conf = {}
+        cat = plans.catalog(pp)
+        tiers = {}
+        for t in (cat or {}).get("tiers", []):
+            if t.get("id") == quota.FREE_PLAN:
+                continue
+            tiers[t["id"]] = {"label": t.get("label") or t["id"],
+                              "month_cents": t.get("list_amount_cents"),
+                              "year_cents": t.get("list_annual_cents"),
+                              "included_usd": t.get("included_usd"),
+                              "included_bytes": t.get("included_bytes")}
+        data = {"configured": bool(conf.get("ok")),
+                "provider": conf.get("provider") or "",
+                "client_token": conf.get("client_token") or "",
+                "env": conf.get("env") or "",
+                "prices": conf.get("prices") or {},
+                "tiers": tiers}
+        blob = json.dumps(data, separators=(",", ":")).replace("<", "\\u003c")
+        return 200, {"_html": page.replace("__CHECKOUT_JSON__", blob)}
 
     def privacy(self, q, body):
         """The privacy policy. Public, static, and store-listing mineable."""
