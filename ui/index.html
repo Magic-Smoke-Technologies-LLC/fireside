@@ -1449,8 +1449,10 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
         <button class="btn" id="twofastart" type="button" data-t="Set up two-factor">Set up two-factor</button>
       </div>
       <div id="twofaon" style="margin-top:10px" hidden>
+        <label for="twofacode" data-t="Code from your current app">Code from your current app</label>
         <input type="text" id="twofacode" inputmode="numeric" autocomplete="one-time-code"
                placeholder="123456" data-t-ph="123456" style="max-width:160px">
+        <p class="hint" data-t="Change and New recovery codes both use the code you type here.">Change and New recovery codes both use the code you type here.</p>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn quiet" id="twofachange" type="button" data-t="Change authenticator">Change authenticator</button>
           <button class="btn quiet" id="twofarecov" type="button" data-t="New recovery codes">New recovery codes</button>
@@ -1711,7 +1713,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
     <h3 id="twofatitle" data-t="Two-factor">Two-factor</h3>
     <p class="sub" id="twofasub"></p>
     <div id="twofaenrol" hidden>
-      <p class="sub" data-t="Add this key to your authenticator app, then type the six digits it shows.">Add this key to your authenticator app, then type the six digits it shows.</p>
+      <p class="sub" data-t="Type this key into your authenticator app, then enter the six digits it shows. If you are setting this up on a phone, open the link below on the phone instead of typing.">Type this key into your authenticator app, then enter the six digits it shows. If you are setting this up on a phone, open the link below on the phone instead of typing.</p>
       <div class="qrow"><span class="qt" id="twofasecret" style="font-family:ui-monospace,monospace"></span></div>
       <p class="hint" id="twofauri"></p>
     </div>
@@ -1719,7 +1721,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
     <input type="text" id="twofainput" inputmode="numeric" autocomplete="one-time-code"
            placeholder="123456" data-t-ph="123456" style="max-width:180px">
     <div id="twofarecowrap" hidden>
-      <label for="twofareco" data-t="Recovery code">Recovery code</label>
+      <label for="twofareco" data-t="Recovery code, if you lost the phone">Recovery code, if you lost the phone</label>
       <input type="text" id="twofareco" autocomplete="off" style="max-width:220px">
     </div>
     <div id="twofaerr" class="sub" style="margin-top:8px"></div>
@@ -4422,6 +4424,23 @@ if ($('#sessall')) $('#sessall').onclick = () => {
   if (confirm(T('Log out of every device, including this one?'))) revokeSessions(false);
 };
 // --- two-factor: one modal for enrolling and for finishing a login ----------
+// A rejected code is nearly always one of four things, and the server's own
+// sentence cannot tell them apart: wrong digits, a code that was already spent,
+// a clock that is off, or an empty box. The last two matter most because the
+// person reading this is already locked out of their library. One ladder, used
+// by the dialog and by the account panel, so the two cannot drift apart.
+function twofaWhy(line, rec) {
+  if (rec) {
+    return line + T('. Check it was typed exactly, and that it has not been used already. Each code works once.');
+  }
+  if (/already been used/i.test(line)) {
+    return line + T('. Each code works once, and the one you typed to set the factor up counts as used. Wait for the next code, at most 30 seconds away, then type it.');
+  }
+  if (/did not match|not valid|enter a current code/i.test(line)) {
+    return line + T(". Codes change every 30 seconds, so wait for the next one and type it straight away. If that keeps failing, this device's clock is off by more than a minute: set it to automatic, or use a recovery code.");
+  }
+  return line;
+}
 // The server decides whether a factor is owed (auth.create_session does it at
 // every door), so this code never asks "should I?". It asks /2fa what a
 // session still owes and shows one of two screens: set one up, or type one.
@@ -4434,7 +4453,7 @@ function twofaShow(mode, onDone) {
   $('#twofatitle').textContent = mode === 'enroll'
     ? 'Turn on two-factor' : 'One more step';
   $('#twofasub').textContent = mode === 'enroll'
-    ? 'Scan or type the key into an authenticator app (Google Authenticator, Authy, 1Password).'
+    ? T('Type the key below into your authenticator app (Google Authenticator, Authy, 1Password), then enter the six digits it shows.')
     : 'Your password was right. Now the six-digit code from your authenticator app.';
   $('#twofaerr').textContent = '';
   $('#twofago').hidden = false; $('#twofainput').hidden = false;
@@ -4452,7 +4471,7 @@ async function twofaEnrollStart(proof) {
   const a = $('#twofauri');
   a.innerHTML = '';
   const link = document.createElement('a');
-  link.href = info.uri || '#'; link.textContent = T('open in an authenticator app →');
+  link.href = info.uri || '#'; link.textContent = T('open this on the phone you will use →');
   a.append('Or '); a.append(link);
   twofaShow('enroll', () => { location.reload(); });
 }
@@ -4497,13 +4516,20 @@ async function twofaSubmit() {
       if (TWOFA.onDone) TWOFA.onDone(); else location.reload();
     }
   } catch (e) {
-    $('#twofaerr').textContent = e.message || 'that did not work';
+    $('#twofaerr').textContent = twofaWhy((e && e.message) || T('that did not work'), !!rec);
   } finally { $('#twofago').disabled = false; }
 }
 if ($('#twofago')) $('#twofago').onclick = twofaSubmit;
-if ($('#twofacancel')) $('#twofacancel').onclick = () => {
+if ($('#twofacancel')) $('#twofacancel').onclick = async () => {
   $('#twofadlg').hidden = true;
-  document.body.classList.add('locked'); $('#lock').hidden = false;
+  // Cancel is only reachable on a half-session (the dialog that finishes a
+  // login). Showing the lock screen here was a dead end: the password was
+  // already right, and on a page that never drew a lock screen it left the
+  // visitor with nothing at all. The only honest exit is ending the
+  // half-session and letting the door ask again. /auth/logout is served before
+  // the pending-factor gate, so a half-session may call it.
+  try { await fetch('/auth/logout', { method: 'POST' }); } catch (_) {}
+  location.reload();
 };
 
 async function loadTwofa() {
@@ -4530,45 +4556,63 @@ async function loadTwofa() {
     offBtn.textContent = st.required ? 'Required for administrators' : 'Turn off two-factor';
   }
 }
+// One code input serves three buttons (change, new codes, turn off), so the
+// "you forgot the code" sentence is written once. Before this each button read
+// #twofacode itself and only one of the three said anything when it was empty:
+// New recovery codes posted an empty code and the server answered "that code
+// did not match", which blames the code instead of the blank box.
+function twofaCurrentCode() {
+  const el = $('#twofacode');
+  return ((el && el.value) || '').replace(/[^0-9]/g, '');
+}
+function twofaNeedCode(action) {
+  const code = twofaCurrentCode();
+  if (code.length === 6) return code;
+  $('#twofamessage').textContent = code
+    ? 'That is ' + code.length + ' digit(s); a code is six digits.'
+    : 'Type the six-digit code from your current app above, then press ' + action + '.';
+  try { $('#twofacode').focus(); } catch (_) {}
+  return '';
+}
 if ($('#twofastart')) $('#twofastart').onclick = () => {
   twofaEnrollStart().catch(e => { $('#twofamessage').textContent = e.message || 'could not start'; });
 };
 if ($('#twofachange')) $('#twofachange').onclick = async () => {
-  const code = ($('#twofacode').value || '').replace(/[^0-9]/g, '');
-  if (!code) {
-    $('#twofamessage').textContent =
-      'Type the six-digit code from your current app above, then press Change authenticator.';
-    try { $('#twofacode').focus(); } catch (_) {}
-    return;
-  }
+  const code = twofaNeedCode('Change authenticator');
+  if (!code) return;
   try {
     await twofaEnrollStart({ code });
     $('#twofamessage').textContent = '';
   } catch (e) {
-    $('#twofamessage').textContent = e.message || 'could not start a new authenticator';
+    $('#twofamessage').textContent = twofaWhy(e.message || 'could not start a new authenticator', false);
   }
 };
 if ($('#twofarecov')) $('#twofarecov').onclick = async () => {
-  const code = ($('#twofacode').value || '').replace(/[^0-9]/g, '');
+  const code = twofaNeedCode('New recovery codes');
+  if (!code) return;
   try {
     const d = await jpost('/2fa/recovery', { code });
     const codes = (d.recovery || []).join('\n');
+    // Refresh the status first, and keep the message: this reply is the only
+    // time the codes exist, and the old loadTwofa blanked the message it had
+    // just been handed, so a person saw their new codes for a single frame.
+    await loadTwofa();                  // first, because it clears the message
     $('#twofamessage').textContent = T('New codes (this is the only time they are shown):');
     const pre = document.createElement('pre');
     pre.style.cssText = 'white-space:pre-wrap;font-size:13px;margin-top:6px';
     pre.textContent = codes;
     $('#twofamessage').append(pre);
-    loadTwofa();
-  } catch (e) { $('#twofamessage').textContent = e.message || 'could not issue new codes'; }
+  } catch (e) { $('#twofamessage').textContent = twofaWhy(e.message || 'could not issue new codes', false); }
 };
 if ($('#twofaoffbtn')) $('#twofaoffbtn').onclick = async () => {
-  const code = ($('#twofacode').value || '').replace(/[^0-9]/g, '');
+  const code = twofaNeedCode('Turn off two-factor');
+  if (!code) return;
   if (!confirm(T('Turn off two-factor for this account?'))) return;
   try {
     await jpost('/2fa/disable', { code });
+    await loadTwofa();                  // first, because it clears the message
     $('#twofamessage').textContent = T('Two-factor is off.');
-    loadTwofa();
-  } catch (e) { $('#twofamessage').textContent = e.message || 'could not turn it off'; }
+  } catch (e) { $('#twofamessage').textContent = twofaWhy(e.message || 'could not turn it off', false); }
 };
 
 // --- deleting the account: the one button with no undo ---------------------

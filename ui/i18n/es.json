@@ -38,7 +38,6 @@
     "Add fireside to your home screen.": "Añade fireside a tu pantalla de inicio.",
     "Add money": "Añadir dinero",
     "Add the free example book": "Añadir el libro de ejemplo gratis",
-    "Add this key to your authenticator app, then type the six digits it shows.": "Añade esta clave a tu app de autenticación y luego escribe los seis dígitos que muestra.",
     "Add {x} to the wallet": "Añade {x} al monedero",
     "Added to the queue.": "Añadido a la cola.",
     "Adding money is not switched on yet, so nothing was charged.": "Añadir dinero aún no está activado, así que no se cobró nada.",
@@ -338,7 +337,6 @@
     "Reading this book for words with two readings…": "Leyendo este libro en busca de palabras con dos lecturas…",
     "Recently added": "Añadidos hace poco",
     "Recently played": "Escuchados hace poco",
-    "Recovery code": "Código de recuperación",
     "Refund": "Reembolso",
     "Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.": "Reembolsos: el dinero que agregas al monedero no es reembolsable, salvo cuando la ley lo exige o cuando te cobramos dos veces por lo mismo. Si pasa cualquiera de las dos cosas, avísanos y lo arreglamos.",
     "Remove": "Quitar",
@@ -593,7 +591,6 @@
     "not listened yet": "aún sin escuchar",
     "not set": "sin definir",
     "one charge a year, same shelf and wallet": "un cargo al año, misma estantería y monedero",
-    "open in an authenticator app →": "abrir en una app de autenticación →",
     "or click to choose": "o haz clic para elegir",
     "pick a voice first": "elige una voz primero",
     "platform": "plataforma",
@@ -674,7 +671,17 @@
     "＋ Add a voice server": "＋ Añadir un servidor de voz",
     "＋ Add a word": "＋ Añadir una palabra",
     "＋ Create series…": "＋ Crear serie…",
-    "＋ Queue": "＋ Añadir a la cola"
+    "＋ Queue": "＋ Añadir a la cola",
+    "Type this key into your authenticator app, then enter the six digits it shows. If you are setting this up on a phone, open the link below on the phone instead of typing.": "Escribe esta clave en tu aplicación de autenticación y luego introduce los seis dígitos que muestra. Si lo configuras en un teléfono, abre el enlace de abajo en el teléfono en vez de escribirla.",
+    "Type the key below into your authenticator app (Google Authenticator, Authy, 1Password), then enter the six digits it shows.": "Escribe la clave de abajo en tu aplicación de autenticación (Google Authenticator, Authy, 1Password) y luego introduce los seis dígitos que muestra.",
+    "Recovery code, if you lost the phone": "Código de recuperación, por si perdiste el teléfono",
+    "open this on the phone you will use →": "abre esto en el teléfono que vas a usar →",
+    "Code from your current app": "Código de tu aplicación actual",
+    "Change and New recovery codes both use the code you type here.": "Cambiar autenticador y Nuevos códigos de recuperación usan el código que escribas aquí.",
+    ". Check it was typed exactly, and that it has not been used already. Each code works once.": ". Comprueba que esté escrito exactamente y que no se haya usado ya. Cada código sirve una sola vez.",
+    ". Each code works once, and the one you typed to set the factor up counts as used. Wait for the next code, at most 30 seconds away, then type it.": ". Cada código sirve una sola vez, y el que escribiste para activar el segundo factor ya cuenta como usado. Espera el siguiente código, que llega en 30 segundos como mucho, y escríbelo.",
+    ". Codes change every 30 seconds, so wait for the next one and type it straight away. If that keeps failing, this device's clock is off by more than a minute: set it to automatic, or use a recovery code.": ". Los códigos cambian cada 30 segundos, así que espera el siguiente y escríbelo enseguida. Si sigue fallando, el reloj de este dispositivo va desfasado más de un minuto: ponlo en automático o usa un código de recuperación.",
+    "that did not work": "eso no funcionó"
   },
   "name": "Español"
 }
