@@ -607,10 +607,22 @@ def rendition(conn, book_id, idx, provider="", voice="", model="", speed=None):
 def backfill_renditions(conn):
     """Seed the renditions table from chapter rows of a book voiced before this
     table existed, so it still lists its one voice. Idempotent: the key is
-    deterministic and INSERT OR IGNORE skips what is already there."""
+    deterministic and INSERT OR IGNORE skips what is already there.
+
+    The select only returns chapters that have no rendition yet, and that is not
+    an optimization detail: this runs on every boot, and the first version
+    fetched every voiced chapter and re-inserted it. That was one round trip per
+    voiced chapter per boot, growing with the library and doing nothing after the
+    first run (measured 11-12: 467 voiced chapters, 467 no-op inserts, 35 s from a
+    client 75 ms away). Now a fully migrated box boots with a single query that
+    returns no rows.
+    """
     rows = conn.execute(
-        "SELECT book_id,idx,provider,voice,model,speed,audio_ref,audio_bytes,duration_s "
-        "FROM chapters WHERE audio_ref IS NOT NULL").fetchall()
+        "SELECT c.book_id,c.idx,c.provider,c.voice,c.model,c.speed,c.audio_ref,"
+        "c.audio_bytes,c.duration_s FROM chapters c "
+        "WHERE c.audio_ref IS NOT NULL AND NOT EXISTS ("
+        "SELECT 1 FROM renditions r WHERE r.book_id=c.book_id AND r.idx=c.idx)"
+    ).fetchall()
     for r in rows:
         rk = rendition_key(r["book_id"], r["idx"], r["provider"], r["voice"],
                            r["model"], r["speed"])
