@@ -98,6 +98,27 @@ FIRESIDE_PADDLE_SIGNATURE_TOLERANCE=5              seconds
 A destination's secret key is shown once, when it is created. Store it in the
 deploy side (Azure container secret / vault alias), never in the repo.
 
+### Or set them on the admin screen
+
+Since 2026-11-12 the same values can be entered under **Admin → Payments** and
+are stored in the database (`settings` table, `config:` keys). A saved row wins
+over the environment, the change is applied on the next click, and the provider
+is re-registered then too, so going live no longer needs an image bump.
+
+Three things that screen does that a paste into Azure could not:
+
+  * it refuses a batch that cannot work (a live key against the sandbox
+    environment, a test browser token against production, two tiers sharing
+    one price, a tier with no monthly id) and leaves the last good
+    configuration untouched,
+  * it hands back a secret only as `set: true` plus four characters,
+  * **Ask the provider** calls Paddle with the saved key and names every price
+    id that is not in that catalog. The webhook secret is reported as
+    unproven: only a real signed delivery can prove it.
+
+`FIRESIDE_PADDLE_PRICES` is derived from the six ids entered on the screen, so
+the page's table and the webhook's reverse map can no longer disagree.
+
 ## Creating the notification destination
 
 Once, in the Paddle sandbox dashboard: **Developer tools → Notifications → New

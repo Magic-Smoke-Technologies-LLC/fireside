@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 __all__ = ["Receipt", "Plan", "Checkout", "Subscription", "Purchase",
-           "register", "get", "configured", "load", "REGISTRY"]
+           "register", "get", "configured", "load", "reload", "REGISTRY"]
 
 
 @dataclass
@@ -148,6 +148,19 @@ def get(provider_id=None):
 
 def configured():
     return bool(REGISTRY)
+
+
+def reload(dotted=None):
+    """Forget the registered providers and load them again.
+
+    A provider captures its key when it is constructed, so a key saved on the
+    admin screen would otherwise be read by the next render but not by the
+    provider holding the old one. Clearing first also stops a removed key from
+    leaving a live provider behind: an operator who clears the key means "stop
+    talking to Paddle", not "stop talking to Paddle after the next restart".
+    """
+    REGISTRY.clear()
+    return load(dotted)
 
 
 def load(dotted=None):
