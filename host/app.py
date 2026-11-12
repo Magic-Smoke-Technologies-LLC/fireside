@@ -42,7 +42,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from host.host import Host
 import inspect
 
-from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, disambig, draft as drafts, erase, example, grants, i18n, jobs, keepwarm, library, mailer, notices, payments, playback, plans, pron, quota, ratelimit, reading, stats, tags as tagmod
+from host import accounting, allowance, auth, billing, connections, contracts, credentials, db, disambig, draft as drafts, erase, example, grants, i18n, jobs, keepwarm, library, mailer, notices, payments, playback, plans, pron, quota, ratelimit, reading, renderjob_runner, stats, tags as tagmod
 from host.egress import fetch as _fetch
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -220,7 +220,11 @@ class App:
         self.db_path = db_path
         self.conn = db.connect(db_path)
         library.backfill_renditions(self.conn)   # a book voiced before renditions still lists its voice
-        jobs.sweep_stale(self.conn)              # a fresh boot has no live renderer
+        # A fresh boot proves its own request threads are gone, and nothing
+        # about a render running in a job or detached process: those only get
+        # swept after a long silence.
+        jobs.sweep_stale(self.conn, worker="request")
+        jobs.sweep_stale(self.conn, stale_seconds=3600, worker="worker")
         # Backend selection lives on the Host so a render job in its own process
         # picks the same one. An explicit id, else $FIRESIDE_STORAGE, else local.
         self.storage_id = self.host.storage_backend(storage_id)
@@ -346,6 +350,9 @@ class App:
         h["payments_configured"] = payments.configured()
         h["sale_connection"] = bool(self.sale_connection)
         h["build"] = os.environ.get("FIRESIDE_BUILD", "").strip()
+        # The durable render switch is configured, not proven: true says this box
+        # was told to start renders in a job, not that the start succeeded.
+        h["render_job"] = bool((os.environ.get("FIRESIDE_RENDER_JOB") or "").strip())
         return 200, h
 
     def _fields(self, o):
@@ -1815,7 +1822,15 @@ class App:
             finally:
                 c.close()
 
-        threading.Thread(target=_work, daemon=True).start()
+        # Out of process when this box can do it (a Container Apps Job on the
+        # hosted deployment, a detached worker anywhere else), because a thread
+        # dies with the request process. In process only as the fallback, and
+        # then only one of the two runs: start() says whether something took it.
+        mode = renderjob_runner.start(jid)
+        if mode:
+            jobs.set_worker(self.conn, jid, "worker")
+        else:
+            threading.Thread(target=_work, daemon=True).start()
         return 200, {"job_id": jid, "total": len(todo)}
 
     def _notice_run(self, c, user, book_id, jid):
