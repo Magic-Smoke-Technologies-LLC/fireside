@@ -1035,7 +1035,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
     </ul>
     <table class="welrates">
       <caption data-t="What narration costs">What narration costs</caption>
-      <tr><th data-t="Our voice">Our voice</th><td><b class="rate" data-t="$19.63 per million characters">$19.63 per million characters</b>
+      <tr><th data-t="Our voice">Our voice</th><td><b class="rate" data-t="$18.75 per million characters">$18.75 per million characters</b>
         <span class="ratefine" data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
       <tr><th data-t="Your own voice">Your own voice</th><td><b data-t="No platform cost">No platform cost</b>
         <span class="ratefine" data-t="your Azure key, or a Kokoro server on your own machine">your Azure key, or a Kokoro server on your own machine</span></td></tr>
@@ -1545,27 +1545,27 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
         <div class="rung" data-t="Reader">Reader</div>
         <div class="amount">$5</div>
         <ul>
-          <li data-t="50,000 characters a month, about 45 minutes">50,000 characters a month, about 45 minutes</li>
+          <li data-t="$1 of credit a month, and it rolls over">$1 of credit a month, and it rolls over</li>
           <li data-t="2 GB of storage">2 GB of storage</li>
-          <li data-t="Enough for a novel a month">Enough for a novel a month</li>
+          <li data-t="Everything in the free plan">Everything in the free plan</li>
         </ul>
       </div>
       <div class="prcard">
         <div class="rung" data-t="Listener">Listener</div>
         <div class="amount">$10</div>
         <ul>
-          <li data-t="250,000 characters a month, about 3 hours 45 minutes">250,000 characters a month, about 3 hours 45 minutes</li>
+          <li data-t="$3 of credit a month, and it rolls over">$3 of credit a month, and it rolls over</li>
           <li data-t="5 GB of storage">5 GB of storage</li>
-          <li data-t="Series, long fics, and a shelf that grows">Series, long fics, and a shelf that grows</li>
+          <li data-t="Everything in Reader">Everything in Reader</li>
         </ul>
       </div>
       <div class="prcard">
         <div class="rung" data-t="Studio">Studio</div>
         <div class="amount">$22</div>
         <ul>
-          <li data-t="1,000,000 characters a month, about 15 hours">1,000,000 characters a month, about 15 hours</li>
+          <li data-t="$15 of credit a month, and it rolls over">$15 of credit a month, and it rolls over</li>
           <li data-t="10 GB of storage">10 GB of storage</li>
-          <li data-t="The platform, plus the whole million a month">The platform, plus the whole million a month</li>
+          <li data-t="Everything in Listener">Everything in Listener</li>
         </ul>
       </div>
     </div>
@@ -1578,12 +1578,12 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
     <div class="walletpromise" id="walletpromise">
       <p class="wpk" data-t="Your wallet">Your wallet</p>
       <p class="wplead" data-t="Wallet dollars never expire and are used to pay for services on the platform.">Wallet dollars never expire and are used to pay for services on the platform.</p>
-      <p class="wpbody" data-t="Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.">Our rate is the speech provider's rate plus about ten cents per million, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.</p>
+      <p class="wpbody" data-t="Our rate is the speech provider's rate plus 25%, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.">Our rate is the speech provider's rate plus 25%, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.</p>
       <div class="wpact" id="wpact"></div>
     </div>
 
     <table class="ratetable" id="pagerates">
-      <tr><th data-t="Our voice">Our voice</th><td><b id="pageratevoice" data-t="$19.63 per million characters">$19.63 per million characters</b>
+      <tr><th data-t="Our voice">Our voice</th><td><b id="pageratevoice" data-t="$18.75 per million characters">$18.75 per million characters</b>
         <span id="pageratehours" data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
       <tr><th data-t="Your own Azure key">Your own Azure key</th><td><b data-t="No platform cost">No platform cost</b>
         <span data-t="your text goes to Microsoft under your account and Azure bills you">your text goes to Microsoft under your account and Azure bills you</span></td></tr>
@@ -3790,7 +3790,7 @@ async function confirmCheckout(ref) {
 // one and from the published list price before that. It was typed into three
 // places: the landing page, the plans table, and the credit-to-hours arithmetic.
 // The published value is the fallback, not the truth.
-const RATE_LIST = 19.63;
+const RATE_LIST = 18.75;
 function ratePer1m() { return WRATE > 0 ? WRATE : RATE_LIST; }
 function rateText() { return '$' + ratePer1m().toFixed(2) + ' per million characters'; }
 // The duration, with no 'about' in it: a message that adds its own 'about'

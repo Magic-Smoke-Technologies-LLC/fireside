@@ -28,8 +28,8 @@ from providers._accounting import AccountingMixin
 
 # Defaults for the two sale fields. Both are connection settings, so an operator
 # can tune them per deployment without a code change.
-DEFAULT_MARKUP = 1.3
-DEFAULT_INFRA_PER_1M = 0.10
+DEFAULT_MARKUP = 1.25
+DEFAULT_INFRA_PER_1M = 0.0
 
 # What the pricing page offers. The plugin, not the host, decides the bundles
 # and how many characters each buys (rounded down).

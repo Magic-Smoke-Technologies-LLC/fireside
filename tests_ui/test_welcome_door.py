@@ -14,9 +14,27 @@ test:
     the copy still lands the reader in the form.
 """
 
+import re
 import unittest
 
 from tests_ui.support import BrowserTest, wait_until, wait_visible
+
+RATE_LIST = re.compile(r"const RATE_LIST = ([0-9.]+)")
+
+
+def page_rate(page):
+    """The fallback rate the page itself would charge, read from the page.
+
+    A stranger has no session, so /credits cannot answer for them; the door's
+    rate table is static copy and the number it must agree with is the one in
+    the page's own code. Both are in the document the host serves, so one
+    regex over that document is the honest comparison, and it cannot drift
+    from a literal in this file.
+    """
+    m = RATE_LIST.search(page.content())
+    if not m:
+        raise AssertionError("the page no longer carries a RATE_LIST constant")
+    return float(m.group(1))
 
 
 class TestWelcomeDoor(BrowserTest):
@@ -66,10 +84,6 @@ class TestWelcomeDoor(BrowserTest):
         self.assertTrue(self.page.is_visible("#lockemailwrap"),
                         "the call to action creates an account, so it asks for an email")
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_the_rates_are_a_table_and_the_prose_names_no_amount(self):
         """A price inside a sentence goes stale silently.
 
@@ -77,20 +91,31 @@ if __name__ == "__main__":
         step, so the day the provider repriced, the front page became a lie in
         the one place nobody re-reads. The number belongs in a table with a
         label, and the sentence points at it. Both halves are checked: the
-        table has the rate, and the prose does not.
+        table carries the live rate, and the prose carries none.
+
+        This test used to sit below ``if __name__ == "__main__"``, so unittest
+        never defined it, let alone ran it: a guard that could not lose. The
+        rate is asked of the host rather than typed here, because 19.63 became
+        18.75 on 11-12 and a literal would have kept passing on the old number.
         """
         self.open_site()
         self.wait_door_rendered()
         table = self.page.query_selector("#lockwel table.welrates")
         self.assertIsNotNone(table, "the door needs a rate table, not a sentence")
         text = table.text_content()
-        self.assertIn("19.63", text)
+        rate = page_rate(self.page)
+        self.assertTrue(rate > 0, "the door is selling a metered voice, so it needs a rate")
+        self.assertIn('$%.2f' % rate, text,
+                      "the table shows the rate the host is actually charging")
         self.assertIn("million characters", text)
         rows = self.page.query_selector_all("#lockwel .welrates tr")
         self.assertGreaterEqual(len(rows), 3, "a table of one row is a sentence")
         prose = " ".join(el.text_content() for el in
                          self.page.query_selector_all("#lockwel .welsteps li span"))
-        self.assertNotIn("$19.63", prose,
+        self.assertNotIn('$%.2f' % rate, prose,
                          "the prose carries no amount; the table does")
         self.assert_no_page_errors()
 
+
+if __name__ == "__main__":
+    unittest.main()

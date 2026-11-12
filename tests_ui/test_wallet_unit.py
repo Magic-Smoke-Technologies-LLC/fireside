@@ -52,6 +52,23 @@ def seed_balance(host, user, currency, amount, with_sale=True):
         conn.close()
 
 
+def rate_per_1m(page):
+    """The rate the page itself is using, asked of the page's own endpoint.
+
+    The chip converts a legacy character balance at today's voice rate, and
+    that rate is a live number (Chris moved it to 18.75 on 11-12). A literal in
+    this file is a stale default wearing a fact's clothes: the assertion passes
+    on the day it is written and lies after. Ask the host.
+    """
+    return page.evaluate(
+        "async () => ((await (await fetch('/credits', {credentials: 'same-origin'}))"
+        ".json()).sale || {}).rate_per_1m_chars")
+
+
+def cents_for(chars, rate):
+    return '$' + ('%.2f' % (int(chars / 1e6 * rate * 100 + 0.5) / 100.0))
+
+
 def wait_chip(page):
     wait_until(page, "() => { const c = document.getElementById('balchip');"
                      " return c && !c.hidden && c.textContent.trim()"
@@ -85,11 +102,12 @@ class TestWalletSpeaksMoney(BrowserTest):
         seed_balance(self.host, user, "chars", 50000)
         self.page.reload()
         self.wait_in_app()
-        # 50,000 characters at 19.63 per million is 98 cents, and the chip is
-        # the number a reader looks at all day
-        self.assertEqual(wait_chip(self.page), "$0.98")
+        # 50,000 characters at the live rate, and the chip is the number a
+        # reader looks at all day. Computed, not typed in.
+        expected = cents_for(50000, rate_per_1m(self.page))
+        self.assertEqual(wait_chip(self.page), expected)
         open_wallet(self.page)
-        self.assertEqual(self.page.text_content("#wbal").strip(), "$0.98")
+        self.assertEqual(self.page.text_content("#wbal").strip(), expected)
         note = self.page.text_content("#wnote").lower()
         self.assertNotIn("still holds characters", note)
         self.assertIn("dollars", note)
