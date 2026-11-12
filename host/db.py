@@ -29,6 +29,7 @@ Reserved-word columns are quoted with backticks, which both engines understand.
 import os
 import re
 import sqlite3
+import sys
 import threading
 import time
 import urllib.parse
@@ -332,7 +333,10 @@ _ADDED_COLUMNS = [
     # of them. Without it a worker in another process reads the whole book and
     # renders chapters the request never quoted (found 11-12: a "voice chapter
     # 1" request voiced all five and the charge covered one).
-    ("jobs", "only_idx", "TEXT DEFAULT ''"),
+    # VARCHAR, not TEXT: MySQL refuses a DEFAULT on a TEXT column, so the ALTER
+    # failed inside migrate() and the column never appeared on the live box
+    # (11-12). SQLite allowed it, which is why the suite stayed green.
+    ("jobs", "only_idx", "VARCHAR(512) DEFAULT ''"),
     ("books", "cover_ref", "VARCHAR(255) DEFAULT ''"),
     ("books", "cover_mime", "VARCHAR(64) DEFAULT ''"),
     ("books", "author", "VARCHAR(255) DEFAULT ''"),
@@ -432,8 +436,12 @@ def migrate(conn):
         try:
             conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, name, ddl))
             conn.commit()
-        except Exception:               # a concurrent migration already did it
-            pass
+        except Exception as e:
+            # A concurrent migration is harmless; anything else is not. A silent
+            # skip once left a column missing on the live box.
+            if name not in _columns(conn, table):
+                sys.stderr.write("migration skipped %s.%s: %s\n"
+                                 % (table, name, e))
     for name, table, cols in _ADDED_INDEXES:
         if name in _index_names(conn, table):
             continue
