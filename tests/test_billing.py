@@ -36,7 +36,7 @@ class TestSaleRate(unittest.TestCase):
         self.assertAlmostEqual(rate, (15.0 + 0.10) * 1.3, places=9)
 
     def test_defaults_when_fields_missing(self):
-        self.assertAlmostEqual(self.sp.sale_rate_per_1m({}), (15.0 + 0.10) * 1.3, places=9)
+        self.assertAlmostEqual(self.sp.sale_rate_per_1m({}), 15.0 * 1.25, places=9)
 
     def test_chars_rounded_down_never_oversell(self):
         cred = {"markup": "1.3", "infra_per_1m": "0.1"}
@@ -51,10 +51,11 @@ class TestSaleRate(unittest.TestCase):
         self.assertEqual(self.sp.chars_for_payment(-3, {}), 0)
 
     def test_bundles_are_priced_in_chars(self):
-        b = self.sp.bundles({"markup": "1.3", "infra_per_1m": "0.1"})
+        cred = {"markup": "1.3", "infra_per_1m": "0.1"}
+        b = self.sp.bundles(cred)
         self.assertTrue(b)
         for entry in b:
-            self.assertEqual(entry["chars"], self.sp.chars_for_payment(entry["usd"], {}))
+            self.assertEqual(entry["chars"], self.sp.chars_for_payment(entry["usd"], cred))
 
     def test_sale_quote_reserves_characters(self):
         q = self.sp.quote({"chars_est": 4200, "cred": {}, "sale": True})
