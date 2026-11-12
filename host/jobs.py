@@ -9,6 +9,7 @@ job row carries progress; the client knows nothing about the pipeline.
 import os
 import threading
 import time
+import json
 import uuid
 
 from host import chunks, disambig, library, pron
@@ -316,16 +317,20 @@ def _write_chapter_audio(conn, book_id, idx, entry, provider, voice, model, spee
 
 
 def start_job(conn, user_id, book_id, provider, voice="", model="", total=0, kind="render",
-              status="running", connection_id="", speed=1.0, worker="request"):
+              status="running", connection_id="", speed=1.0, worker="request",
+              only=None):
     job_id = uuid.uuid4().hex
+    # A selection is part of the work order, not of the request that queued it:
+    # the process that runs the row may not be the process that took the click.
+    only_idx = "" if only is None else json.dumps(sorted({int(i) for i in only}))
     conn.execute(
         "INSERT INTO jobs(id,user_id,book_id,kind,provider,voice,model,status,"
         "total,current,error,created_at,updated_at,connection_id,speed,"
-        "reservation_id,quoted_chars,worker)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "reservation_id,quoted_chars,worker,only_idx)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (job_id, user_id, book_id, kind, provider, voice, model, status,
          total, 0, "", now(), now(), connection_id or "", float(speed or 1.0),
-         "", 0, worker or "request"))
+         "", 0, worker or "request", only_idx))
     conn.commit()
     return job_id
 
