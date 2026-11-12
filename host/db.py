@@ -328,6 +328,11 @@ _ADDED_COLUMNS = [
     # 'worker' for a process the request did not keep alive. A boot can
     # prove a request thread is gone; it cannot prove a worker is.
     ("jobs", "worker", "VARCHAR(32) DEFAULT ''"),
+    # Which chapters this run was asked to make, as a JSON list. Empty means all
+    # of them. Without it a worker in another process reads the whole book and
+    # renders chapters the request never quoted (found 11-12: a "voice chapter
+    # 1" request voiced all five and the charge covered one).
+    ("jobs", "only_idx", "TEXT DEFAULT ''"),
     ("books", "cover_ref", "VARCHAR(255) DEFAULT ''"),
     ("books", "cover_mime", "VARCHAR(64) DEFAULT ''"),
     ("books", "author", "VARCHAR(255) DEFAULT ''"),

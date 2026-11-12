@@ -18,6 +18,7 @@ made. What the worker must not do is invent any of it.
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -101,6 +102,18 @@ def run(job_id, plugins_root=None, echo=print):
             pass
 
 
+def _only(row):
+    """The chapters this row was asked to make, or None for the whole book."""
+    raw = (row.get("only_idx") if isinstance(row, dict) else row["only_idx"]) or ""
+    if not raw:
+        return None
+    try:
+        v = json.loads(raw)
+    except ValueError:
+        return None
+    return [int(i) for i in v] if isinstance(v, list) else None
+
+
 def _run_with(conn, host, job_id, echo=print):
     """Run the job row `job_id` to completion. Returns a POSIX exit code."""
     try:
@@ -135,6 +148,13 @@ def _run_with(conn, host, job_id, echo=print):
         rows = conn.execute("SELECT idx FROM chapters WHERE book_id=? ORDER BY idx",
                             (book_id,)).fetchall()
         todo = [r["idx"] for r in rows]
+        # The row can carry a selection (a repair, a single chapter). This
+        # process has no request to ask, so the selection must have been
+        # written down when it was queued.
+        only = _only(row)
+        if only is not None:
+            want = set(only)
+            todo = [i for i in todo if i in want]
         rules = _rules(conn, user, book_id)
 
         def cancelled():
@@ -142,7 +162,7 @@ def _run_with(conn, host, job_id, echo=print):
 
         jobs.render_book(conn, storage, speech, user, book_id, voice,
                          model, speed, cred=cred, opts={"model": model, "speed": speed},
-                         job_id=job_id, plugins_root=host.plugins_root,
+                         only=only, job_id=job_id, plugins_root=host.plugins_root,
                          should_stop=cancelled)
 
         if res_id:

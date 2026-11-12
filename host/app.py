@@ -1793,7 +1793,7 @@ class App:
                                  "detail": str(e)}
         jid = jobs.start_job(self.conn, user, book_id, speech.id, voice, model,
                              total=len(todo), status="queued",
-                             connection_id=cid, speed=speed)
+                             connection_id=cid, speed=speed, only=only)
         if res_id:
             # The row carries what a worker in another process needs to settle
             # this charge: the reservation and the characters it quoted.

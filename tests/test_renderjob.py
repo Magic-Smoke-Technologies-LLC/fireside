@@ -93,6 +93,18 @@ class RenderJobTest(unittest.TestCase):
             self.assertTrue(storage.has(r["audio_ref"]),
                             "the row points at audio this storage does not have")
 
+    def test_a_row_that_names_chapters_leaves_the_rest_unvoiced(self):
+        """A selection is part of the work order. The hosted worker has no
+        request to ask, so it must read the chapters off the row; before this,
+        "voice chapter 1" voiced the whole book and charged for one chapter."""
+        jid = self._queued(only=[1])
+        code = renderjob.run(jid, plugins_root=PLUGINS, echo=_Quiet())
+        self.assertEqual(code, 0)
+        rows = {r["idx"]: r for r in library.chapters(self.conn, self.bid)}
+        self.assertTrue(rows[1]["audio_ref"], "the named chapter was not voiced")
+        self.assertFalse(rows[0]["audio_ref"],
+                         "the worker voiced a chapter the row did not ask for")
+
     def test_a_cancelled_row_is_not_rendered(self):
         jid = self._queued()
         self.conn.execute("UPDATE jobs SET status='cancelled' WHERE id=?", (jid,))
