@@ -350,6 +350,9 @@ class App:
         h["payments_configured"] = payments.configured()
         h["sale_connection"] = bool(self.sale_connection)
         h["build"] = os.environ.get("FIRESIDE_BUILD", "").strip()
+        # The durable render switch is configured, not proven: true says this box
+        # was told to start renders in a job, not that the start succeeded.
+        h["render_job"] = bool((os.environ.get("FIRESIDE_RENDER_JOB") or "").strip())
         return 200, h
 
     def _fields(self, o):

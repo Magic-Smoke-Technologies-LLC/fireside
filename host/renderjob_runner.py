@@ -77,17 +77,18 @@ def _identity_token(resource=ARM + "/"):
         return None
 
 
-def start_hosted(job_id, resource_id, container="render", token=None):
+def start_hosted(job_id, resource_id, token=None):
     """Start one execution of the Container Apps Job `resource_id`.
 
-    Returns the execution name on success, None on failure. Passing args at start
-    is a manual-trigger job's override: the job row is the work order, the arg is
-    which row.
+    No container override: overriding anything at start requires the whole
+    container spec, image included, which would put the image name in the app's
+    config. The job template already runs the drainer, and the row it needs is
+    the one this request just queued. Returns the execution name or None.
     """
     token = token or _identity_token()
     if not token:
         return None
-    body = json.dumps({"containers": [{"name": container, "args": [job_id]}]}).encode()
+    body = b"{}"
     url = (ARM + resource_id + "/start?api-version=2024-03-01")
     req = urllib.request.Request(url, data=body, method="POST",
                                  headers={"Authorization": "Bearer " + token,
@@ -138,7 +139,7 @@ def start_local(job_id, log_dir=None):
             out.close()
 
 
-def start(job_id, resource_id=None, container=None, log_dir=None):
+def start(job_id, resource_id=None, log_dir=None):
     """Start the render for `job_id` out of process.
 
     Returns "job" (a Container Apps execution), "local" (a detached process), or
@@ -148,10 +149,7 @@ def start(job_id, resource_id=None, container=None, log_dir=None):
     """
     rid = resource_id or (os.environ.get("FIRESIDE_RENDER_JOB") or "").strip()
     if rid:
-        res = start_hosted(job_id, rid,
-                           container=(container or
-                                      os.environ.get("FIRESIDE_RENDER_JOB_CONTAINER")
-                                      or "render"))
+        res = start_hosted(job_id, rid)
         if res:
             return "job"
         # A configured hosted job that will not start is a real failure, but the
