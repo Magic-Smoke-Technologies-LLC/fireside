@@ -98,6 +98,41 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(jobs.status_of(self.conn, dead), "stalled",
                          "a boot left a dead request thread's row running")
 
+    def test_a_user_assigned_identity_is_named_in_the_request(self):
+        """The MSI endpoint answers 400 for a bare resource when the identity is
+        user-assigned: it has to be told which one. Naming it is the difference
+        between a hosted start and a silent fall back (11-12, first live render)."""
+        from unittest import mock
+        os.environ["IDENTITY_ENDPOINT"] = "http://localhost:9999/msi/token"
+        os.environ["IDENTITY_HEADER"] = "hdr"
+        os.environ["FIRESIDE_MSI_CLIENT_ID"] = "client-abc"
+        seen = {}
+
+        class _R:
+            def __enter__(self_):
+                return self_
+
+            def __exit__(self_, *a):
+                return False
+
+            def read(self_):
+                return b'{"access_token": "tok"}'
+
+        def _open(req, timeout=None):
+            seen["url"] = req.full_url
+            return _R()
+
+        try:
+            with mock.patch("urllib.request.urlopen", _open):
+                tok = renderjob_runner._identity_token()
+        finally:
+            for k in ("IDENTITY_ENDPOINT", "IDENTITY_HEADER",
+                      "FIRESIDE_MSI_CLIENT_ID"):
+                os.environ.pop(k, None)
+        self.assertEqual(tok, "tok")
+        self.assertIn("client_id=client-abc", seen["url"])
+        self.assertIn("resource=", seen["url"])
+
     def test_hosted_start_without_an_identity_is_a_quiet_no(self):
         """No identity endpoint means this box is not hosted: it must say no,
         not raise, so the caller can use its own fallback."""
