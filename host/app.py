@@ -2466,6 +2466,50 @@ class App:
         return 200, {"ok": True, "applied": True, "user": uid,
                      "status": status, "event": st.get("event", "")}
 
+    def _credit_wallet_tx(self, pp, tx, cust=None):
+        """Credit the wallet for a one-time load Paddle says was paid.
+
+        A wallet top-up is not a subscription: no renewal will ever come, and
+        there is no checkout session for /credits/confirm to read back. So this
+        delivery is the only receipt that will exist, and without it a buyer
+        pays and their balance never moves. Credited once per transaction id;
+        an unknown price credits nothing (a wrong amount here would hand out
+        money the card was never charged).
+        """
+        tx = tx or {}
+        if (tx.get("status") or "") != "completed":
+            return {"credited": False, "detail": "not completed"}
+        tid = (tx.get("transaction_id") or "").strip()
+        if not tid:
+            return {"credited": False, "detail": "no transaction id"}
+        cents = 0
+        fn = getattr(pp, "wallet_amount", None)
+        if callable(fn):
+            try:
+                cents = int(fn(tx.get("price_id") or "") or 0)
+            except (TypeError, ValueError):
+                cents = 0
+        if cents <= 0:
+            return {"credited": False, "detail": "not a wallet price"}
+        uid = (tx.get("user_id") or "").strip()
+        if not uid:
+            # The overlay sets our key on the transaction, so this is the rare
+            # case of a load bought from a Paddle-hosted page; the customer was
+            # linked by this same event a moment ago.
+            c = billing.customer_by_id(self.conn,
+                                       (tx.get("customer_id")
+                                        or (cust or {}).get("customer_id") or ""))
+            uid = (c or {}).get("user_id") or ""
+        if not uid:
+            return {"credited": False, "detail": "transaction names no account"}
+        if not self._claim_payment(tid, "wallet", uid, tid, cents,
+                                   "paddle transaction"):
+            return {"credited": False, "detail": "already credited", "user": uid}
+        usd = cents / 100.0
+        accounting.topup(self.conn, uid, usd, currency="USD",
+                         note="wallet +$%.2f (%s)" % (usd, tid))
+        return {"credited": True, "user": uid, "usd": usd}
+
     def payment_webhook(self, raw, sig_header, provider_id="stripe"):
         """Stripe's server-to-server view of a settled checkout.
 
@@ -2491,7 +2535,11 @@ class App:
             # normalized shape and the core mirrors it. There is no session to
             # re-read and no price is computed here, only what Paddle said.
             # Idempotency is the event id, so a retry or a replay is a no-op.
-            return 200, billing.apply_event(self.conn, norm(event) or {})
+            out = billing.apply_event(self.conn, norm(event) or {})
+            if out.get("kind") == "transaction" and out.get("transaction"):
+                out["wallet"] = self._credit_wallet_tx(pp, out["transaction"],
+                                                       out.get("customer"))
+            return 200, out
         ref = ""
         rfn = getattr(pp, "webhook_reference", None)
         if callable(rfn):

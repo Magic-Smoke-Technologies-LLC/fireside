@@ -82,6 +82,46 @@ def main(argv=None):
             else:
                 print("ok       %-9s %-5s %s %s" % (tier, cycle, pid, label))
 
+    # The storage block and the wallet loads are sold from the same page and
+    # were the two offers with no id at all (2026-11-13): the page printed a
+    # price, the button had nothing to open. Now they have ids AND amounts in
+    # one table, and this is the receipt that the pair matches Paddle.
+    st = pp.storage_price()
+    d = price_of(args.api_key, args.env, st.get("price_id") or "")
+    if d.get("_error"):
+        print("ERROR    storage   %s %s" % (st.get("price_id") or "", d["_error"]))
+        bad += 1
+    else:
+        got = int((d.get("unit_price") or {}).get("amount") or 0)
+        if got != int(st.get("amount_cents") or 0):
+            print("MISMATCH storage   %s table says %s, Paddle charges %d"
+                  % (st.get("price_id"), st.get("amount_cents"), got))
+            bad += 1
+        elif (d.get("status") or "") != "active":
+            print("NOT LIVE storage   %s status=%s" % (st.get("price_id"), d.get("status")))
+            bad += 1
+        else:
+            print("ok       storage   %s %s %d" % (st.get("price_id"),
+                  (d.get("unit_price") or {}).get("currency_code") or "", got))
+
+    for usd, pid in sorted(pp.wallet_prices().items(), key=lambda kv: float(kv[0])):
+        d = price_of(args.api_key, args.env, pid)
+        want = int(round(float(usd) * 100))
+        if d.get("_error"):
+            print("ERROR    wallet %-3s %s %s" % (usd, pid, d["_error"]))
+            bad += 1
+            continue
+        got = int((d.get("unit_price") or {}).get("amount") or 0)
+        if got != want:
+            print("MISMATCH wallet %-3s %s table says %d, Paddle charges %d"
+                  % (usd, pid, want, got))
+            bad += 1
+        elif (d.get("status") or "") != "active":
+            print("NOT LIVE wallet %-3s %s status=%s" % (usd, pid, d.get("status")))
+            bad += 1
+        else:
+            print("ok       wallet %-3s %s %d" % (usd, pid, got))
+
     print("---")
     print("catalog agrees with the page" if not bad else "%d disagreement(s)" % bad)
     return 0 if not bad else 1
