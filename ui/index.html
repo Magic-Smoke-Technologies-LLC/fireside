@@ -3580,6 +3580,18 @@ function drawRate(d) {
 }
 async function buyTopup(usd) {
   const msg = t => { const m = $('#wmsg'); if (m) m.textContent = t; };
+  // The wallet is a one-time price, so it opens the same overlay the plans do
+  // and the price id is the one that charges the card. Until 2026-11-13 this
+  // posted to /credits/purchase, which asked Paddle for a hosted checkout it
+  // has never had: the button opened nothing.
+  const cfg = await billingConfig();
+  const wpid = ((cfg && cfg.wallet) || {})[String(usd)] || '';
+  if (wpid && cfg.client_token) {
+    msg(T('Opening the payment page\u2026'));
+    try { await openPaddle(cfg, wpid, 1); }
+    catch (e) { msg(T('The card form did not start: {x}', {x: (e && e.message) || 'unknown error'})); }
+    return;
+  }
   msg(T('Opening the payment page\u2026'));
   try {
     const r = await jpostIdem('/credits/purchase', {
@@ -4196,7 +4208,7 @@ function loadPaddle() {
     document.head.append(s);
   });
 }
-async function openPaddle(cfg, priceId) {
+async function openPaddle(cfg, priceId, quantity) {
   await loadPaddle();
   const key = (cfg.client_token || '') + '|' + (cfg.env || '');
   if (PADDLE_KEY !== key) {
@@ -4210,7 +4222,7 @@ async function openPaddle(cfg, priceId) {
     PADDLE_KEY = key;
   }
   Paddle.Checkout.open({
-    items: [{ priceId: priceId, quantity: 1 }],
+    items: [{ priceId: priceId, quantity: Math.max(1, parseInt(quantity || 1, 10) || 1) }],
     // Our own key: the webhook finds the account from this, not from the email
     // the buyer typed, which may be a different one.
     customData: { fireside_user: AUTH.user },
@@ -4295,9 +4307,19 @@ function renderPageBuys(box, s, cat, cfg) {
     inp.style.maxWidth = '90px';
     const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
     b.textContent = T('Buy blocks');
-    b.disabled = !(can && st.amount_cents != null);
+    const stPid = ((cfg && cfg.storage_price) || {}).price_id || '';
+    const overlays = !!(stPid && cfg && cfg.client_token);
+    b.disabled = !(can && (overlays || st.amount_cents != null));
     if (b.disabled) b.title = T('Not for sale yet');
-    b.onclick = () => startCheckout({ plan: st.addon, quantity: Math.max(1, parseInt(inp.value || '1', 10)) }, msg);
+    const qty = () => Math.max(1, parseInt(inp.value || '1', 10));
+    b.onclick = async () => {
+      if (overlays) {
+        try { await openPaddle(cfg, stPid, qty()); }
+        catch (e) { msg.textContent = T('The card form did not start: {x}', {x: (e && e.message) || 'unknown error'}); }
+        return;
+      }
+      startCheckout({ plan: st.addon, quantity: qty() }, msg);
+    };
     row2.append(inp, b);
   }
   box.append(room, msg);
@@ -4387,6 +4409,14 @@ function renderWalletAction() {
     b.disabled = true;
     m.textContent = T('Opening the payment page\u2026');
     try {
+      const cfg = await billingConfig();
+      const wpid = ((cfg && cfg.wallet) || {})['5'] || '';
+      if (wpid && cfg.client_token) {
+        b.disabled = false;
+        await openPaddle(cfg, wpid, 1);
+        m.textContent = '';
+        return;
+      }
       const r = await jpostIdem('/credits/purchase',
         { usd: 5, return_url: location.origin + location.pathname });
       if (r.url) { location.href = r.url; return; }

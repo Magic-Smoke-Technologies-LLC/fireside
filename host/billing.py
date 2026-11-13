@@ -342,6 +342,25 @@ def mirror_subscription(conn, sub):
             uid = _user_by_email(conn, (c or {}).get("email") or "")
     if not uid and cur:
         uid = cur["user_id"] or ""
+    if (sub.get("plan") or "") == STORAGE_ADDON:
+        # A storage block is a subscription in Paddle and an add-on here. It
+        # must not land in the tier row: a plan named "storage" is not a rung,
+        # and quota.allowance_bytes fails open on an unknown name, so it would
+        # have handed a block buyer the platform allowance and printed
+        # "storage" as their plan. Written where the rest of the host reads
+        # blocks, with the quantity the provider says they bought.
+        if not uid:
+            return None
+        row = upsert_addon(conn, uid, STORAGE_ADDON,
+                           int(sub.get("quantity") or 1), sub.get("status") or "",
+                           provider="paddle", reference=sid,
+                           current_period_end=int(sub.get("current_period_end") or 0),
+                           customer=sub.get("customer_id") or "",
+                           subscription_id=sid,
+                           cancel_at=(int(sub.get("scheduled_change_at") or 0)
+                                      if sub.get("scheduled_change_action") == "cancel"
+                                      else 0))
+        return row
     conn.execute(
         "INSERT INTO paddle_subscriptions (subscription_id, customer_id, user_id, "
         "status, price_id, product_id, plan, scheduled_change_action, "
@@ -375,7 +394,8 @@ def project(conn, uid):
     recent delivery decides, which is how a cancel takes access away. A price we
     do not recognize leaves the tier untouched instead of guessing.
     """
-    rows = subscription_rows(conn, uid)
+    rows = [r for r in subscription_rows(conn, uid)
+            if (r.get("plan") or "") != STORAGE_ADDON]
     if not rows:
         return get(conn, uid)
     granting = [r for r in rows if grants_access(r["status"])]
@@ -436,7 +456,10 @@ def apply_event(conn, event):
             sub["occurred_at"] = ev.get("occurred_at") or ""
         row = mirror_subscription(conn, sub)
         out["applied"] = bool(row)
-        out["subscription"] = row
+        if (sub.get("plan") or "") == STORAGE_ADDON:
+            out["addon"] = row
+        else:
+            out["subscription"] = row
         if row and row.get("user_id"):
             out["user"] = row["user_id"]
     elif kind == "customer":

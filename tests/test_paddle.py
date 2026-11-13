@@ -711,6 +711,205 @@ class TestPricingPageWiring(unittest.TestCase):
         self.assertIn("let CURRENT_PLAN", self.page)
 
 
+STORAGE_PID = paddle.DEFAULT_STORAGE_PRICE["price_id"]
+WALLET_5 = paddle.DEFAULT_WALLET_PRICES["5"]
+
+
+def tx_event(price=WALLET_5, status="completed", uid="user_1",
+             amount=500, eid=None):
+    """A transaction.completed, the only receipt a wallet load will get."""
+    return {"event_id": eid or "ntf_tx_%s" % price,
+            "event_type": "transaction.completed",
+            "occurred_at": "2026-11-13T12:00:00Z",
+            "data": {"id": "txn_1", "status": status, "customer_id": "ctm_1",
+                     "items": [{"price": {"id": price}, "quantity": 1}],
+                     "details": {"totals": {"total": amount,
+                                            "currency_code": "USD"}},
+                     "custom_data": {paddle.METADATA_KEY: uid}}}
+
+
+class TestSellableOffers(unittest.TestCase):
+    """The other two things the page sells, which had no id at all.
+
+    2026-11-13: /pricing advertised storage blocks and wallet loads, the
+    storage button bounced back to the page it came from, and the wallet button
+    called a Paddle method that has never existed. Found by reading the served
+    page's buy handlers against the provider, not by watching a click.
+    """
+
+    def test_storage_id_is_a_price_we_recognise(self):
+        self.assertEqual(paddle.plan_for(STORAGE_PID), "storage")
+
+    def test_storage_survives_a_production_tier_override(self):
+        # The live deploy replaces the tier table wholesale; the add-on must not
+        # fall out of the webhook's map with it, or a storage subscription would
+        # credit no room.
+        os.environ["FIRESIDE_PADDLE_PRICES"] = json.dumps(
+            {"pri_live_reader": "platform"})
+        try:
+            table = paddle.known_prices()
+        finally:
+            os.environ.pop("FIRESIDE_PADDLE_PRICES", None)
+        self.assertEqual(table["pri_live_reader"], "platform")
+        self.assertEqual(table[STORAGE_PID], "storage")
+        self.assertNotIn(READER_MONTH, table)
+
+    def test_wallet_amounts_round_trip(self):
+        self.assertEqual(paddle.wallet_amount(WALLET_5), 500)
+        self.assertEqual(paddle.wallet_amount(paddle.DEFAULT_WALLET_PRICES["50"]),
+                         5000)
+        self.assertEqual(paddle.wallet_amount(READER_MONTH), 0,
+                         "a plan price must never load money into a wallet")
+        self.assertEqual(paddle.wallet_amount(""), 0)
+
+    def test_the_page_is_told_the_block_and_wallet_ids(self):
+        os.environ["FIRESIDE_PADDLE_CLIENT_TOKEN"] = "test_abc123"
+        try:
+            conf = paddle.public_config()
+        finally:
+            os.environ.pop("FIRESIDE_PADDLE_CLIENT_TOKEN", None)
+        self.assertEqual(conf["storage_price"]["price_id"], STORAGE_PID)
+        self.assertEqual(conf["storage_price"]["amount_cents"], 200)
+        self.assertEqual(sorted(conf["wallet"]), ["10", "25", "5", "50"])
+        self.assertEqual(conf["wallet"]["5"], WALLET_5)
+        self.assertNotIn("api_key", conf)
+
+    def test_plans_reads_the_provider_and_puts_month_first(self):
+        p = Paddle("k", "", "sandbox")
+        seen = {}
+
+        def fake(method, url, key, payload=None, timeout=None):
+            seen["url"] = url
+            rows = []
+            for pid, cents, interval in (
+                    (READER_MONTH, 500, "month"),
+                    (READER_YEAR, 3600, "year"),
+                    (STORAGE_PID, 200, "month"),
+                    # an archived launch-ladder price must not be offered
+                    ("pri_archived", 300, "month")):
+                rows.append({"id": pid, "status": "active" if pid != "pri_archived"
+                             else "archived",
+                             "unit_price": {"amount": cents,
+                                            "currency_code": "USD"},
+                             "billing_cycle": {"interval": interval} if interval else {}})
+            return {"data": rows}, ""
+
+        orig = paddle._call
+        paddle._call = fake
+        try:
+            got = p.plans()
+        finally:
+            paddle._call = orig
+        self.assertEqual(seen["url"], "https://sandbox-api.paddle.com/prices?per_page=50")
+        by_id = {}
+        for plan in got:
+            by_id.setdefault(plan.id, []).append(plan)
+        self.assertEqual(by_id["platform"][0].amount_cents, 500)
+        self.assertEqual(by_id["platform"][0].interval, "month")
+        self.assertEqual(by_id["platform"][1].interval, "year")
+        self.assertEqual(by_id["storage"][0].amount_cents, 200)
+        self.assertNotIn("pri_archived", [pl.price for pl in got])
+
+    def test_a_failed_read_returns_nothing_rather_than_a_guess(self):
+        p = Paddle("k", "", "sandbox")
+
+        def boom(*a, **kw):
+            return None, "HTTP 500"
+
+        orig = paddle._call
+        paddle._call = boom
+        try:
+            self.assertEqual(p.plans(), [])
+        finally:
+            paddle._call = orig
+
+
+class TestStorageSubscription(unittest.TestCase):
+    """A storage block is a subscription in Paddle and an add-on here."""
+
+    def setUp(self):
+        from host.app import App
+        self.tmp = tempfile.mkdtemp()
+        self.app = App(plugins_root=self.tmp, db_path=os.path.join(self.tmp, "t.db"))
+
+    def tearDown(self):
+        self.app.conn.close()
+
+    def test_a_block_lands_on_the_addon_not_the_tier(self):
+        ev = sub_event("subscription.created", price=STORAGE_PID)
+        ev["data"]["items"][0]["quantity"] = 3
+        out = billing.apply_event(self.app.conn,
+                                  normalize_event(ev))
+        self.assertTrue(out["applied"])
+        self.assertIn("addon", out)
+        self.assertEqual(billing.blocks(self.app.conn, "user_1"), 3)
+        # The tier must not become "storage": quota fails open on an unknown
+        # name, so that would have handed a block buyer the platform allowance.
+        self.assertIsNone(billing.get(self.app.conn, "user_1"))
+
+    def test_a_block_does_not_disturb_the_tier_already_held(self):
+        billing.apply_event(self.app.conn,
+                            normalize_event(sub_event("subscription.created")))
+        ev = sub_event("subscription.created", price=STORAGE_PID,
+                       sid="sub_store")
+        ev["event_id"] = "ntf_storage_only"
+        billing.apply_event(self.app.conn, normalize_event(ev))
+        row = billing.get(self.app.conn, "user_1")
+        self.assertEqual(row["plan"], "platform")
+        self.assertEqual(billing.blocks(self.app.conn, "user_1"), 1)
+
+
+class TestWalletCredit(unittest.TestCase):
+    """The wallet load's only receipt is the completed transaction."""
+
+    def setUp(self):
+        from host.app import App
+        from host import accounting
+        self.accounting = accounting
+        self.tmp = tempfile.mkdtemp()
+        self.app = App(plugins_root=self.tmp, db_path=os.path.join(self.tmp, "t.db"))
+        self.provider = Paddle("", SECRET, "sandbox")
+        payments.REGISTRY.clear()
+        payments.register(self.provider)
+
+    def tearDown(self):
+        payments.REGISTRY.clear()
+        self.app.conn.close()
+
+    def post(self, event):
+        body = json.dumps(event, separators=(",", ":")).encode("utf-8")
+        return self.app.payment_webhook(body, sign(body), "paddle")
+
+    def test_a_completed_load_credits_the_wallet_once(self):
+        status, out = self.post(tx_event())
+        self.assertEqual(status, 200, out)
+        self.assertTrue(out["wallet"]["credited"])
+        self.assertEqual(self.accounting.balance(self.app.conn, "user_1"), 5.0)
+        # Paddle retries; a replay must not pay twice.
+        status, out = self.post(tx_event(eid="ntf_tx_second_id"))
+        self.assertEqual(status, 200, out)
+        self.assertEqual(out["wallet"]["detail"], "already credited")
+        self.assertEqual(self.accounting.balance(self.app.conn, "user_1"), 5.0)
+
+    def test_an_unfinished_transaction_credits_nothing(self):
+        status, out = self.post(tx_event(status="past_due"))
+        self.assertEqual(status, 200, out)
+        self.assertFalse(out["wallet"]["credited"])
+        self.assertEqual(self.accounting.balance(self.app.conn, "user_1"), 0)
+
+    def test_a_plan_price_is_not_a_wallet_load(self):
+        status, out = self.post(tx_event(price=READER_MONTH))
+        self.assertEqual(status, 200, out)
+        self.assertFalse(out["wallet"]["credited"])
+        self.assertEqual(self.accounting.balance(self.app.conn, "user_1"), 0)
+
+    def test_an_unknown_price_credits_nothing(self):
+        status, out = self.post(tx_event(price="pri_not_ours"))
+        self.assertEqual(status, 200, out)
+        self.assertFalse(out["wallet"]["credited"])
+        self.assertEqual(self.accounting.balance(self.app.conn, "user_1"), 0)
+
+
 class TestSignatureHeader(unittest.TestCase):
     """The webhook reads the header the provider actually sends.
 
