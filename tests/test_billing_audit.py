@@ -250,6 +250,7 @@ class FakeStripe:
         self.purchases = {}
         self.cancelled = []
         self.changed = []
+        self.added = []
         self.resumed = []
         self.credited_sessions = {}
 
@@ -288,6 +289,12 @@ class FakeStripe:
         self.changed.append((subscription_id, plan, cycle))
         return {"ok": True, "price_id": "pri_x", "cycle": cycle or "month",
                 "detail": ""}
+
+    def add_storage(self, subscription_id, quantity):
+        # One block subscription, its quantity raised. A new checkout per block
+        # was two charges and one block (2026-11-13).
+        self.added.append((subscription_id, quantity))
+        return {"ok": True, "quantity": quantity, "detail": ""}
 
     def resume(self, subscription_id):
         self.resumed.append(subscription_id)
@@ -596,3 +603,77 @@ class TestMeteredDoors(Base):
             {}, {"user": "u1", "plan": "platform"})[0], 200)
         self.assertEqual(self.app.billing_checkout(
             {}, {"user": "u1", "plan": "platform"})[0], 429)
+
+
+class TestStorageBlocks(Base):
+    """A second storage block used to open a second subscription.
+
+    Bought twice in sandbox on 2026-11-13 through the real card form: Paddle
+    answered with two $2/mo subscriptions, the add-on row was overwritten with
+    quantity 1, and the account paid twice for one block of room. The card form
+    opens the first block; every block after that raises the quantity on the
+    subscription that already exists.
+    """
+
+    def _plan_and_block(self):
+        billing.upsert(self.conn, "u1", "platform", "active", provider="stripe",
+                       reference="cs_1", current_period_end=2000000000,
+                       customer="cus_1", subscription_id="sub_1")
+        billing.upsert_addon(self.conn, "u1", billing.STORAGE_ADDON, 1, "active",
+                             provider="paddle", reference="sub_s1",
+                             current_period_end=2000000000,
+                             subscription_id="sub_s1")
+
+    def test_a_second_block_raises_the_existing_subscription(self):
+        self._plan_and_block()
+        s, out = self.app.billing_storage({}, {"user": "u1", "quantity": 1})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(self.fake.added, [("sub_s1", 2)])
+        self.assertEqual(billing.addons(self.conn, "u1")["storage"]["quantity"], 2)
+        self.assertEqual(billing.blocks(self.conn, "u1"), 2)
+
+    def test_three_more_blocks_in_one_press(self):
+        self._plan_and_block()
+        s, out = self.app.billing_storage({}, {"user": "u1", "quantity": 3})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(self.fake.added, [("sub_s1", 4)])
+        self.assertEqual(billing.blocks(self.conn, "u1"), 4)
+
+    def test_the_first_block_is_the_card_forms_job(self):
+        # No block subscription yet: the browser opens the overlay, and the
+        # server says so instead of inventing a checkout of its own.
+        billing.upsert(self.conn, "u1", "platform", "active", provider="stripe",
+                       subscription_id="sub_1")
+        s, out = self.app.billing_storage({}, {"user": "u1", "quantity": 1})
+        self.assertEqual(s, 409, out)
+        self.assertTrue(out.get("first_block"))
+        self.assertEqual(self.fake.added, [])
+
+    def test_a_free_account_cannot_add_blocks(self):
+        billing.upsert(self.conn, "u1", "free", "active")
+        billing.upsert_addon(self.conn, "u1", billing.STORAGE_ADDON, 1, "active",
+                             subscription_id="sub_s1")
+        s, out = self.app.billing_storage({}, {"user": "u1", "quantity": 1})
+        self.assertEqual(s, 402, out)
+        self.assertEqual(self.fake.added, [])
+
+    def test_a_provider_refusal_does_not_move_the_row(self):
+        self._plan_and_block()
+
+        class Refusing(FakeStripe):
+            def add_storage(self, subscription_id, quantity):
+                return {"ok": False, "detail": "HTTP 400 bad quantity"}
+
+        payments.REGISTRY.clear()
+        payments.register(Refusing())
+        s, out = self.app.billing_storage({}, {"user": "u1", "quantity": 1})
+        self.assertEqual(s, 402, out)
+        self.assertEqual(billing.blocks(self.conn, "u1"), 1)
+
+    def test_cancelling_the_plan_stops_the_block_subscription_too(self):
+        self._plan_and_block()
+        s, out = self.app.billing_cancel({}, {"user": "u1"})
+        self.assertEqual(s, 200, out)
+        self.assertEqual(self.fake.cancelled, ["sub_1", "sub_s1"])
+        addon = billing.addons(self.conn, "u1")["storage"]
+        self.assertEqual(addon["cancel_at"], 2000000000)

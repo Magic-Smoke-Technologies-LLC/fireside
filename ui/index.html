@@ -4313,7 +4313,27 @@ function renderPageBuys(box, s, cat, cfg) {
     if (b.disabled) b.title = T('Not for sale yet');
     const qty = () => Math.max(1, parseInt(inp.value || '1', 10));
     b.onclick = async () => {
+      msg.textContent = '';
       if (overlays) {
+        // One subscription per Paddle checkout: the card form opens the FIRST
+        // block, and buying more on top of it raises that subscription's
+        // quantity on the server instead of opening a second one (which used
+        // to be two charges and one block).
+        if ((s.storage_blocks || 0) > 0) {
+          b.disabled = true;
+          try {
+            const d = await jpost('/billing/storage', { quantity: qty() });
+            const n = (d.addon && d.addon.quantity) || 0;
+            idle(T('Storage updated. You now have {n} block(s).', { n: n }));
+            await loadPlansPage();
+            return;
+          } catch (e) {
+            if (!(e.status === 409 && e.data && e.data.first_block)) {
+              msg.textContent = errorText(e);
+              return;
+            }
+          } finally { b.disabled = false; }
+        }
         try { await openPaddle(cfg, stPid, qty()); }
         catch (e) { msg.textContent = T('The card form did not start: {x}', {x: (e && e.message) || 'unknown error'}); }
         return;
