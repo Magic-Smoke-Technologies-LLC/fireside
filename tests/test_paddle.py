@@ -20,9 +20,15 @@ from host import payments_paddle as paddle
 from host.payments_paddle import Paddle, normalize_event, verify_signature
 
 SECRET = "pdl_ntfset_test_3f9a"
-READER_MONTH = "pri_01m6szmwtw6dt4fgk5e24cdmaf"
-READER_YEAR = "pri_01m6szmwx3174hsp6qe85yest5"
-STUDIO_MONTH = "pri_01m6szmx8beq24b3v32rnm999q"
+# Read the ids out of the catalog rather than copying them here. The monthly
+# ids changed on 2026-11-13 ($3/$8/$20 was what the card was charged while the
+# page said $5/$10/$22) and a hardcoded copy turned ten unrelated tests red, so
+# the tests name the rung and the catalog names the id. The amounts themselves
+# are checked against Paddle by tools/check_catalog.py, which is the only place
+# that can see a drift between these ids and what the page prints.
+READER_MONTH = paddle.DEFAULT_PLAN_PRICES["platform"]["month"]
+READER_YEAR = paddle.DEFAULT_PLAN_PRICES["platform"]["year"]
+STUDIO_MONTH = paddle.DEFAULT_PLAN_PRICES["studio"]["month"]
 
 
 def sign(body, ts=None, secret=SECRET):
@@ -369,6 +375,27 @@ class TestProvider(unittest.TestCase):
         self.assertEqual(seen["payload"]["effective_from"], "next_billing_period")
         self.assertTrue(seen["url"].endswith("/subscriptions/sub_1/cancel"))
 
+    def test_cancel_reports_the_period_it_cancels_at(self):
+        """The route answers the screen with these two fields. They were read
+        off the provider result, which never carried them, so a working cancel
+        answered cancel_at_period_end=false and current_period_end=0."""
+        p = Paddle("key", SECRET)
+
+        def fake(method, url, key, payload=None, timeout=15):
+            return {"data": {"scheduled_change": {
+                "action": "cancel",
+                "effective_at": "2026-11-20T16:01:38.667Z"}}}, ""
+
+        orig = paddle._call
+        paddle._call = fake
+        try:
+            res = p.cancel("sub_1")
+        finally:
+            paddle._call = orig
+        self.assertTrue(res["ok"])
+        self.assertTrue(res["cancel_at_period_end"])
+        self.assertEqual(res["current_period_end"], 1795190498)
+
     def test_cancel_needs_an_id(self):
         self.assertFalse(Paddle("key", SECRET).cancel("")["ok"])
 
@@ -418,7 +445,7 @@ class TestProvider(unittest.TestCase):
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["cycle"], "year")
         patched = [c for c in calls if c[0] == "PATCH"][0][1]
-        self.assertEqual(patched["items"][0]["price_id"], "pri_01m6szmx4a3cpnx4x8nt9g0gbr")
+        self.assertEqual(patched["items"][0]["price_id"], paddle.DEFAULT_PLAN_PRICES["listener"]["year"])
 
     def test_change_plan_refuses_a_plan_we_do_not_sell(self):
         res = Paddle("key", SECRET).change_plan("sub_1", "gold", "month")

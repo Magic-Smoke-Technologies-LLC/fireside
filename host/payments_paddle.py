@@ -57,12 +57,18 @@ METADATA_KEY = "fireside_user"
 
 # price id -> tier id. Both cycles of a rung map to the same tier; the interval
 # changes when the period ends, never what the buyer is entitled to.
+# The amounts must match host/plans.py LIST_PRICE_CENTS, because the page prints
+# those and this table is what the overlay actually charges. They did not: the
+# monthly ids still pointed at the first sandbox catalog ($3/$8/$20) while the
+# page printed $5/$10/$22, so a reader saw $5 and the card was asked for $3.
+# Found 2026-11-13 by opening the sandbox checkout beside the page.
+# tools/check_catalog.py is the receipt: it reads these ids back from Paddle.
 DEFAULT_PRICES = {
-    "pri_01m6szmwtw6dt4fgk5e24cdmaf": "platform",    # Reader 3.00 monthly
+    "pri_01m719e8h2jm71bcbks6kb5w7k": "platform",    # Reader 5.00 monthly
     "pri_01m6szmwx3174hsp6qe85yest5": "platform",    # Reader 36.00 annual
-    "pri_01m6szmx2w5wrq44bmt28vth6g": "listener",    # Listener 8.00 monthly
+    "pri_01m719e8jdz89r9dkc3bvcthec": "listener",    # Listener 10.00 monthly
     "pri_01m6szmx4a3cpnx4x8nt9g0gbr": "listener",    # Listener 96.00 annual
-    "pri_01m6szmx8beq24b3v32rnm999q": "studio",      # Studio 20.00 monthly
+    "pri_01m719e8kvz5jqxdbjx3g1785n": "studio",      # Studio 22.00 monthly
     "pri_01m6szmx9pv1wvncna1twjxaj7": "studio",      # Studio 240.00 annual
 }
 
@@ -73,11 +79,11 @@ _SIG_FIELD = re.compile(r"([A-Za-z0-9_]+)=([^;]+)")
 # webhook only reports one. Two tables that describe one catalog can drift, so
 # tests/test_paddle.py asserts every id here appears in DEFAULT_PRICES.
 DEFAULT_PLAN_PRICES = {
-    "platform": {"month": "pri_01m6szmwtw6dt4fgk5e24cdmaf",
+    "platform": {"month": "pri_01m719e8h2jm71bcbks6kb5w7k",
                  "year": "pri_01m6szmwx3174hsp6qe85yest5"},
-    "listener": {"month": "pri_01m6szmx2w5wrq44bmt28vth6g",
+    "listener": {"month": "pri_01m719e8jdz89r9dkc3bvcthec",
                  "year": "pri_01m6szmx4a3cpnx4x8nt9g0gbr"},
-    "studio": {"month": "pri_01m6szmx8beq24b3v32rnm999q",
+    "studio": {"month": "pri_01m719e8kvz5jqxdbjx3g1785n",
                "year": "pri_01m6szmx9pv1wvncna1twjxaj7"},
 }
 
@@ -382,7 +388,16 @@ class Paddle:
         if err:
             return {"ok": False, "detail": err}
         change = ((data or {}).get("data") or {}).get("scheduled_change") or {}
-        return {"ok": True, "detail": change.get("action", "")}
+        # The route reports these two fields to the screen and to its caller,
+        # and used to read them off a dict that never carried them: a cancel
+        # that worked perfectly answered cancel_at_period_end=false and
+        # current_period_end=0 (found 2026-11-13 by cancelling a real sandbox
+        # subscription and reading the JSON). The truth is in the scheduled
+        # change Paddle just echoed.
+        end = _epoch((change or {}).get("effective_at"))
+        return {"ok": True, "detail": change.get("action", ""),
+                "cancel_at_period_end": bool(change.get("action") == "cancel"),
+                "current_period_end": end}
 
     # -- plan change and resume ----------------------------------------------
     def change_plan(self, subscription_id, plan, cycle=""):
