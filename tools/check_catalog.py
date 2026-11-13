@@ -12,11 +12,22 @@ catalog.
 
     FIRESIDE_PADDLE_API_KEY=pdl_sdbx_... python3 tools/check_catalog.py
     FIRESIDE_PADDLE_API_KEY=pdl_live_... python3 tools/check_catalog.py --env production
+    python3 tools/check_catalog.py --env production --api-key ... \
+        --config-url https://readfireside.com --plans-url https://readfireside.com
 
 Exit 0 only when every id we sell resolves to the list price for its tier and
 cycle, and every currency override names a currency the price carries. Anything
 else prints the id, the tier, what we say it costs, what Paddle says it costs,
 and exits 1.
+
+--config-url (2026-11-13, the live flip) reads the ids the DEPLOYED app serves
+from /billing/config and the amounts it prints from /plans, instead of the
+process env here. The local table mode could not answer the question that
+matters once live: does the site I just switched to production sell the live
+catalog? Running the old mode against the live key printed 11 x 404 because the
+code defaults are the sandbox ids and the live ids live in env. This mode also
+refuses when the served env is not the --env it was asked about, so a live key
+checked against sandbox ids cannot pass.
 """
 import argparse
 import json
@@ -45,14 +56,110 @@ def price_of(api_key, env, price_id):
         return {"_error": "%d %s" % (e.code, e.read()[:200].decode("utf-8", "replace"))}
 
 
+
+def get_json(url):
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
+def check_deployed(args, price_of):
+    """Receipt for the site that is actually serving: ids from /billing/config,
+    amounts from /plans, both against the provider."""
+    base = args.config_url.rstrip("/")
+    config = get_json(base + "/billing/config")
+    board = get_json(base + "/plans")
+    bad = 0
+    if (config.get("env") or "") != args.env:
+        print("WRONG ENV %s serves env=%r, checking against %s"
+              % (base, config.get("env"), args.env))
+        return 1
+    tiers = {t.get("id"): t for t in board.get("tiers") or []}
+    for tier, cycles in sorted((config.get("prices") or {}).items()):
+        row = tiers.get(tier) or {}
+        want_month = int(row.get("amount_cents") or 0)
+        want_year = int(row.get("list_annual_cents") or 0)
+        list_month, list_year = plans.LIST_PRICE_CENTS.get(tier, (0, 0))
+        if want_month != int(list_month):
+            print("PAGE DRIFT %-9s month serves %d, page table says %d"
+                  % (tier, want_month, list_month))
+            bad += 1
+        if want_year and want_year != int(list_year):
+            print("PAGE DRIFT %-9s year serves %d, page table says %d"
+                  % (tier, want_year, list_year))
+            bad += 1
+        for cycle, pid in sorted(cycles.items()):
+            want = want_month if cycle == "month" else want_year
+            d = price_of(args.api_key, args.env, pid)
+            if d.get("_error"):
+                print("ERROR    %-9s %-5s %s %s" % (tier, cycle, pid, d["_error"]))
+                bad += 1
+                continue
+            got = int((d.get("unit_price") or {}).get("amount") or 0)
+            if got != want:
+                print("MISMATCH %-9s %-5s %s page says %d, Paddle charges %d"
+                      % (tier, cycle, pid, want, got))
+                bad += 1
+            elif (d.get("status") or "") != "active":
+                print("NOT LIVE %-9s %-5s %s status=%s" % (tier, cycle, pid, d.get("status")))
+                bad += 1
+            else:
+                print("ok       %-9s %-5s %s %d" % (tier, cycle, pid, got))
+    st = config.get("storage_price") or {}
+    want = int(board.get("storage", {}).get("amount_cents") or 0)
+    if int(st.get("amount_cents") or 0) != want:
+        print("PAGE DRIFT storage   serves %s, page says %s"
+              % (st.get("amount_cents"), want))
+        bad += 1
+    d = price_of(args.api_key, args.env, st.get("price_id") or "")
+    if d.get("_error"):
+        print("ERROR    storage   %s %s" % (st.get("price_id") or "", d["_error"]))
+        bad += 1
+    else:
+        got = int((d.get("unit_price") or {}).get("amount") or 0)
+        if got != int(st.get("amount_cents") or 0) or (d.get("status") or "") != "active":
+            print("MISMATCH storage   %s serves %s, Paddle charges %d status=%s"
+                  % (st.get("price_id"), st.get("amount_cents"), got, d.get("status")))
+            bad += 1
+        else:
+            print("ok       storage   %s %d" % (st.get("price_id"), got))
+    for usd, pid in sorted((config.get("wallet") or {}).items(), key=lambda kv: float(kv[0])):
+        d = price_of(args.api_key, args.env, pid)
+        want = int(round(float(usd) * 100))
+        if d.get("_error"):
+            print("ERROR    wallet %-3s %s %s" % (usd, pid, d["_error"]))
+            bad += 1
+            continue
+        got = int((d.get("unit_price") or {}).get("amount") or 0)
+        if got != want or (d.get("status") or "") != "active":
+            print("MISMATCH wallet %-3s %s serves %d, Paddle charges %d status=%s"
+                  % (usd, pid, want, got, d.get("status")))
+            bad += 1
+        else:
+            print("ok       wallet %-3s %s %d" % (usd, pid, got))
+    if not config.get("client_token"):
+        print("MISSING  client token not served")
+        bad += 1
+    print("---")
+    print("%s serves the catalog we sell" % base if not bad
+          else "%d disagreement(s)" % bad)
+    return 0 if not bad else 1
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--env", default="sandbox", choices=sorted(API))
     p.add_argument("--api-key", default=os.environ.get("FIRESIDE_PADDLE_API_KEY", ""))
+    p.add_argument("--config-url", default="",
+                   help="check the DEPLOYED app at this base url instead of this process env")
+    p.add_argument("--plans-url", default="",
+                   help="base url whose /plans prints the amounts (defaults to --config-url)")
     args = p.parse_args(argv)
     if not args.api_key:
         print("no api key: set FIRESIDE_PADDLE_API_KEY")
         return 2
+    if args.config_url:
+        return check_deployed(args, price_of)
 
     bad = 0
     table = pp.known_plan_prices()
