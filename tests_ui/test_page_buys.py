@@ -92,3 +92,55 @@ class PageBuys(BrowserTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SecondBlock(BrowserTest):
+    """A block already held: the button must raise the subscription, not open one.
+
+    Buying the same block twice in sandbox on 2026-11-13 opened two $2/mo
+    subscriptions and left the account with one block. The card form is the
+    first block's door; after that the quantity moves on the server.
+    """
+
+    host_env = PADDLE_ON
+
+    def setUp(self):
+        super().setUp()
+        self.page.add_init_script(RECORD)
+
+    def opened(self):
+        return self.page.evaluate("() => window.__opened || []")
+
+    def _seed_block(self, uid):
+        import sqlite3
+        conn = sqlite3.connect(self.host.data + "/fireside.db", timeout=10)
+        conn.execute(
+            "INSERT INTO addons(user_id, addon, quantity, status, provider, "
+            "reference, current_period_end, cancel_at, customer, subscription_id, "
+            "updated_at, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (uid, "storage", 1, "active", "paddle", "sub_s1", 2000000000, 0,
+             "ctm_x", "sub_s1", "2026-11-13", "2026-11-13"))
+        conn.commit()
+        conn.close()
+
+    def test_the_button_raises_one_subscription_instead_of_opening_another(self):
+        self.register("block2")
+        jar = cookie_jar(self.context)
+        _s, me = self.host.request("/me", cookies=jar)
+        self.host.request("/admin/plan", cookies=jar, method="POST",
+                          body={"user": me["user"], "plan": "platform"})
+        self._seed_block(me["user"])
+        seen = []
+        self.page.on("request", lambda r: seen.append(r.url))
+        self.page.goto(self.host.url("/pricing"))
+        wait_until(self.page, "() => document.querySelector('#pagebuys input[type=number]') !== null")
+        self.page.click("text=Buy blocks")
+        wait_until(self.page, "() => (window.__opened || []).length > 0"
+                              " || document.querySelector('#pagebuys') !== null")
+        # the overlay is the wrong door once a block is held: no checkout opens
+        self.assertEqual(self.opened(), [])
+        # the server route was the one taken (it refuses here only because this
+        # host has no route to Paddle; the row still holds one block)
+        self.assertTrue([u for u in seen if u.endswith("/billing/storage")], seen)
+        _s, blocks = self.host.request("/storage", cookies=jar)
+        self.assertEqual(blocks["storage_blocks"], 1)

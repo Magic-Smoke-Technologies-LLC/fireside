@@ -2283,6 +2283,63 @@ class App:
             resp["subscription"] = billing.get(self.conn, uid)
         return 200, resp
 
+    def billing_storage(self, q, body):
+        """Add blocks to the storage subscription the account already has.
+
+        Every Paddle checkout opens a new subscription, so the card form is the
+        right door only for the FIRST block. A second block through the same
+        door used to create a second $2 subscription and then overwrite the
+        add-on row with quantity 1 - two charges, one block of room (bought
+        twice in sandbox, 2026-11-13). Here the quantity is raised on the one
+        subscription instead, and the provider is asked before the row moves.
+        """
+        uid = self._uid(q, body)
+        if not uid:
+            return 401, {"error": "auth required"}
+        if not self._limit(self.buy_limiter, uid):
+            return 429, {"error": "rate limited"}
+        pp = payments.get()
+        fn = getattr(pp, "add_storage", None) if pp is not None else None
+        if not callable(fn):
+            return 503, {"error": "payments not configured"}
+        try:
+            qty = int((body or {}).get("quantity") or 1)
+        except (TypeError, ValueError):
+            qty = 1
+        qty = max(1, min(50, qty))
+        sub = billing.get(self.conn, uid) or {}
+        if (sub.get("plan") or "") in ("", quota.FREE_PLAN):
+            return 402, {"error": "a plan is needed for storage",
+                         "detail": "Storage comes with a plan. The wallet pays for "
+                                   "narration on free; room on the shelf starts with "
+                                   "the Reader plan."}
+        a = billing.addons(self.conn, uid).get(billing.STORAGE_ADDON) or {}
+        sid = (a.get("subscription_id") or "").strip()
+        if not sid:
+            # No block subscription yet: the card form has to open one, and that
+            # is the browser's job, not this route's. The page uses this answer
+            # to know which door to take.
+            return 409, {"error": "no storage subscription yet",
+                         "detail": "the card form opens the first block",
+                         "first_block": True}
+        try:
+            current = int(a.get("quantity") or 0)
+        except (TypeError, ValueError):
+            current = 0
+        res = fn(sid, current + qty)
+        if not res.get("ok"):
+            return 402, {"error": "storage update refused",
+                         "detail": res.get("detail", "")}
+        row = billing.upsert_addon(
+            self.conn, uid, billing.STORAGE_ADDON,
+            int(res.get("quantity") or (current + qty)),
+            a.get("status") or "active", provider="paddle",
+            reference=a.get("reference") or sid,
+            current_period_end=a.get("current_period_end") or 0,
+            customer=a.get("customer") or "", subscription_id=sid,
+            cancel_at=a.get("cancel_at") or 0)
+        return 200, {"ok": True, "addon": row}
+
     def billing_cancel(self, q, body):
         """Stop the next renewal. Access lasts to the end of the paid period.
 
@@ -2322,9 +2379,30 @@ class App:
             notices.notify(self.conn, uid, "billing",
                            "Renewal is stopping. You keep everything until this period ends.",
                            route="#/settings/billing")
+        # Storage is what a plan buys, so a block subscription outliving its
+        # plan is a charge for room the account is no longer allowed to buy.
+        # Stopping it here keeps the two in step; a refusal is reported and
+        # does not undo the plan cancel.
+        storage_cancel = {}
+        a = billing.addons(self.conn, uid).get(billing.STORAGE_ADDON) or {}
+        asid = (a.get("subscription_id") or "").strip()
+        if asid:
+            r2 = fn(asid)
+            storage_cancel = {"ok": bool(r2.get("ok")),
+                              "detail": r2.get("detail", "")}
+            if r2.get("ok"):
+                end2 = r2.get("current_period_end") or a.get("current_period_end") or 0
+                billing.upsert_addon(
+                    self.conn, uid, billing.STORAGE_ADDON,
+                    a.get("quantity") or 0, a.get("status") or "",
+                    provider=a.get("provider") or "paddle",
+                    reference=a.get("reference") or asid,
+                    current_period_end=end2, customer=a.get("customer") or "",
+                    subscription_id=asid, cancel_at=end2)
         return 200, {"ok": True, "cancel_at_period_end":
                      bool(res.get("cancel_at_period_end")),
                      "current_period_end": res.get("current_period_end", 0),
+                     "storage_cancel": storage_cancel,
                      "subscription": billing.get(self.conn, uid)}
 
     def billing_portal(self, q, body):
@@ -3727,6 +3805,7 @@ POST_ROUTES = {
     "/billing/checkout": "billing_checkout", "/billing/confirm": "billing_confirm",
     "/billing/cancel": "billing_cancel", "/billing/portal": "billing_portal",
     "/billing/change": "billing_change", "/billing/resume": "billing_resume",
+    "/billing/storage": "billing_storage",
     "/notifications/read": "notices_read",
     "/credits/confirm": "credits_confirm",
     "/2fa/enroll": "twofa_enroll", "/2fa/confirm": "twofa_confirm",

@@ -652,6 +652,45 @@ class Paddle:
         return {"ok": True, "price_id": price_id, "cycle": want,
                 "detail": ""}
 
+    def add_storage(self, subscription_id, quantity):
+        """Set how many storage blocks one subscription buys.
+
+        Paddle opens a NEW subscription for every checkout, so buying a second
+        block from the prices page used to open a second $2 subscription and
+        overwrite the add-on row with quantity 1: two charges and one block,
+        found on 2026-11-13 by buying the same block twice in sandbox. The
+        honest fix is to keep one block subscription and raise its quantity,
+        which is what Paddle's update-subscription call is for (items carries
+        the complete list, and changing items requires a proration mode).
+        """
+        sid = (subscription_id or "").strip()
+        try:
+            qty = int(quantity or 0)
+        except (TypeError, ValueError):
+            qty = 0
+        if not sid:
+            return {"ok": False, "detail": "no subscription id"}
+        if qty < 1:
+            return {"ok": False, "detail": "a block count of at least 1"}
+        price_id = (storage_price() or {}).get("price_id") or ""
+        if not price_id:
+            return {"ok": False, "detail": "storage is not priced here"}
+        data, err = _call("PATCH", "%s/subscriptions/%s" % (self.base_url, sid),
+                          self.api_key,
+                          {"items": [{"price_id": price_id, "quantity": qty}],
+                           "proration_billing_mode": "prorated_immediately"})
+        if err:
+            return {"ok": False, "detail": err}
+        row = (data or {}).get("data") or {}
+        items = row.get("items") or []
+        got = 0
+        if items and isinstance(items[0], dict):
+            try:
+                got = int(items[0].get("quantity") or 0)
+            except (TypeError, ValueError):
+                got = 0
+        return {"ok": True, "quantity": got or qty, "detail": ""}
+
     def resume(self, subscription_id):
         """Undo a scheduled cancel.
 
