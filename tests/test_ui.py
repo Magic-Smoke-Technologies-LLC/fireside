@@ -377,8 +377,8 @@ class TestAppShell(unittest.TestCase):
         self.assertNotIn('data-v="play"', html)    # nor is now playing: the bar is
 
     def test_the_wallet_is_a_panel_in_account(self):
-        # Money is not a page of its own; it is the first panel of Account, so
-        # the balance chip, the add buttons and the history are one place.
+        # Credit is not a page of its own; it is the first panel of Account, so
+        # the balance chip, the buy buttons and the history are one place.
         html = self._html()
         setview = html.split('id="v-set"')[1].split("id=\"v-adm\"")[0]
         self.assertIn('data-p="wallet" class="on"', setview)
@@ -390,8 +390,8 @@ class TestAppShell(unittest.TestCase):
         self.assertIn("await api('/credits/history')", html)
         self.assertIn("function loadWallet(", html)
 
-    def test_the_wallet_states_what_five_dollars_buys(self):
-        # "Add money" with no idea how much reading that is is a price with no
+    def test_the_credit_panel_states_what_five_dollars_buys(self):
+        # "Add credit" with no idea how much reading that is is a price with no
         # unit. The table is drawn from the sale rate the purchase route pins,
         # so it cannot drift from what a top-up actually credits.
         html = self._html()
@@ -404,7 +404,7 @@ class TestAppShell(unittest.TestCase):
         self.assertIn('id="wnoexpire"', html)
         self.assertIn('id="wrefund"', html)
         self.assertIn('Credit does not expire.', html)
-        self.assertIn('is not refundable, except where the law requires it', html)
+        self.assertIn('tell us and we fix it', html)
 
     def test_the_player_bar_opens_now_playing(self):
         # A bar that shows a book you cannot open is a status line.
