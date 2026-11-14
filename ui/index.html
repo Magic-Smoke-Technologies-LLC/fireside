@@ -1472,9 +1472,9 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
       <div id="gaoptwrap" hidden>
         <label style="display:flex;gap:10px;align-items:flex-start;margin:0 0 6px;font-weight:500;text-transform:none;letter-spacing:0;font-size:15px">
           <input type="checkbox" id="gaopt" style="margin-top:3px;width:auto">
-          <span data-t="Send anonymous usage statistics to Google Analytics">Send anonymous usage statistics to Google Analytics</span>
+          <span data-t="Send anonymised usage statistics to Google Analytics">Send anonymised usage statistics to Google Analytics</span>
         </label>
-        <p class="hint" data-t="Off until you say so. It helps us see which pages people read and where they leave. It sets Google’s cookies, and turning it back off stops them being used.">Off until you say so. It helps us see which pages people read and where they leave. It sets Google’s cookies, and turning it back off stops them being used.</p>
+        <p class="hint" data-t="Off until you say so, and nothing is sent before you tick it. It helps us see which pages people read and where they leave. It sets Google’s cookies, and turning it off again stops them being used.">Off until you say so, and nothing is sent before you tick it. It helps us see which pages people read and where they leave. It sets Google’s cookies, and turning it off again stops them being used.</p>
       </div>
       <p class="sub">What we collect, who we share it with, and how to ask us to delete your
         account. <a href="/privacy" target="_blank" rel="noopener" data-t="Read the privacy policy →">Read the privacy policy →</a>
@@ -2322,21 +2322,15 @@ function buildThemeControl(mount) {
   }
 })();
 
-// --- analytics: loaded cookieless, full only if the reader asks -------------
-// Two jobs, and the order between them is the whole design:
+// --- analytics: nothing leaves the browser until the reader opts in -------
+// One rule here, and it is a legal one rather than a technical one: an
+// audience-measurement ping is still a ping. The tag is not injected, not even
+// in GA4's cookieless mode, until a reader ticks the box. Untick it and the
+// consent signal drops back to denied, so no cookie is used after that.
 //
-//  * the tag loads on every page, because an operator asking "how many people
-//    read this" deserves an answer for the visitors who never sign up. It loads
-//    with analytics_storage DENIED, which is GA4's cookieless mode: no cookie,
-//    no identifier, one ping per pageview. The consent default is set in the
-//    HEAD, before this file can inject gtag.js, so nothing here can quietly turn
-//    it into a cookie-setting tag.
-//  * a reader who ticks the box gets the ordinary, cookie-backed tag, and can
-//    untick it again.
-//
-// A deployment with no FIRESIDE_GA_ID ships no tag at all, and an id this page
-// does not recognise is treated the same: half a tag is a console error on
-// every load.
+// The consent DEFAULT still sits in the HEAD, before this file can inject
+// gtag.js, so a tag can never load ahead of a denied default. A deployment
+// with no FIRESIDE_GA_ID ships no tag at all.
 let GA_ON = false;
 try { GA_ON = localStorage.getItem('fs.analytics') === '1'; } catch (_) {}
 function gaId() {
@@ -2360,7 +2354,7 @@ function gaGrant(v) {
    its own. Every real view change sends one, and the location is the route a
    reader could share. */
 function fsPageView(v) {
-  if (!v || !gaConfigured() || !window.gtag) return;
+  if (!v || !GA_ON || !gaConfigured() || !window.gtag) return;
   gtag('event', 'page_view', {
     page_title: v, page_location: location.origin + location.pathname + '#/' + v });
 }
@@ -2374,11 +2368,11 @@ function fsPageView(v) {
       GA_ON = !!box.checked;
       try { GA_ON ? localStorage.setItem('fs.analytics', '1')
                    : localStorage.removeItem('fs.analytics'); } catch (_) {}
-      gaLoad(); gaGrant(GA_ON);
+      if (GA_ON) { gaLoad(); gaGrant(true); }
+      else if (window.__fsGa) gaGrant(false);
     };
   }
-  gaLoad();
-  if (GA_ON) gaGrant(true);
+  if (GA_ON) { gaLoad(); gaGrant(true); }
 })();
 
 // --- settings: voice servers, kept on the server ---------------------------
