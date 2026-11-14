@@ -17,7 +17,7 @@ from tests_ui.support import BrowserTest, wait_until, wait_visible
 
 class TestFoot(BrowserTest):
 
-    FOOT = ("/about", "/contact", "/terms", "/privacy")
+    FOOT = ("/about", "/contact", "/terms", "/refunds", "/privacy")
 
     def _hrefs(self):
         return [a.get_attribute("href") for a in
