@@ -684,6 +684,21 @@ class App:
                 .replace("__COMPANY__", os.environ.get("FIRESIDE_COMPANY", "Fireside"))
                 .replace("__CONTACT__", os.environ.get("FIRESIDE_CONTACT_EMAIL",
                                                       "support@readfireside.com")))
+        # Sole operator details, kept in env so a legal page names a real
+        # address without hardcoding one in the source. An unset address is
+        # said plainly rather than left as a placeholder, and an unset EU
+        # representative drops the sentence instead of naming nobody.
+        contact = os.environ.get("FIRESIDE_CONTACT_EMAIL", "support@readfireside.com")
+        address = (os.environ.get("FIRESIDE_ADDRESS") or "").strip()
+        page = page.replace("__ADDRESS__",
+                            address or ("available on request from " + contact))
+        rep = (os.environ.get("FIRESIDE_EU_REP") or "").strip()
+        if rep:
+            page = page.replace("__EU_REP__", rep)
+        else:
+            page = page.replace(
+                " Where the law requires us to name a\n  representative in the EU or the UK, it is: __EU_REP__.",
+                "")
         return 200, {"_html": page}
 
     def pricing(self, q, body):

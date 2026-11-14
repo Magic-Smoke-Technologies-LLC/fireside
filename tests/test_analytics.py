@@ -1,9 +1,11 @@
-"""Analytics: absent by default, cookieless until a reader asks for more.
+"""Analytics: absent by default, and not loaded at all until a reader opts in.
 
 Three things are easy to get wrong here and none of them raise:
 
   * shipping a tag on a self-hosted copy because the snippet was pasted rather
     than rendered from the operator's own setting;
+  * injecting the tag before anyone consented: a cookieless GA4 ping is still a
+    ping, so the loader must not run on boot;
   * writing the consent default after gtag.js has loaded, which means it never
     applied and the first pageview is collected with cookies anyway;
   * naming the wrong payment processor in the documents a processor's reviewer
@@ -99,6 +101,14 @@ class TestNoIdShipsNoTag(AnalyticsCase):
         html = self.page()
         self.assertIn("gtag('consent', 'default'", html)
 
+    def test_no_loader_runs_until_the_box_is_ticked(self):
+        # 13 Nov 2026: a cookieless GA4 ping still leaves the browser, so the
+        # tag is not injected on boot at all. The only unconditional calls are
+        # inside the opt-in branch.
+        html = self.page()
+        self.assertNotIn("  gaLoad();\n  if (GA_ON)", html)
+        self.assertIn("if (GA_ON) { gaLoad(); gaGrant(true); }", html)
+
 
 class TestIdFromTheEnvironment(AnalyticsCase):
     ga_id = "G-TEST12345"
@@ -139,12 +149,32 @@ class TestTheDocumentsNameTheRealProcessor(AnalyticsCase):
         self.assertIn("Paddle", html)
         self.assertNotIn("Creem", html)
 
+    def test_refund_policy_has_its_own_public_page(self):
+        # A processor's onboarding form asks for a refund policy URL, so the
+        # policy cannot live only inside the terms.
+        html = self.page("/refunds")
+        self.assertIn("Refund policy", html)
+        self.assertIn("fault is ours", html)
+        self.assertIn("Paddle", html)
+        self.assertNotIn("__COMPANY__", html)
+
+    def test_privacy_leaves_no_placeholders_behind(self):
+        # Legal text served with __ADDRESS__ in it is a page that was never
+        # finished, and a DPA reads it as one.
+        html = self.page("/privacy")
+        for token in ("__COMPANY__", "__CONTACT__", "__ADDRESS__", "__EU_REP__"):
+            self.assertNotIn(token, html)
+        self.assertIn("Standard Contractual Clauses", html)
+        self.assertIn("one month", html)
+        self.assertIn("off by default", html)
+
     def test_privacy_names_paddle_and_says_what_analytics_does(self):
         html = self.page("/privacy")
         self.assertIn("Paddle", html)
         self.assertNotIn("Creem", html)
         self.assertIn("Google Analytics", html)
-        self.assertIn("cookieless", html)
+        self.assertIn("off by default", html)
+        self.assertNotIn("cookieless", html)
 
 
 if __name__ == "__main__":
