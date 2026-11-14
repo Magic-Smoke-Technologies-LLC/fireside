@@ -769,6 +769,15 @@ class App:
         """The terms of service. Public, static, and store-listing mineable."""
         return self._legal("terms.html")
 
+    def refunds(self, q, body):
+        """The refund policy on its own URL.
+
+        Payment processors ask for a refund policy URL at onboarding and a
+        reviewer should not have to find the paragraph inside a wall of terms.
+        The policy is the same text the terms carry; this page is the front
+        door to it."""
+        return self._legal("refunds.html")
+
     def delete_account(self, q, body):
         """How to erase your account. Public and static: a store listing has to
         point at a URL, and it must be reachable by someone who already
@@ -3741,7 +3750,8 @@ GET_ROUTES = {
     "/manifest.webmanifest": "manifest", "/sw.js": "service_worker",
     "/icon-192.png": "icon192", "/icon-512.png": "icon512",
     "/icon-maskable-512.png": "icon_maskable",
-    "/privacy": "privacy", "/terms": "terms", "/delete-account": "delete_account",
+    "/privacy": "privacy", "/terms": "terms", "/refunds": "refunds",
+    "/delete-account": "delete_account",
     "/about": "about", "/contact": "contact", "/kokoro": "kokoro",
     "/pricing": "pricing", "/checkout": "checkout",
     "/health": "health", "/plugins": "plugins", "/library": "library_list",
@@ -3838,7 +3848,8 @@ def signature_header(headers, provider_id="stripe"):
 # the sign-in surface, and the browser's cache of who it is.
 PUBLIC_ROUTES = {"/", "/index.html", "/i18n.js", "/favicon.ico", "/health", "/auth/providers",
                  "/auth/policy", "/auth/forgot", "/auth/reset", "/me", "/plans",
-                 "/privacy", "/terms", "/delete-account", "/pricing", "/checkout",
+                 "/privacy", "/terms", "/refunds", "/delete-account", "/pricing",
+                 "/checkout",
                  "/about", "/contact", "/kokoro",
                  # The door's fire sits behind a signed-out visitor's first
                  # screen, so it has to load before there is a session.
