@@ -1052,7 +1052,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
         <span class="ratefine" data-t="about 15 hours of listening">about 15 hours of listening</span></td></tr>
       <tr><th data-t="Your own voice">Your own voice</th><td><b data-t="No platform cost">No platform cost</b>
         <span class="ratefine" data-t="your Azure key, or a Kokoro server on your own machine">your Azure key, or a Kokoro server on your own machine</span></td></tr>
-      <tr><th data-t="Paid plans">Paid plans</th><td><b data-t="Include wallet credit each month">Include wallet credit each month</b>
+      <tr><th data-t="Paid plans">Paid plans</th><td><b data-t="Include narration credit each month">Include narration credit each month</b>
         <span class="ratefine"><a href="/pricing" data-t="see the plans">see the plans</a></span></td></tr>
     </table>
     <p class="welcred" data-t="New accounts get $3 of narration credit when the first paid month begins.">New accounts get $3 of narration credit when the first paid month begins.</p>
@@ -1271,9 +1271,9 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
   <!-- settings -->
   <section class="view" id="v-set">
     <h2 data-t="Account">Account</h2>
-    <p class="sub" data-t="Your balance, your voices, and what this server knows about you.">Your balance, your voices, and what this server knows about you.</p>
+    <p class="sub" data-t="Your credit, your voices, and what this server knows about you.">Your credit, your voices, and what this server knows about you.</p>
     <nav class="tabs settabs" id="settabs" aria-label="Account sections" data-t-aria="Account sections">
-      <button data-p="wallet" class="on" data-t="Wallet">Wallet</button>
+      <button data-p="wallet" class="on" data-t="Credit">Credit</button>
       <button data-p="billing" data-t="Plan &amp; billing">Plan &amp; billing</button>
       <button data-p="voice" data-t="Voice">Voice</button>
       <button data-p="reading" data-t="Reading">Reading</button>
@@ -1283,7 +1283,7 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
 
     <div class="setpanel on" data-p="wallet">
       <div class="walletbal" id="wbal" aria-live="polite">—</div>
-      <p class="small" id="wnote" data-t="Money in your wallet pays for narration. It stays yours until you spend it.">Money in your wallet pays for narration. It stays yours until you spend it.</p>
+      <p class="small" id="wnote" data-t="Credit you add pays for narration. It does not expire, and it is used only for narration.">Credit you add pays for narration. It does not expire, and it is used only for narration.</p>
       <p class="small" id="wheld" hidden></p>
 
       <!-- Adding money and what happened to it were one long column, so the
@@ -1292,9 +1292,9 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
            balance stays at the top, and the list is its own tab. The balance
            does not go inside a tab, because the number is what the screen is
            for. -->
-      <nav class="tabs wsubtabs" id="wsubtabs" aria-label="Wallet sections" data-t-aria="Wallet sections">
-        <button data-w="money" class="on" data-t="Add money">Add money</button>
-        <button data-w="activity" data-t="Wallet activity">Wallet activity</button>
+      <nav class="tabs wsubtabs" id="wsubtabs" aria-label="Credit sections" data-t-aria="Credit sections">
+        <button data-w="money" class="on" data-t="Add credit">Add credit</button>
+        <button data-w="activity" data-t="Credit activity">Credit activity</button>
       </nav>
 
       <div class="wsub on" data-w="money">
@@ -1304,8 +1304,8 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
           <table class="wratetbl" id="wratetbl"></table>
           <p class="small wratefine" id="wratefine"></p>
         </div>
-        <p class="small wratefine" id="wnoexpire" data-t="Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.">Credit does not expire. Money you add stays in your wallet until you spend it, and nothing is taken back for being unused.</p>
-        <p class="small wratefine" id="wrefund" data-t="Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.">Refunds: money you add to the wallet is not refundable, except where the law requires it, or where we charged you twice for the same thing. If either happens, tell us and we fix it.</p>
+        <p class="small wratefine" id="wnoexpire" data-t="Credit does not expire. It stays in your account until you spend it on narration, and nothing is taken back for being unused.">Credit does not expire. It stays in your account until you spend it on narration, and nothing is taken back for being unused.</p>
+        <p class="small wratefine" id="wrefund" data-t="Refunds: if a render fails because of us, or we charged you twice for the same thing, tell us and we fix it. Credit already spent on narration is not refundable.">Refunds: if a render fails because of us, or we charged you twice for the same thing, tell us and we fix it. Credit already spent on narration is not refundable.</p>
 
         <!-- Two screens that are places to go rather than settings: plans is a
              purchase, the voice sandbox is a toy. They live on the wallet screen
@@ -1599,11 +1599,11 @@ gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied',
     <div id="pagebuys" hidden></div>
 
     <h3 style="margin-top:34px" data-t="The voice is metered separately">The voice is metered separately</h3>
-    <p class="sub" data-t="Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or add dollars to your wallet and our voice reads to you at the standard rate below. A paid plan already includes some wallet credit each month.">Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or add dollars to your wallet and our voice reads to you at the standard rate below. A paid plan already includes some wallet credit each month.</p>
+    <p class="sub" data-t="Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or buy prepaid narration credit and our voice reads to you at the standard rate below. A paid plan already includes some narration credit each month.">Three ways: bring your own Azure speech key, run Kokoro (or any OpenAI-compatible speech server) on your own machine and connect it in Settings, or buy prepaid narration credit and our voice reads to you at the standard rate below. A paid plan already includes some narration credit each month.</p>
 
     <div class="walletpromise" id="walletpromise">
-      <p class="wpk" data-t="Your wallet">Your wallet</p>
-      <p class="wplead" data-t="Wallet dollars never expire and are used to pay for services on the platform.">Wallet dollars never expire and are used to pay for services on the platform.</p>
+      <p class="wpk" data-t="Prepaid narration credit">Prepaid narration credit</p>
+      <p class="wplead" data-t="Prepaid narration credit never expires and is used only for narration on this service.">Prepaid narration credit never expires and is used only for narration on this service.</p>
       <p class="wpbody" data-t="Our rate is the speech provider's rate plus 25%, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.">Our rate is the speech provider's rate plus 25%, which covers the payment fee and support. The rate can change if the provider's does, and the page always shows the current one.</p>
       <div class="wpact" id="wpact"></div>
     </div>
@@ -2141,7 +2141,7 @@ function setSetTab(p, mode) {
 if ($('#settabs')) document.querySelectorAll('#settabs button').forEach(b => b.onclick = () => setSetTab(b.dataset.p));
 // The wallet's own two tabs, inside the wallet screen. Kept apart from
 // #settabs because they move within one screen: the outer bar is a place, this
-// one is a question about the place. Opening the wallet lands on Add money, so
+// one is a question about the place. Opening the wallet lands on Add credit, so
 // the balance and the buttons are what a reader sees first.
 function setWalletTab(w) {
   const bar = $('#wsubtabs'); if (!bar) return;
@@ -3477,14 +3477,14 @@ function wamount(n) {
 async function loadWallet() {
   const bal = $('#wbal'); if (!bal) return;
   const note = $('#wnote');
-  if (!USER) { bal.textContent = '\u2014'; if (note) note.textContent = T('Sign in to see your wallet.'); return; }
+  if (!USER) { bal.textContent = '\u2014'; if (note) note.textContent = T('Sign in to see your credit.'); return; }
   bal.textContent = '\u2026';
   let d;
   try { d = await api('/credits'); }
   catch (e) {
     bal.textContent = '\u2014';
     if (note) note.textContent = e.status === 401
-      ? T('Sign in to see your wallet.')
+      ? T('Sign in to see your credit.')
       : T('Couldn\u2019t reach the server, so this number may be out of date.');
     const box = $('#wtopup'); if (box) box.innerHTML = '';
     return;
@@ -3495,7 +3495,7 @@ async function loadWallet() {
   bal.textContent = wamount(avail);
   bal.classList.toggle('neg', avail < 0);
   if (note) note.textContent = WUNIT === 'USD'
-    ? T('Money in your wallet pays for narration. It stays yours until you spend it.')
+    ? T('Credit you add pays for narration. It does not expire, and it is used only for narration.')
     : T('You were granted credit as characters before we priced things in dollars. It is shown here in dollars at today\u2019s voice rate, and it works exactly as before.');
   const held = d.reserved || 0;
   const wh = $('#wheld');
@@ -3602,10 +3602,10 @@ async function buyTopup(usd) {
     msg(T('{n} added. Reference {ref}.', { n: money(usd), ref: r.reference || '' }));
     loadWallet();
   } catch (e) {
-    if (e.status === 503) msg(T('Adding money is not switched on yet, so nothing was charged.'));
+    if (e.status === 503) msg(T('Adding credit is not switched on yet, so nothing was charged.'));
     else if (e.status === 402) msg(T('The payment was refused. Nothing was charged.'));
     else if (e.status === 400) msg(T('That amount is below the minimum.'));
-    else msg(e.message || T('could not add money'));
+    else msg(e.message || T('could not add credit'));
   }
 }
 // The chip. A reader should not have to tell a card payment from a plan
@@ -3651,7 +3651,7 @@ async function loadWalletList() {
   if (rows.some(r => r.included || r.kind === 'grant' || r.kind === 'welcome')) {
     const legend = document.createElement('p');
     legend.className = 'wlegend';
-    legend.textContent = T('Rows tagged Plan are the narration your plan includes. Nothing was charged for them. Card rows are money you added.');
+    legend.textContent = T('Rows tagged Plan are the narration your plan includes. Nothing was charged for them. Card rows are credit you bought.');
     box.append(legend);
   }
   if (!rows.length) {
@@ -4287,7 +4287,7 @@ function renderPageBuys(box, s, cat, cfg) {
   const st = cat && cat.storage;
   const p2 = document.createElement('p'); p2.className = 'sub';
   if (onFree) {
-    p2.textContent = T('Your wallet pays for narration. Room on the shelf starts with the Reader plan, and every plan includes some credit each month.');
+    p2.textContent = T('Prepaid narration credit pays for narration. Room on the shelf starts with the Reader plan, and every plan includes some credit each month.');
   } else {
     p2.textContent = st
       ? T('{b} per block, {p}. You have {n}. Storage counts once per book you hold; delete a book and its bytes come back.',
@@ -4355,7 +4355,7 @@ async function loadPlansPage() {
     if (y) y.setAttribute('aria-pressed', c === 'year' ? 'true' : 'false');
     const note = $('#cycnote');
     if (note) note.textContent = c === 'year'
-      ? T('one charge a year, same shelf and wallet') : T('charged monthly, cancel any time');
+      ? T('one charge a year, same shelf and credit') : T('charged monthly, cancel any time');
   };
   const setCycle = c => {
     writeCycle(c);
@@ -4396,7 +4396,7 @@ async function loadPlansPage() {
   // stranger. Chris, 11-10.
   const sl = $('#pagesignupline');
   if (sl) sl.hidden = !!AUTH.user;
-  renderWalletAction();
+  renderCreditAction();
   const msg = $('#pageplanmsg');
   if (!msg) return;
   if (cfg && cfg.ok && cfg.env && cfg.env !== 'production') {
@@ -4414,7 +4414,7 @@ async function loadPlansPage() {
 // Signed in, one button, the minimum load; signed out, the sentence that says
 // when it becomes available.
 let CURRENT_PLAN = '';
-function renderWalletAction() {
+function renderCreditAction() {
   const act = $('#wpact'); if (!act) return;
   act.innerHTML = '';
   if (!AUTH.user) {
@@ -4423,7 +4423,7 @@ function renderWalletAction() {
     act.append(h); return;
   }
   const b = document.createElement('button'); b.className = 'btn'; b.type = 'button';
-  b.textContent = T('Add {x} to the wallet', { x: '$5' });
+  b.textContent = T('Add {x} in narration credit', { x: '$5' });
   const m = document.createElement('p'); m.className = 'hint';
   b.onclick = async () => {
     b.disabled = true;
